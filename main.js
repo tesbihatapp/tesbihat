@@ -44,6 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initDuaSourceSelector(appRoot);
   attachFontScaleControls(appRoot);
   attachSettingsActions(appRoot);
+  registerServiceWorker();
 
   setActivePrayer(state.currentPrayer);
 });
@@ -692,6 +693,16 @@ function loadSelectedDuaSource() {
     return stored;
   }
   return 'birkirikdilekce';
+}
+
+function registerServiceWorker() {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker
+      .register('./service-worker.js')
+      .catch((error) => {
+        console.warn('Servis çalışanı kaydedilemedi.', error);
+      });
+  }
 }
 
 function loadFontScale() {
