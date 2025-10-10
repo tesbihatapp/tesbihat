@@ -7,6 +7,17 @@ const FONT_SCALE_MIN = 0.85;
 const FONT_SCALE_MAX = 1.3;
 const FONT_SCALE_STEP = 0.05;
 
+const NAME_SECTIONS = [
+  {
+    start: 'Tercümân-ı İsm-i A’zam Duâsı:',
+    end: 'Sonra eller yukarı kaldırılır ve şöyle duâ edilir:',
+  },
+  {
+    start: 'İsm-i A’zam Duâsı:',
+    end: 'Sonra eller yukarı kaldırılır ve şöyle duâ edilir:',
+  },
+];
+
 const PRAYER_CONFIG = {
   sabah: { label: 'Sabah', markdown: 'sabah.md', supportsDua: true },
   ogle: { label: 'Öğle', markdown: 'OgleTesbihat.md', supportsDua: true },
@@ -19,6 +30,77 @@ const DUA_SOURCES = {
   birkirikdilekce: { label: 'Bir Kırık Dilekçe', path: 'BirKirikDilekce.txt' },
 };
 
+const MANUAL_NAME_MEANINGS = {
+  allah: 'Bütün güzel isimlerin sahibi olan yüce Allah\'ın özel ismidir.',
+  atuf: 'Kullarına şefkat ve merhametle muamele eden, çok yumuşak davranan.',
+  azim: 'Azameti sonsuz, yücelikte eşi olmayan.',
+  burhan: 'Hakikati apaçık ortaya koyan delil sahibi.',
+  cemil: 'Mutlak güzellik sahibi, güzelliği her şeyi kuşatan.',
+  deyyan: 'Hüküm günü hesap soran, yaptıkların karşılığını veren.',
+  ehad: 'Tek olan, zâtında eşi ve benzeri bulunmayan.',
+  eman: 'Kendisine sığınanları emniyete alan, tam güven kaynağı.',
+  ferd: 'Tek olan, parçalanması ve bölünmesi mümkün olmayan.',
+  habib: 'Kullarını seven ve sevilen, sevgisi sonsuz olan.',
+  hannan: 'Çok şefkatli ve yumuşak davranan.',
+  halik: 'Yoktan var eden, tüm varlıkları yaratıp şekillendiren.',
+  kadim: 'Başlangıcı olmayan, ezelden beri var olan.',
+  karib: 'Kullarına çok yakın olan, dualara icabet eden.',
+  kefil: 'Kullarını himayesine alan, her şeyin sorumluluğunu üstlenen.',
+  kafi: 'Her kuluna kâfi gelen, ihtiyaçlarını karşılayan.',
+  kahir: 'Her şey üzerinde üstün kudret sahibi, dilediğini hükmü altına alan.',
+  mahmud: 'Her daim övülen, her türlü hamde layık olan.',
+  maruf: 'Kulları tarafından iyiliğiyle bilinen, tanınan.',
+  mennan: 'Nimetleri karşılıksız ve bol bol veren.',
+  mubin: 'Her şeyi apaçık ortaya koyan, açıklığı ile kendini gösteren.',
+  mucemmil: 'Güzellikleri ortaya çıkaran, varlıkları güzelleştiren.',
+  mufaddil: 'Lütuf ve fazilet ihsan eden, üstünlük bahşeden.',
+  muhsin: 'Yaptığı her işi en güzel şekilde yapan, ihsan eden.',
+  mukim: 'Varlıkları yerli yerinde tutan, dilediğini ikamet ettiren.',
+  munim: 'Tüm nimetleri veren, ihsanı bitmeyen.',
+  mustean: 'Yardımına güvenilen, kendisinden yardım istenen.',
+  mutahhir: 'Günahları ve gönülleri arındıran, temizleyen.',
+  muteal: 'Yücelerde yüce olan, hiçbir şeyin erişemediği.',
+  muzhir: 'Gizli olanı ortaya çıkaran, aşikâr kılan.',
+  muafi: 'Afiyet veren, sıhhate kavuşturan.',
+  subhan: 'Her türlü noksanlıktan münezzeh, pak olan.',
+  sultan: 'Mutlak kudret ve hâkimiyet sahibi.',
+  sadikalvadi: 'Vaadinde asla yanılmayan, sözünde duran.',
+  satir: 'Ayıpları örten, kusurları gizleyen.',
+  tahir: 'Zâtı ve fiilleriyle tertemiz olan.',
+  vitr: 'Tek olan, dengi bulunmayan.',
+  safi: 'Şifa veren, hastalara sağlık bahşeden.',
+  sahid: 'Her şeye şahit olan, hiçbir şeyi gözden kaçırmayan.',
+  allam: 'Her şeyi en ince ayrıntısına kadar bilen.',
+  rahmanu: 'Dünyada tüm varlıklara merhamet eden.',
+  rahimu: 'Ahirette müminlere özel rahmette bulunan.',
+  kerim: 'Cömertliği sonsuz olan, ikramı bol.',
+  kerimu: 'Cömertliği sonsuz olan, ikramı bol.',
+  mucib: 'Dualara icabet eden, karşılık veren.',
+  mucibu: 'Dualara icabet eden, karşılık veren.',
+  muheymin: 'Her şeyi gözetleyip koruyan.',
+  muktedir: 'Her istediğini gerçekleştiren mutlak kudret sahibi.',
+  rahman: 'Dünyada bütün yaratılmışlara merhamet eden.',
+  rahim: 'Ahirette müminlere sonsuz rahmet eden.',
+  rauf: 'Kullarına karşı çok şefkatli olan.',
+  samed: 'Her varlığın muhtaç olduğu, fakat kendisi hiçbir şeye muhtaç olmayan.',
+  samedu: 'Her varlığın muhtaç olduğu, fakat kendisi hiçbir şeye muhtaç olmayan.',
+  selam: 'Kullarını selamete çıkaran, her türlü kusurdan uzak.',
+  semi: 'Her şeyi işiten.',
+  settar: 'Ayıp ve kusurları örten.',
+  tevvab: 'Tövbeleri çokça kabul eden.',
+  vedud: 'Kullarını seven ve sevilen.',
+  vehhab: 'Karşılıksız hibeler veren.',
+  varis: 'Her şey yok olduktan sonra baki kalan.',
+  zahir: 'Varlığı apaçık olan.',
+  ahir: 'Sonu olmayan, ebedi.',
+  gaffar: 'Günahları çokça örten.',
+  gafur: 'Bağışlaması bol olan.',
+  ganiyy: 'Hiçbir şeye muhtaç olmayan.',
+  sehid: 'Her şeye şahit olan.',
+  alim: 'Her şeyi bilen.',
+  azim: 'Azameti sonsuz olan.',
+};
+
 const state = {
   counters: loadCounters(),
   theme: loadTheme(),
@@ -28,6 +110,11 @@ const state = {
   duaState: null,
   duas: [],
   fontScale: loadFontScale(),
+  names: null,
+  tooltipElement: null,
+  activeTooltipTarget: null,
+  nameLookup: new Map(),
+  missingNames: new Set(),
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -112,6 +199,8 @@ async function loadPrayerContent(prayerId) {
   try {
     const markdown = await fetchText(config.markdown);
     renderTesbihat(content, markdown);
+    await ensureNamesLoaded();
+    annotateNames(content);
     setupCounters(content, prayerId);
 
     if (config.supportsDua) {
@@ -132,6 +221,7 @@ async function loadPrayerContent(prayerId) {
 }
 
 function renderTesbihat(container, markdownText) {
+  hideNameTooltip();
   const normalised = markdownText
     .replace(/\r\n/g, '\n')
     .replace(/\*\*\(counter:(\d+)\)\*\*/g, '(counter:$1)')
@@ -630,6 +720,305 @@ function attachFontScaleControls(appRoot) {
   });
 
   updateButtons();
+}
+
+async function ensureNamesLoaded() {
+  if (state.names) {
+    return;
+  }
+  try {
+    const response = await fetch('names.json');
+    if (!response.ok) {
+      throw new Error('İsimler alınamadı.');
+    }
+    const data = await response.json();
+    state.names = data;
+    state.nameLookup = new Map();
+    state.missingNames = new Set();
+
+    Object.entries(data).forEach(([raw, meaning]) => {
+      registerNameVariants(raw, meaning);
+    });
+
+    Object.entries(MANUAL_NAME_MEANINGS).forEach(([canonical, meaning]) => {
+      if (!state.nameLookup.has(canonical)) {
+        state.nameLookup.set(canonical, meaning);
+      }
+    });
+  } catch (error) {
+    console.warn('Esma bilgileri yüklenemedi.', error);
+    state.names = null;
+    state.nameLookup = new Map();
+  }
+}
+
+function annotateNames(container) {
+  if (!state.names || !state.nameLookup) {
+    return;
+  }
+
+  const textNodes = collectNameEligibleNodes(container);
+  textNodes.forEach((node) => wrapNamesInTextNode(node));
+}
+
+function wrapNamesInTextNode(node) {
+  const text = node.nodeValue;
+  if (!text) {
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  const regex = /([\p{L}’'`\-]+)/gu;
+  let lastIndex = 0;
+  let matched = false;
+
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const word = match[1];
+    const start = match.index;
+    const end = regex.lastIndex;
+
+    if (start > lastIndex) {
+      fragment.appendChild(document.createTextNode(text.slice(lastIndex, start)));
+    }
+
+    const cleaned = word.trim();
+    const meaning = resolveNameMeaning(cleaned);
+
+    if (meaning) {
+      fragment.appendChild(createNameBadge(cleaned, meaning));
+      matched = true;
+    } else {
+      fragment.appendChild(document.createTextNode(word));
+    }
+
+    lastIndex = end;
+  }
+
+  if (lastIndex < text.length) {
+    fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
+  }
+
+  if (matched) {
+    node.parentNode.replaceChild(fragment, node);
+  }
+}
+
+function createNameBadge(name, meaning) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'name-badge';
+  button.textContent = name;
+  button.dataset.name = name;
+  button.dataset.meaning = meaning;
+  button.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    toggleNameTooltip(button);
+  });
+  button.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      toggleNameTooltip(button);
+    }
+  });
+
+  return button;
+}
+
+function collectNameEligibleNodes(root) {
+  const nodes = [];
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let activeSection = null;
+  let current;
+
+  while ((current = walker.nextNode())) {
+    if (!current.nodeValue || !current.nodeValue.trim()) {
+      continue;
+    }
+
+    const value = current.nodeValue;
+    const parent = current.parentElement;
+    if (parent && (parent.closest('.counter-card') || parent.closest('.name-badge') || parent.tagName === 'SCRIPT' || parent.tagName === 'STYLE')) {
+      continue;
+    }
+
+    // check if current node contains any section start markers
+    for (const section of NAME_SECTIONS) {
+      if (value.includes(section.start)) {
+        activeSection = section;
+        break;
+      }
+    }
+
+    if (activeSection && !NAME_SECTIONS.some((section) => value.includes(section.start))) {
+      nodes.push(current);
+    }
+
+    if (activeSection && value.includes(activeSection.end)) {
+      activeSection = null;
+    }
+  }
+
+  return nodes;
+}
+
+function registerNameVariants(rawName, meaning) {
+  const variants = new Set([rawName]);
+
+  const withoutArticle = rawName.replace(/^(?:El|Er|Es|Et|Ed|Ez|En|Eş|Az|Â|Mâlik-ül|Zü’l|Zül|Zu’l)\s*-?/i, '');
+  variants.add(withoutArticle);
+  variants.add(withoutArticle.replace(/[-’'`]/g, ' '));
+  variants.add(withoutArticle.replace(/[-’'`\s]/g, ''));
+
+  variants.forEach((variant) => {
+    const canonical = canonicalizeName(variant);
+    if (!canonical) {
+      return;
+    }
+    if (!state.nameLookup.has(canonical)) {
+      state.nameLookup.set(canonical, meaning);
+    }
+    if (!canonical.endsWith('u') && !state.nameLookup.has(`${canonical}u`)) {
+      state.nameLookup.set(`${canonical}u`, meaning);
+    }
+  });
+}
+
+function canonicalizeName(value) {
+  if (!value) {
+    return '';
+  }
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z]/g, '');
+}
+
+function resolveNameMeaning(name) {
+  if (!name) {
+    return null;
+  }
+  const canonical = canonicalizeName(name);
+  if (!canonical) {
+    return null;
+  }
+
+  const direct = state.nameLookup.get(canonical);
+  if (direct) {
+    return direct;
+  }
+
+  const trimmed = canonical.replace(/(u|a|i|e)$/i, '');
+  if (trimmed) {
+    const trimmedMeaning = state.nameLookup.get(trimmed);
+    if (trimmedMeaning) {
+      return trimmedMeaning;
+    }
+    const manual = MANUAL_NAME_MEANINGS[trimmed];
+    if (manual) {
+      state.nameLookup.set(trimmed, manual);
+      return manual;
+    }
+  }
+
+  const manualDirect = MANUAL_NAME_MEANINGS[canonical];
+  if (manualDirect) {
+    state.nameLookup.set(canonical, manualDirect);
+    return manualDirect;
+  }
+
+  if (!state.missingNames.has(name)) {
+    state.missingNames.add(name);
+  }
+  return null;
+}
+
+function toggleNameTooltip(button) {
+  if (state.activeTooltipTarget === button) {
+    hideNameTooltip();
+    return;
+  }
+
+  const name = button.dataset.name;
+  const meaning = button.dataset.meaning;
+  if (!meaning) {
+    return;
+  }
+  showNameTooltip(button, name, meaning);
+}
+
+function getNameTooltipElement() {
+  if (state.tooltipElement) {
+    return state.tooltipElement;
+  }
+
+  const tooltip = document.createElement('div');
+  tooltip.className = 'name-tooltip';
+  tooltip.hidden = true;
+  const host = document.querySelector('.app') || document.body;
+  host.appendChild(tooltip);
+
+  document.addEventListener('pointerdown', (event) => {
+    if (!state.tooltipElement || state.tooltipElement.hidden) {
+      return;
+    }
+    if (state.activeTooltipTarget && (state.activeTooltipTarget === event.target || state.activeTooltipTarget.contains(event.target))) {
+      return;
+    }
+    if (event.target === tooltip || tooltip.contains(event.target)) {
+      return;
+    }
+    hideNameTooltip();
+  });
+
+  window.addEventListener('scroll', hideNameTooltip, true);
+  window.addEventListener('resize', hideNameTooltip);
+
+  state.tooltipElement = tooltip;
+  return tooltip;
+}
+
+function showNameTooltip(button, name, meaning) {
+  const tooltip = getNameTooltipElement();
+  tooltip.innerHTML = `<strong>${name}</strong><p>${meaning}</p>`;
+  tooltip.hidden = false;
+  tooltip.classList.add('is-visible');
+  tooltip.style.visibility = 'hidden';
+  tooltip.style.left = '0px';
+  tooltip.style.top = '0px';
+
+  const rect = button.getBoundingClientRect();
+  const tooltipRect = tooltip.getBoundingClientRect();
+  const margin = 12;
+
+  let top = rect.top - tooltipRect.height - margin;
+  if (top < 12) {
+    top = rect.bottom + margin;
+  }
+
+  let left = rect.left + (rect.width - tooltipRect.width) / 2;
+  const maxLeft = window.innerWidth - tooltipRect.width - 12;
+  if (left < 12) {
+    left = 12;
+  } else if (left > maxLeft) {
+    left = maxLeft;
+  }
+
+  tooltip.style.top = `${top}px`;
+  tooltip.style.left = `${left}px`;
+  tooltip.style.visibility = 'visible';
+  state.activeTooltipTarget = button;
+}
+
+function hideNameTooltip() {
+  if (!state.tooltipElement) {
+    return;
+  }
+  state.tooltipElement.hidden = true;
+  state.tooltipElement.classList.remove('is-visible');
+  state.activeTooltipTarget = null;
 }
 
 function initDuaSourceSelector(appRoot) {
