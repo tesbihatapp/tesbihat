@@ -332,6 +332,7 @@ button {
   justify-content: center;
   box-shadow: 0 16px 30px rgba(31, 84, 255, 0.25);
   transition: transform var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
+  touch-action: manipulation;
 }
 
 .counter-display:hover {
@@ -359,6 +360,7 @@ button {
   color: var(--accent-color);
   font-weight: 600;
   transition: background-color var(--transition-fast), transform var(--transition-fast);
+  touch-action: manipulation;
 }
 
 .counter-reset:hover {
