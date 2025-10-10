@@ -75,6 +75,9 @@ function setActivePrayer(prayerId) {
     const isActive = tab.dataset.prayer === prayerId;
     tab.classList.toggle('is-active', isActive);
     tab.setAttribute('aria-selected', String(isActive));
+    if (isActive && typeof tab.scrollIntoView === 'function') {
+      tab.scrollIntoView({ block: 'nearest', inline: 'center' });
+    }
   });
 
   state.currentPrayer = config ? prayerId : 'sabah';
