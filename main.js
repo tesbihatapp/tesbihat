@@ -3,6 +3,7 @@ const DUA_STORAGE_KEY = 'tesbihat:duas';
 const THEME_STORAGE_KEY = 'tesbihat:theme';
 const DUA_SOURCE_STORAGE_KEY = 'tesbihat:dua-source';
 const FONT_SCALE_STORAGE_KEY = 'tesbihat:font-scale';
+const HAPTIC_STORAGE_KEY = 'tesbihat:haptic';
 const FONT_SCALE_MIN = 0.85;
 const FONT_SCALE_MAX = 1.3;
 const FONT_SCALE_STEP = 0.05;
@@ -28,6 +29,7 @@ const state = {
   duaState: null,
   duas: [],
   fontScale: loadFontScale(),
+  hapticsEnabled: loadHapticSetting(),
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -43,6 +45,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initPrayerTabs(appRoot);
   initDuaSourceSelector(appRoot);
   attachFontScaleControls(appRoot);
+  initHapticToggle(appRoot);
   attachSettingsActions(appRoot);
   registerServiceWorker();
 
@@ -201,6 +204,7 @@ function setupCounters(container, prayerId) {
       state.counters[counterKey] = currentValue;
       saveCounters();
       updateCounterUI(wrapper, currentValue, target);
+      triggerHaptic();
     });
 
     resetButton.addEventListener('click', () => {
@@ -208,6 +212,7 @@ function setupCounters(container, prayerId) {
       state.counters[counterKey] = currentValue;
       saveCounters();
       updateCounterUI(wrapper, currentValue, target);
+      triggerHaptic();
     });
   });
 }
@@ -632,6 +637,29 @@ function attachFontScaleControls(appRoot) {
   updateButtons();
 }
 
+function initHapticToggle(appRoot) {
+  const toggleButton = appRoot.querySelector('[data-haptic-toggle]');
+  if (!toggleButton) {
+    return;
+  }
+
+  const refresh = () => {
+    toggleButton.setAttribute('aria-pressed', state.hapticsEnabled ? 'true' : 'false');
+    toggleButton.textContent = state.hapticsEnabled ? 'Açık' : 'Kapalı';
+  };
+
+  toggleButton.addEventListener('click', () => {
+    state.hapticsEnabled = !state.hapticsEnabled;
+    localStorage.setItem(HAPTIC_STORAGE_KEY, state.hapticsEnabled ? '1' : '0');
+    refresh();
+    if (state.hapticsEnabled) {
+      triggerHaptic();
+    }
+  });
+
+  refresh();
+}
+
 function initDuaSourceSelector(appRoot) {
   const select = appRoot.querySelector('#dua-source');
   if (!select) {
@@ -719,9 +747,26 @@ function loadFontScale() {
   return 1;
 }
 
+function loadHapticSetting() {
+  const stored = localStorage.getItem(HAPTIC_STORAGE_KEY);
+  if (stored === null) {
+    return true;
+  }
+  return stored === '1';
+}
+
 function applyFontScale(scale) {
   const clamped = clamp(scale, FONT_SCALE_MIN, FONT_SCALE_MAX);
   document.documentElement.style.setProperty('--font-scale', clamped);
+}
+
+function triggerHaptic() {
+  if (!state.hapticsEnabled) {
+    return;
+  }
+  if (navigator.vibrate) {
+    navigator.vibrate(15);
+  }
 }
 
 function clamp(value, min, max) {
