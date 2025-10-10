@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tesbihat-cache-v2';
+const CACHE_NAME = 'tesbihat-cache-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -11,6 +11,7 @@ const ASSETS = [
   './AksamTesbihat.md',
   './YatsiTesbihat.md',
   './BirKirikDilekce.txt',
+  './names.json',
   './icons/icon-180.png',
   './icons/icon-192.png',
   './icons/icon-512.png'
