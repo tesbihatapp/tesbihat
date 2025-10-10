@@ -2,6 +2,10 @@ const COUNTER_STORAGE_KEY = 'tesbihat:counters';
 const DUA_STORAGE_KEY = 'tesbihat:duas';
 const THEME_STORAGE_KEY = 'tesbihat:theme';
 const DUA_SOURCE_STORAGE_KEY = 'tesbihat:dua-source';
+const FONT_SCALE_STORAGE_KEY = 'tesbihat:font-scale';
+const FONT_SCALE_MIN = 0.85;
+const FONT_SCALE_MAX = 1.3;
+const FONT_SCALE_STEP = 0.05;
 
 const PRAYER_CONFIG = {
   sabah: { label: 'Sabah', markdown: 'sabah.md', supportsDua: true },
@@ -23,6 +27,7 @@ const state = {
   duaCache: {},
   duaState: null,
   duas: [],
+  fontScale: loadFontScale(),
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -32,10 +37,12 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   applyTheme(appRoot, state.theme);
+  applyFontScale(state.fontScale);
   attachThemeToggle(appRoot);
   attachSettingsToggle(appRoot);
   initPrayerTabs(appRoot);
   initDuaSourceSelector(appRoot);
+  attachFontScaleControls(appRoot);
   attachSettingsActions(appRoot);
 
   setActivePrayer(state.currentPrayer);
@@ -580,6 +587,47 @@ function attachSettingsToggle(appRoot) {
   });
 }
 
+function attachFontScaleControls(appRoot) {
+  const decreaseButton = appRoot.querySelector('.text-decrease');
+  const increaseButton = appRoot.querySelector('.text-increase');
+
+  if (!decreaseButton || !increaseButton) {
+    return;
+  }
+
+  const updateButtons = () => {
+    decreaseButton.disabled = state.fontScale <= FONT_SCALE_MIN + 0.001;
+    increaseButton.disabled = state.fontScale >= FONT_SCALE_MAX - 0.001;
+  };
+
+  const commitScale = (nextScale) => {
+    state.fontScale = nextScale;
+    applyFontScale(nextScale);
+    localStorage.setItem(FONT_SCALE_STORAGE_KEY, String(nextScale));
+    updateButtons();
+  };
+
+  decreaseButton.addEventListener('click', () => {
+    const next = clamp(
+      Number.parseFloat((state.fontScale - FONT_SCALE_STEP).toFixed(2)),
+      FONT_SCALE_MIN,
+      FONT_SCALE_MAX,
+    );
+    commitScale(next);
+  });
+
+  increaseButton.addEventListener('click', () => {
+    const next = clamp(
+      Number.parseFloat((state.fontScale + FONT_SCALE_STEP).toFixed(2)),
+      FONT_SCALE_MIN,
+      FONT_SCALE_MAX,
+    );
+    commitScale(next);
+  });
+
+  updateButtons();
+}
+
 function initDuaSourceSelector(appRoot) {
   const select = appRoot.querySelector('#dua-source');
   if (!select) {
@@ -644,4 +692,24 @@ function loadSelectedDuaSource() {
     return stored;
   }
   return 'birkirikdilekce';
+}
+
+function loadFontScale() {
+  const stored = localStorage.getItem(FONT_SCALE_STORAGE_KEY);
+  if (stored) {
+    const parsed = Number.parseFloat(stored);
+    if (!Number.isNaN(parsed)) {
+      return clamp(parsed, FONT_SCALE_MIN, FONT_SCALE_MAX);
+    }
+  }
+  return 1;
+}
+
+function applyFontScale(scale) {
+  const clamped = clamp(scale, FONT_SCALE_MIN, FONT_SCALE_MAX);
+  document.documentElement.style.setProperty('--font-scale', clamped);
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
 }
