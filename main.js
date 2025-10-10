@@ -193,22 +193,86 @@ function setupCounters(container, prayerId) {
     let currentValue = savedValue;
     updateCounterUI(wrapper, currentValue, target);
 
-    displayButton.addEventListener('click', () => {
+    const applyValue = (nextValue) => {
+      currentValue = nextValue;
+      state.counters[counterKey] = currentValue;
+      saveCounters();
+      updateCounterUI(wrapper, currentValue, target);
+    };
+
+    const increment = () => {
       if (target > 0 && currentValue >= target) {
         return;
       }
-      currentValue += 1;
-      state.counters[counterKey] = currentValue;
-      saveCounters();
-      updateCounterUI(wrapper, currentValue, target);
-    });
+      applyValue(currentValue + 1);
+    };
 
-    resetButton.addEventListener('click', () => {
-      currentValue = 0;
-      state.counters[counterKey] = currentValue;
-      saveCounters();
-      updateCounterUI(wrapper, currentValue, target);
-    });
+    const reset = () => {
+      applyValue(0);
+    };
+
+    const bindTapInteraction = (element, action) => {
+      let handledByTouch = false;
+      let touchStartX = null;
+      let touchStartY = null;
+
+      const clearTouchState = () => {
+        touchStartX = null;
+        touchStartY = null;
+      };
+
+      element.addEventListener('click', () => {
+        if (handledByTouch) {
+          handledByTouch = false;
+          return;
+        }
+        action();
+      });
+
+      element.addEventListener('touchstart', (event) => {
+        if (event.touches.length === 1) {
+          touchStartX = event.touches[0].clientX;
+          touchStartY = event.touches[0].clientY;
+          handledByTouch = false;
+        }
+      }, { passive: true });
+
+      element.addEventListener('touchmove', (event) => {
+        if (touchStartX === null || touchStartY === null) {
+          return;
+        }
+        const touch = event.touches[0];
+        const deltaX = Math.abs(touch.clientX - touchStartX);
+        const deltaY = Math.abs(touch.clientY - touchStartY);
+        if (deltaX < 10 && deltaY < 10) {
+          event.preventDefault();
+        } else {
+          clearTouchState();
+        }
+      }, { passive: false });
+
+      element.addEventListener('touchend', (event) => {
+        if (touchStartX === null || touchStartY === null) {
+          return;
+        }
+        const touch = event.changedTouches[0];
+        const deltaX = Math.abs(touch.clientX - touchStartX);
+        const deltaY = Math.abs(touch.clientY - touchStartY);
+        if (deltaX < 10 && deltaY < 10) {
+          event.preventDefault();
+          handledByTouch = true;
+          action();
+        }
+        clearTouchState();
+      }, { passive: false });
+
+      element.addEventListener('touchcancel', () => {
+        clearTouchState();
+      });
+    };
+
+    bindTapInteraction(displayButton, increment);
+    bindTapInteraction(resetButton, reset);
   });
 }
 
