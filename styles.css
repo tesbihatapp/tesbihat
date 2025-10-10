@@ -48,29 +48,29 @@ button {
 }
 
 .app[data-theme='light'] {
-  --surface-color: #f5f8ff;
+  --surface-color: #f9f6ee;
   --surface-elevated: #ffffff;
-  --surface-hero: linear-gradient(160deg, #1f54ff 0%, #4c7bfe 100%);
-  --surface-muted: #e8efff;
-  --text-color: #111321;
-  --muted-text: #535b7a;
-  --accent-color: #1f54ff;
-  --accent-contrast: #ffffff;
-  --border-color: rgba(15, 34, 98, 0.12);
-  --shadow-soft: 0 10px 35px rgba(31, 84, 255, 0.12);
+  --surface-hero: linear-gradient(160deg, #76885b 0%, #556b2f 100%);
+  --surface-muted: #f1ecd9;
+  --text-color: #2b2b2b;
+  --muted-text: #5f5a4c;
+  --accent-color: #556b2f;
+  --accent-contrast: #f9f6ee;
+  --border-color: rgba(85, 107, 47, 0.18);
+  --shadow-soft: 0 10px 35px rgba(71, 88, 39, 0.12);
 }
 
 .app[data-theme='dark'] {
-  --surface-color: #090b12;
-  --surface-elevated: #15192b;
-  --surface-hero: linear-gradient(160deg, #12256b 0%, #1d3a92 100%);
-  --surface-muted: #0f1323;
-  --text-color: #f6f7ff;
-  --muted-text: #9ea8cf;
-  --accent-color: #5f8bff;
-  --accent-contrast: #0b0e1b;
-  --border-color: rgba(132, 149, 208, 0.18);
-  --shadow-soft: 0 14px 40px rgba(9, 25, 75, 0.45);
+  --surface-color: #1c1c1a;
+  --surface-elevated: #232320;
+  --surface-hero: linear-gradient(160deg, #3a3b32 0%, #2c2d25 100%);
+  --surface-muted: #181816;
+  --text-color: #edece9;
+  --muted-text: #b7b6ac;
+  --accent-color: #c2cbaa;
+  --accent-contrast: #1c1c1a;
+  --border-color: rgba(194, 203, 170, 0.22);
+  --shadow-soft: 0 14px 40px rgba(10, 11, 8, 0.5);
 }
 
 /* Hero */
@@ -355,14 +355,14 @@ button {
 .counter-reset {
   padding: 0.4rem 0.9rem;
   border-radius: 999px;
-  background: rgba(94, 114, 255, 0.14);
+  background: rgba(133, 150, 104, 0.18);
   color: var(--accent-color);
   font-weight: 600;
   transition: background-color var(--transition-fast), transform var(--transition-fast);
 }
 
 .counter-reset:hover {
-  background: rgba(94, 114, 255, 0.24);
+  background: rgba(133, 150, 104, 0.28);
   transform: translateY(-1px);
 }
 
@@ -409,7 +409,7 @@ button {
 }
 
 .dua-body {
-  background: rgba(95, 123, 255, 0.07);
+  background: rgba(133, 150, 104, 0.14);
   border-radius: 14px;
   padding: 0.85rem 1rem;
   line-height: 1.7;
@@ -437,13 +437,13 @@ button {
 }
 
 .button-pill.secondary {
-  background: rgba(95, 123, 255, 0.14);
+  background: rgba(133, 150, 104, 0.18);
   color: var(--accent-color);
   box-shadow: none;
 }
 
 .button-pill.secondary:hover {
-  background: rgba(95, 123, 255, 0.2);
+  background: rgba(133, 150, 104, 0.28);
 }
 
 @media (min-width: 768px) {
