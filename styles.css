@@ -220,32 +220,6 @@ button {
   color: var(--text-color);
 }
 
-.settings-switch {
-  margin-top: 0.6rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.settings-toggle-button {
-  padding: 0.4rem 0.95rem;
-  border-radius: 999px;
-  font-weight: 600;
-  background: rgba(133, 150, 104, 0.18);
-  color: var(--accent-color);
-  transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
-}
-
-.settings-toggle-button[aria-pressed='true'] {
-  background: var(--accent-color);
-  color: var(--accent-contrast);
-}
-
-.settings-toggle-button:hover {
-  transform: translateY(-1px);
-}
-
 .settings-actions {
   margin-top: 1rem;
   display: flex;
