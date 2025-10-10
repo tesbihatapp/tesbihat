@@ -5,10 +5,10 @@ const DUA_SOURCE_STORAGE_KEY = 'tesbihat:dua-source';
 
 const PRAYER_CONFIG = {
   sabah: { label: 'Sabah', markdown: 'sabah.md', supportsDua: true },
-  ogle: { label: 'Öğle', markdown: null, supportsDua: false },
-  ikindi: { label: 'İkindi', markdown: null, supportsDua: false },
-  aksam: { label: 'Akşam', markdown: null, supportsDua: false },
-  yatsi: { label: 'Yatsı', markdown: null, supportsDua: false },
+  ogle: { label: 'Öğle', markdown: 'OgleTesbihat.md', supportsDua: true },
+  ikindi: { label: 'İkindi', markdown: 'IkindiTesbihat.md', supportsDua: true },
+  aksam: { label: 'Akşam', markdown: 'AksamTesbihat.md', supportsDua: true },
+  yatsi: { label: 'Yatsı', markdown: 'YatsiTesbihat.md', supportsDua: true },
 };
 
 const DUA_SOURCES = {
@@ -36,6 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
   attachSettingsToggle(appRoot);
   initPrayerTabs(appRoot);
   initDuaSourceSelector(appRoot);
+  attachSettingsActions(appRoot);
 
   setActivePrayer(state.currentPrayer);
 });
@@ -599,6 +600,40 @@ function initDuaSourceSelector(appRoot) {
 
     if (state.currentPrayer === 'sabah') {
       await loadPrayerContent('sabah');
+    }
+  });
+}
+
+function attachSettingsActions(appRoot) {
+  const resetButton = appRoot.querySelector('[data-reset-dua]');
+  if (!resetButton) {
+    return;
+  }
+
+  resetButton.addEventListener('click', async () => {
+    if (resetButton.disabled) {
+      return;
+    }
+
+    const confirmed = window.confirm('Bir Kırık Dilekçe okuma ilerlemesini sıfırlamak istiyor musunuz?');
+    if (!confirmed) {
+      return;
+    }
+
+    resetButton.disabled = true;
+    try {
+      const duas = await loadDuaSourceData(state.duaSource);
+      state.duas = duas;
+      resetDuaState(duas.length, state.duaSource, 0);
+
+      const currentConfig = PRAYER_CONFIG[state.currentPrayer];
+      if (currentConfig && currentConfig.supportsDua) {
+        await loadPrayerContent(state.currentPrayer);
+      }
+    } catch (error) {
+      console.error('Dua ilerlemesi sıfırlanamadı.', error);
+    } finally {
+      resetButton.disabled = false;
     }
   });
 }

@@ -195,6 +195,44 @@ button {
   color: var(--text-color);
 }
 
+.settings-actions {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.settings-action-button {
+  align-self: flex-start;
+  padding: 0.55rem 1.2rem;
+  border-radius: 12px;
+  background: rgba(95, 123, 255, 0.16);
+  color: var(--accent-color);
+  font-weight: 600;
+  transition: background-color var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.settings-action-button:hover {
+  background: rgba(95, 123, 255, 0.26);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-soft);
+}
+
+.settings-action-button:active {
+  transform: translateY(0);
+}
+
+.settings-action-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.settings-hint {
+  color: var(--muted-text);
+}
+
 .content {
   max-width: 760px;
   margin: 0 auto;
