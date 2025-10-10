@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sabah Tesbihatı</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.1/marked.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js" defer></script>
+    <script src="main.js" defer></script>
+  </head>
+  <body>
+    <div class="app" data-theme="light">
+      <header class="hero">
+        <div class="hero__top">
+          <h1 class="hero__title">Tesbihat</h1>
+          <div class="hero__actions">
+            <button class="icon-button theme-toggle" aria-label="Temayı değiştir">
+              <span class="theme-toggle__icon" aria-hidden="true">☀️</span>
+            </button>
+            <button class="icon-button settings-toggle" aria-label="Ayarları aç">
+              <span aria-hidden="true">⚙️</span>
+            </button>
+          </div>
+        </div>
+        <p class="hero__subtitle">Seçmek istediğiniz vakti aşağıdan işaretleyin.</p>
+        <div class="prayer-tabs" role="tablist" aria-label="Tesbihat vakitleri">
+          <button class="prayer-tab is-active" role="tab" aria-selected="true" data-prayer="sabah">Sabah</button>
+          <button class="prayer-tab" role="tab" aria-selected="false" data-prayer="ogle">Öğle</button>
+          <button class="prayer-tab" role="tab" aria-selected="false" data-prayer="ikindi">İkindi</button>
+          <button class="prayer-tab" role="tab" aria-selected="false" data-prayer="aksam">Akşam</button>
+          <button class="prayer-tab" role="tab" aria-selected="false" data-prayer="yatsi">Yatsı</button>
+        </div>
+      </header>
+      <main class="main">
+        <aside class="settings-panel card" data-settings hidden>
+          <h2>Ayarlar</h2>
+          <p>Dua kaynağı seçimleri yakında burada olacak.</p>
+          <div class="settings-group">
+            <label class="settings-label" for="dua-source">Dua kaynağı</label>
+            <select id="dua-source" name="dua-source" disabled>
+              <option value="birkirikdilekce" selected>Bir Kırık Dilekçe (varsayılan)</option>
+            </select>
+          </div>
+        </aside>
+        <section id="content" class="content" aria-live="polite">
+          <div class="loading">İçerik yükleniyor…</div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
