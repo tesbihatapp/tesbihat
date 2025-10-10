@@ -30,6 +30,7 @@ const state = {
   duas: [],
   fontScale: loadFontScale(),
   hapticsEnabled: loadHapticSetting(),
+  hapticSupported: detectHapticSupport(),
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -643,6 +644,13 @@ function initHapticToggle(appRoot) {
     return;
   }
 
+  if (!state.hapticSupported) {
+    toggleButton.disabled = true;
+    toggleButton.setAttribute('aria-pressed', 'false');
+    toggleButton.textContent = 'Desteklenmiyor';
+    return;
+  }
+
   const refresh = () => {
     toggleButton.setAttribute('aria-pressed', state.hapticsEnabled ? 'true' : 'false');
     toggleButton.textContent = state.hapticsEnabled ? 'Açık' : 'Kapalı';
@@ -755,17 +763,38 @@ function loadHapticSetting() {
   return stored === '1';
 }
 
+function detectHapticSupport() {
+  if (typeof navigator === 'undefined') {
+    return false;
+  }
+  if (typeof navigator.vibrate === 'function') {
+    return true;
+  }
+  if (navigator.haptics && typeof navigator.haptics.impactOccurred === 'function') {
+    return true;
+  }
+  return false;
+}
+
 function applyFontScale(scale) {
   const clamped = clamp(scale, FONT_SCALE_MIN, FONT_SCALE_MAX);
   document.documentElement.style.setProperty('--font-scale', clamped);
 }
 
 function triggerHaptic() {
-  if (!state.hapticsEnabled) {
+  if (!state.hapticsEnabled || !state.hapticSupported) {
     return;
   }
-  if (navigator.vibrate) {
-    navigator.vibrate(15);
+  try {
+    if (navigator.vibrate) {
+      navigator.vibrate([25]);
+      return;
+    }
+    if (navigator.haptics && typeof navigator.haptics.impactOccurred === 'function') {
+      navigator.haptics.impactOccurred('light');
+    }
+  } catch (error) {
+    console.warn('Titreşim uygulanamadı.', error);
   }
 }
 
