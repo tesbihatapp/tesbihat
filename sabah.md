@@ -58,17 +58,17 @@ Allâhumme ecirnâ min belâi’n-nisâ’
 
 Allâhumme ecirnâ min fitneti’n-nisâ’
 
-Allâhumme ecirnâ min azâbi’l-kabr
+Allâhumme ecirnâ min a<u>z</u>âbi’l-kabr
 
-Allâhumme ecirnâ min azâbi yevmi'l-kıyâmeh
+Allâhumme ecirnâ min a<u>z</u>âbi yevmi'l-kıyâmeh
 
-Allâhumme ecirnâ min azâbi cehennem
+Allâhumme ecirnâ min a<u>z</u>âbi cehennem
 
-Allâhumme ecirnâ min azâbi kahrik
+Allâhumme ecirnâ min a<u>z</u>âbi kahrik
 
 Allâhumme ecirnâ min nâri kahrik
 
-Allâhumme ecirnâ min azâbi’l-kabri ve’n-nîrân
+Allâhumme ecirnâ min a<u>z</u>âbi’l-kabri ve’n-nîrân
 
 Allâhumme ecirnâ mine’r-riyâ’i ve’s-sum’ati ve’l-ucubi ve’l-fahr
 
@@ -139,7 +139,7 @@ Bismillâhirrahmânirrahîm
 
 Subhâneke Yâ **Allah** te’âleyte Yâ **Rahmân**
 
-ecirnâ mine’n-nâr bi ‘afvike Yâ Rahmân
+ecirnâ mine’n-nâr bi ‘afvike Yâ **Rahmân**
 
 Subhâneke Yâ **Rahîm** te’âleyte Yâ **Kerîm**
 
@@ -314,4 +314,3 @@ Huve’llâhullezî lâ ilâhe illâhû, el-Meliku’l-Kuddûsu’s-Selâmu’l-
 Huve’llâhu’l-Hâliku’l-Bâriu’l-Musavviru lehu’l-esmâul husnâ, yusebbihu lehû mâ fi’s-semâvâti ve’l-ard, ve huve’l-‘Azîzu’l-Hakîm.
 
 Sadekallahu’l-‘Azîm.
-

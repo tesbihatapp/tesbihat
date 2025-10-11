@@ -30,6 +30,8 @@ const DUA_SOURCES = {
   birkirikdilekce: { label: 'Bir Kırık Dilekçe', path: 'BirKirikDilekce.txt' },
 };
 
+const SINGLE_TOOLTIP_NAMES = new Set(['allah', 'rahman']);
+
 const MANUAL_NAME_MEANINGS = {
   allah: 'Bütün güzel isimlerin sahibi olan yüce Allah\'ın özel ismidir.',
   atuf: 'Kullarına şefkat ve merhametle muamele eden, çok yumuşak davranan.',
@@ -822,10 +824,22 @@ function annotateNames(container) {
   }
 
   const textNodes = collectNameEligibleNodes(container);
-  textNodes.forEach((node) => wrapNamesInTextNode(node));
+  const encounteredBySection = new Map();
+  textNodes.forEach(({ node, sectionKey }) => {
+    if (!sectionKey) {
+      wrapNamesInTextNode(node, null);
+      return;
+    }
+    let set = encounteredBySection.get(sectionKey);
+    if (!set) {
+      set = new Map();
+      encounteredBySection.set(sectionKey, set);
+    }
+    wrapNamesInTextNode(node, set);
+  });
 }
 
-function wrapNamesInTextNode(node) {
+function wrapNamesInTextNode(node, encountered) {
   const text = node.nodeValue;
   if (!text) {
     return;
@@ -847,7 +861,8 @@ function wrapNamesInTextNode(node) {
     }
 
     const cleaned = word.trim();
-    const meaning = resolveNameMeaning(cleaned);
+    const canonical = canonicalizeName(cleaned);
+    const meaning = resolveNameMeaning(cleaned, canonical, encountered);
 
     if (meaning) {
       fragment.appendChild(createNameBadge(cleaned, meaning));
@@ -916,7 +931,7 @@ function collectNameEligibleNodes(root) {
     }
 
     if (activeSection && !NAME_SECTIONS.some((section) => value.includes(section.start))) {
-      nodes.push(current);
+      nodes.push({ node: current, sectionKey: activeSection.start });
     }
 
     if (activeSection && value.includes(activeSection.end)) {
@@ -960,17 +975,24 @@ function canonicalizeName(value) {
     .replace(/[^a-z]/g, '');
 }
 
-function resolveNameMeaning(name) {
+function resolveNameMeaning(name, canonicalOverride, encountered) {
   if (!name) {
     return null;
   }
-  const canonical = canonicalizeName(name);
+  const canonical = canonicalOverride || canonicalizeName(name);
   if (!canonical) {
+    return null;
+  }
+
+  if (encountered && SINGLE_TOOLTIP_NAMES.has(canonical) && encountered.get(canonical)) {
     return null;
   }
 
   const direct = state.nameLookup.get(canonical);
   if (direct) {
+    if (encountered && SINGLE_TOOLTIP_NAMES.has(canonical)) {
+      encountered.set(canonical, true);
+    }
     return direct;
   }
 
@@ -978,11 +1000,17 @@ function resolveNameMeaning(name) {
   if (trimmed) {
     const trimmedMeaning = state.nameLookup.get(trimmed);
     if (trimmedMeaning) {
+      if (encountered && SINGLE_TOOLTIP_NAMES.has(trimmed)) {
+        encountered.set(trimmed, true);
+      }
       return trimmedMeaning;
     }
     const manual = MANUAL_NAME_MEANINGS[trimmed];
     if (manual) {
       state.nameLookup.set(trimmed, manual);
+      if (encountered && SINGLE_TOOLTIP_NAMES.has(trimmed)) {
+        encountered.set(trimmed, true);
+      }
       return manual;
     }
   }
@@ -990,6 +1018,9 @@ function resolveNameMeaning(name) {
   const manualDirect = MANUAL_NAME_MEANINGS[canonical];
   if (manualDirect) {
     state.nameLookup.set(canonical, manualDirect);
+    if (encountered && SINGLE_TOOLTIP_NAMES.has(canonical)) {
+      encountered.set(canonical, true);
+    }
     return manualDirect;
   }
 
