@@ -7,6 +7,8 @@ const FONT_SCALE_MIN = 0.85;
 const FONT_SCALE_MAX = 1.3;
 const FONT_SCALE_STEP = 0.05;
 const IMPORTANCE_SOURCE_PATH = 'TesbihatinOnemi.txt';
+const INSTALL_PROMPT_STORAGE_KEY = 'tesbihat:install-dismissed';
+const INSTALL_PROMPT_DELAY = 24 * 60 * 60 * 1000;
 
 const NAME_SECTIONS = [
   {
@@ -340,6 +342,8 @@ const state = {
   missingNames: new Set(),
   importanceMessages: null,
   activeImportanceMessage: null,
+  installPromptEvent: null,
+  installPromptVisible: false,
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -357,6 +361,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initDuaSourceSelector(appRoot);
   attachFontScaleControls(appRoot);
   attachSettingsActions(appRoot);
+  registerInstallPromptHandlers();
   registerServiceWorker();
 
   setActivePrayer(state.currentPrayer);
@@ -585,18 +590,18 @@ async function renderHomePage(container) {
       layout.append(highlight);
     }
 
+    const installBanner = buildInstallBanner();
+    if (installBanner) {
+      layout.append(installBanner);
+    }
+
     if (!highlight) {
-      const fallback = document.createElement('article');
-      fallback.className = 'card home-fallback';
-      fallback.innerHTML = `
-        <h2>Hoş geldiniz</h2>
-        <p>Günün tesbihatlarına yukarıdaki sekmelerden ulaşabilirsiniz.</p>
-      `;
-      layout.append(fallback);
+      layout.append(buildHomeFallbackCard());
     }
 
     container.innerHTML = '';
     container.append(layout);
+    updateHomeInstallBanner();
   } catch (error) {
     console.error('Anasayfa hazırlanırken hata oluştu.', error);
     container.innerHTML = `
@@ -622,6 +627,111 @@ async function createHomeHighlightCard() {
   } catch (error) {
     console.warn('Tesbihat önemi mesajları hazırlanırken hata oluştu.', error);
     return null;
+  }
+}
+
+function buildHomeFallbackCard() {
+  const card = document.createElement('article');
+  card.className = 'card home-fallback';
+  card.innerHTML = `
+    <h2>Hoş geldiniz</h2>
+    <p>Günün tesbihatlarına yukarıdaki sekmelerden ulaşabilirsiniz.</p>
+  `;
+  return card;
+}
+
+function buildInstallBanner() {
+  if (isStandaloneMode()) {
+    return null;
+  }
+
+  const isIos = isIosSafari();
+  const hasDeferredPrompt = Boolean(state.installPromptEvent);
+  const shouldShowIosHint = isIos && !shouldSuppressInstallPrompt();
+
+  if (!state.installPromptVisible && !shouldShowIosHint) {
+    return null;
+  }
+
+  const card = document.createElement('article');
+  card.className = 'card install-banner';
+
+  const title = document.createElement('h2');
+  title.className = 'install-banner__title';
+  title.textContent = 'Ana ekrana ekle';
+
+  const description = document.createElement('p');
+  description.className = 'install-banner__description';
+
+  if (isIos) {
+    description.innerHTML = `Paylaş simgesine dokunup <strong>Ana Ekrana Ekle</strong> seçeneğini kullanın.`;
+  } else {
+    description.textContent = 'Uygulamayı ana ekranınıza ekleyerek daha hızlı erişin.';
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'install-banner__actions';
+
+  if (!isIos && hasDeferredPrompt) {
+    const installButton = document.createElement('button');
+    installButton.type = 'button';
+    installButton.className = 'button-pill';
+    installButton.textContent = 'Şimdi ekle';
+    installButton.addEventListener('click', async () => {
+      try {
+        const promptEvent = state.installPromptEvent;
+        if (!promptEvent) {
+          return;
+        }
+        promptEvent.prompt();
+        const result = await promptEvent.userChoice;
+        if (result.outcome === 'accepted') {
+          dismissInstallPrompt({ installed: true });
+        } else {
+          dismissInstallPrompt();
+        }
+      } catch (error) {
+        console.error('Ana ekrana ekleme başarısız oldu.', error);
+        dismissInstallPrompt();
+      }
+    });
+    actions.append(installButton);
+  } else if (isIos) {
+    const hint = document.createElement('div');
+    hint.className = 'install-banner__hint';
+    hint.innerHTML = 'Paylaş → <strong>Ana Ekrana Ekle</strong>';
+    actions.append(hint);
+  }
+
+  const dismissButton = document.createElement('button');
+  dismissButton.type = 'button';
+  dismissButton.className = 'button-pill secondary';
+  dismissButton.textContent = 'Daha sonra';
+  dismissButton.addEventListener('click', () => dismissInstallPrompt());
+
+  actions.append(dismissButton);
+
+  card.append(title, description, actions);
+  return card;
+}
+
+function updateHomeInstallBanner() {
+  const homeContainer = document.querySelector('.home-screen');
+  if (!homeContainer) {
+    return;
+  }
+  const existingBanner = homeContainer.querySelector('.install-banner');
+  if (existingBanner) {
+    existingBanner.remove();
+  }
+  const banner = buildInstallBanner();
+  if (banner) {
+    const fallbackNode = homeContainer.querySelector('.home-fallback');
+    if (fallbackNode) {
+      fallbackNode.before(banner);
+    } else {
+      homeContainer.append(banner);
+    }
   }
 }
 
@@ -1217,6 +1327,56 @@ function attachSettingsToggle(appRoot) {
       panel.setAttribute('hidden', '');
     }
   });
+}
+
+function registerInstallPromptHandlers() {
+  if (isStandaloneMode()) {
+    return;
+  }
+
+  window.addEventListener('beforeinstallprompt', (event) => {
+    event.preventDefault();
+    state.installPromptEvent = event;
+    if (!shouldSuppressInstallPrompt()) {
+      state.installPromptVisible = true;
+      updateHomeInstallBanner();
+    }
+  });
+
+  window.addEventListener('appinstalled', () => {
+    state.installPromptEvent = null;
+    state.installPromptVisible = false;
+    localStorage.setItem(INSTALL_PROMPT_STORAGE_KEY, JSON.stringify({ dismissedAt: Date.now(), installed: true }));
+    updateHomeInstallBanner();
+  });
+}
+
+function isStandaloneMode() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+
+function isIosSafari() {
+  const ua = window.navigator.userAgent.toLowerCase();
+  return /iphone|ipad|ipod/.test(ua) && /safari/.test(ua);
+}
+
+function shouldSuppressInstallPrompt() {
+  try {
+    const record = JSON.parse(localStorage.getItem(INSTALL_PROMPT_STORAGE_KEY));
+    if (!record || !record.dismissedAt) {
+      return false;
+    }
+    return Date.now() - Number(record.dismissedAt) < INSTALL_PROMPT_DELAY;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function dismissInstallPrompt(record = {}) {
+  localStorage.setItem(INSTALL_PROMPT_STORAGE_KEY, JSON.stringify({ dismissedAt: Date.now(), ...record }));
+  state.installPromptVisible = false;
+  state.installPromptEvent = null;
+  updateHomeInstallBanner();
 }
 
 function attachHomeNavigation(appRoot) {
