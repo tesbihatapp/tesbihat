@@ -139,7 +139,7 @@ Bismillâhirrahmânirrahîm
 
 Subhâneke Yâ **Allah** te’âleyte Yâ **Rahmân**
 
-ecirnâ mine’n-nâr bi ‘afvike Yâ **Rahmân**
+ecirnâ mine’n-nâr bi ‘afvike Yâ Rahmân
 
 Subhâneke Yâ **Rahîm** te’âleyte Yâ **Kerîm**
 
