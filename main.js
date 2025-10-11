@@ -34,6 +34,12 @@ const PRAYER_CONFIG = {
         markdown: 'AksamYatsiZikirleri.md',
         disableNameAnnotations: true,
       },
+      {
+        id: 'gunluk-zikirler',
+        label: 'Günlük Zikirler',
+        markdown: 'GunlukZikirler.md',
+        disableNameAnnotations: true,
+      },
     ],
   },
 };
