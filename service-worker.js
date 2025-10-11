@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tesbihat-cache-v6';
+const CACHE_NAME = 'tesbihat-cache-v7';
 const ASSETS = [
   './',
   './index.html',
