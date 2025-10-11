@@ -24,6 +24,18 @@ const PRAYER_CONFIG = {
   ikindi: { label: 'İkindi', markdown: 'IkindiTesbihat.md', supportsDua: true },
   aksam: { label: 'Akşam', markdown: 'AksamTesbihat.md', supportsDua: true },
   yatsi: { label: 'Yatsı', markdown: 'YatsiTesbihat.md', supportsDua: true },
+  dualar: {
+    label: 'Dualar',
+    description: 'Dua içeriklerini görmek için seçim yapın.',
+    items: [
+      {
+        id: 'aksam-yatsi-arasi-zikirler',
+        label: 'Bediüzzaman hz.lerinin Akşam Yatsı Arası Okuduğu Zikirler',
+        markdown: 'AksamYatsiZikirleri.md',
+        disableNameAnnotations: true,
+      },
+    ],
+  },
 };
 
 const DUA_SOURCES = {
@@ -382,8 +394,14 @@ async function loadPrayerContent(prayerId) {
   }
 
   const config = PRAYER_CONFIG[prayerId];
+
   if (!config) {
     content.innerHTML = `<div class="card">Seçtiğiniz vakit bulunamadı.</div>`;
+    return;
+  }
+
+  if (Array.isArray(config.items)) {
+    renderPrayerCollection(content, prayerId, config);
     return;
   }
 
@@ -419,6 +437,120 @@ async function loadPrayerContent(prayerId) {
         <h2>${config.label} Tesbihatı</h2>
         <p>İçerik yüklenirken bir sorun yaşandı. Lütfen dosyayı yerel bir sunucu üzerinden açmayı deneyin (ör. <code>npx serve</code>).</p>
       </article>
+    `;
+  }
+}
+
+function renderPrayerCollection(container, prayerId, config) {
+  hideNameTooltip();
+  container.innerHTML = '';
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'collection-wrapper';
+
+  const introCard = document.createElement('article');
+  introCard.className = 'card collection-intro';
+
+  const heading = document.createElement('h2');
+  heading.className = 'collection-intro__title';
+  heading.textContent = config.label;
+
+  introCard.append(heading);
+
+  if (config.description) {
+    const description = document.createElement('p');
+    description.className = 'collection-intro__description';
+    description.textContent = config.description;
+    introCard.append(description);
+  }
+
+  wrapper.append(introCard);
+
+  const list = document.createElement('div');
+  list.className = 'collection-list';
+
+  if (Array.isArray(config.items) && config.items.length > 0) {
+    config.items.forEach((item) => {
+      const itemCard = document.createElement('article');
+      itemCard.className = 'card collection-card';
+
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'collection-card__button';
+      button.addEventListener('click', () => {
+        renderPrayerCollectionItem(container, prayerId, config, item);
+      });
+
+      const title = document.createElement('span');
+      title.className = 'collection-card__title';
+      title.textContent = item.label;
+
+      const icon = document.createElement('span');
+      icon.className = 'collection-card__icon';
+      icon.setAttribute('aria-hidden', 'true');
+      icon.textContent = '>';
+
+      button.append(title, icon);
+      itemCard.append(button);
+      list.append(itemCard);
+    });
+  } else {
+    const emptyCard = document.createElement('article');
+    emptyCard.className = 'card collection-empty';
+    emptyCard.textContent = 'Bu bölüm için henüz içerik eklenmedi.';
+    list.append(emptyCard);
+  }
+
+  wrapper.append(list);
+  container.append(wrapper);
+}
+
+async function renderPrayerCollectionItem(container, prayerId, config, item) {
+  hideNameTooltip();
+  container.innerHTML = '';
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'collection-detail';
+
+  const headerCard = document.createElement('article');
+  headerCard.className = 'card collection-detail__header';
+
+  const backButton = document.createElement('button');
+  backButton.type = 'button';
+  backButton.className = 'collection-back button-pill secondary';
+  backButton.textContent = 'Dualar listesine dön';
+  backButton.addEventListener('click', () => {
+    renderPrayerCollection(container, prayerId, config);
+  });
+
+  const title = document.createElement('h2');
+  title.className = 'collection-detail__title';
+  title.textContent = item.label;
+
+  headerCard.append(backButton, title);
+
+  wrapper.append(headerCard);
+
+  const contentCard = document.createElement('article');
+  contentCard.className = 'card collection-detail__content';
+  contentCard.innerHTML = `<div class="loading">İçerik yükleniyor…</div>`;
+
+  wrapper.append(contentCard);
+
+  container.append(wrapper);
+
+  try {
+    const markdown = await fetchText(item.markdown);
+    renderTesbihat(contentCard, markdown);
+    if (!item.disableNameAnnotations) {
+      await ensureNamesLoaded();
+      annotateNames(contentCard);
+    }
+    setupCounters(contentCard, `${prayerId}-${item.id || 'item'}`);
+  } catch (error) {
+    console.error('Dua içeriği yüklenirken hata oluştu.', error);
+    contentCard.innerHTML = `
+      <p>İçerik yüklenirken bir hata oluştu. Lütfen daha sonra tekrar deneyin.</p>
     `;
   }
 }
