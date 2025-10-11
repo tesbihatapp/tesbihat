@@ -34,6 +34,7 @@ const BASE_THEME_TOKENS = {
     'muted-text': '#5f5a4c',
     'accent-color': '#556b2f',
     'accent-contrast': '#f9f6ee',
+    'meta-theme-color': '#556b2f',
     'border-color': 'rgba(85, 107, 47, 0.18)',
     'shadow-soft': '0 10px 35px rgba(71, 88, 39, 0.12)',
     'shadow-soft-hover': '0 18px 45px rgba(71, 88, 39, 0.18)',
@@ -80,6 +81,7 @@ const BASE_THEME_TOKENS = {
     'muted-text': '#b7b6ac',
     'accent-color': '#c2cbaa',
     'accent-contrast': '#1c1c1a',
+    'meta-theme-color': '#232320',
     'border-color': 'rgba(194, 203, 170, 0.22)',
     'shadow-soft': '0 14px 40px rgba(10, 11, 8, 0.5)',
     'shadow-soft-hover': '0 18px 50px rgba(10, 11, 8, 0.6)',
@@ -134,6 +136,7 @@ const THEME_PRESETS = [
       accent: '#556b2f',
       accentContrast: '#f9f6ee',
       borderColor: 'rgba(85, 107, 47, 0.18)',
+      themeColor: '#556b2f',
     },
     dark: {
       surfaceColor: '#1c1c1a',
@@ -148,6 +151,7 @@ const THEME_PRESETS = [
       tooltipBg: 'rgba(28, 29, 24, 0.96)',
       tooltipText: '#edece9',
       tooltipBorder: 'rgba(194, 203, 170, 0.28)',
+      themeColor: '#232320',
     },
   },
   {
@@ -165,6 +169,7 @@ const THEME_PRESETS = [
       accentContrast: '#fffaf7',
       borderColor: 'rgba(241, 120, 124, 0.22)',
       heroSubtitleColor: 'rgba(255, 255, 255, 0.9)',
+      themeColor: '#f1787c',
     },
     dark: {
       surfaceColor: '#2c1f24',
@@ -177,6 +182,7 @@ const THEME_PRESETS = [
       accentContrast: '#1f1113',
       borderColor: 'rgba(243, 156, 143, 0.28)',
       heroSubtitleColor: 'rgba(255, 255, 255, 0.82)',
+      themeColor: '#35252a',
     },
   },
   {
@@ -193,6 +199,7 @@ const THEME_PRESETS = [
       accent: '#2f88d1',
       accentContrast: '#f1f9ff',
       borderColor: 'rgba(47, 136, 209, 0.22)',
+      themeColor: '#2f88d1',
     },
     dark: {
       surfaceColor: '#10202c',
@@ -204,6 +211,7 @@ const THEME_PRESETS = [
       accent: '#4fbffc',
       accentContrast: '#07111b',
       borderColor: 'rgba(79, 191, 252, 0.28)',
+      themeColor: '#152a3a',
     },
   },
   {
@@ -220,6 +228,7 @@ const THEME_PRESETS = [
       accent: '#c2853b',
       accentContrast: '#fffbf1',
       borderColor: 'rgba(194, 133, 59, 0.22)',
+      themeColor: '#c2853b',
     },
     dark: {
       surfaceColor: '#251c12',
@@ -231,6 +240,7 @@ const THEME_PRESETS = [
       accent: '#d79b4f',
       accentContrast: '#120c05',
       borderColor: 'rgba(215, 155, 79, 0.3)',
+      themeColor: '#312317',
     },
   },
   {
@@ -247,6 +257,7 @@ const THEME_PRESETS = [
       accent: '#cf6ec7',
       accentContrast: '#fff6fb',
       borderColor: 'rgba(207, 110, 199, 0.22)',
+      themeColor: '#cf6ec7',
     },
     dark: {
       surfaceColor: '#281627',
@@ -258,6 +269,7 @@ const THEME_PRESETS = [
       accent: '#f19fd6',
       accentContrast: '#1b0b1a',
       borderColor: 'rgba(241, 159, 214, 0.28)',
+      themeColor: '#331b32',
     },
   },
   {
@@ -274,6 +286,7 @@ const THEME_PRESETS = [
       accent: '#4f9e6b',
       accentContrast: '#f5fbf4',
       borderColor: 'rgba(79, 158, 107, 0.22)',
+      themeColor: '#4f9e6b',
     },
     dark: {
       surfaceColor: '#132018',
@@ -285,6 +298,7 @@ const THEME_PRESETS = [
       accent: '#7bd195',
       accentContrast: '#0a140f',
       borderColor: 'rgba(123, 209, 149, 0.3)',
+      themeColor: '#1d2d22',
     },
   },
   {
@@ -301,6 +315,7 @@ const THEME_PRESETS = [
       accent: '#e7603b',
       accentContrast: '#fff7f2',
       borderColor: 'rgba(231, 96, 59, 0.22)',
+      themeColor: '#e7603b',
     },
     dark: {
       surfaceColor: '#2b1b16',
@@ -312,6 +327,7 @@ const THEME_PRESETS = [
       accent: '#ff9369',
       accentContrast: '#180d0a',
       borderColor: 'rgba(255, 147, 105, 0.3)',
+      themeColor: '#361f19',
     },
   },
   {
@@ -328,6 +344,7 @@ const THEME_PRESETS = [
       accent: '#7d93c7',
       accentContrast: '#f7f9ff',
       borderColor: 'rgba(125, 147, 199, 0.22)',
+      themeColor: '#7d93c7',
     },
     dark: {
       surfaceColor: '#161b26',
@@ -339,6 +356,7 @@ const THEME_PRESETS = [
       accent: '#8ea4e8',
       accentContrast: '#0c111f',
       borderColor: 'rgba(142, 164, 232, 0.28)',
+      themeColor: '#1f2633',
     },
   },
   {
@@ -355,6 +373,7 @@ const THEME_PRESETS = [
       accent: '#4cc7c0',
       accentContrast: '#f6fffe',
       borderColor: 'rgba(76, 199, 192, 0.22)',
+      themeColor: '#4cc7c0',
     },
     dark: {
       surfaceColor: '#101825',
@@ -366,6 +385,7 @@ const THEME_PRESETS = [
       accent: '#70f1e9',
       accentContrast: '#071117',
       borderColor: 'rgba(112, 241, 233, 0.35)',
+      themeColor: '#172231',
     },
   },
   {
@@ -382,6 +402,7 @@ const THEME_PRESETS = [
       accent: '#3f66d4',
       accentContrast: '#f2f5ff',
       borderColor: 'rgba(63, 102, 212, 0.22)',
+      themeColor: '#3f66d4',
     },
     dark: {
       surfaceColor: '#101527',
@@ -393,6 +414,7 @@ const THEME_PRESETS = [
       accent: '#6f9bff',
       accentContrast: '#090e1a',
       borderColor: 'rgba(111, 155, 255, 0.34)',
+      themeColor: '#182035',
     },
   },
 ];
@@ -498,6 +520,14 @@ function saveThemeSelection(selection) {
   } catch (error) {
     console.warn('Tema seçimi kaydedilemedi.', error);
   }
+}
+
+function updateMetaThemeColor(color) {
+  const metaTag = document.querySelector('meta[name="theme-color"]');
+  if (!metaTag || typeof color !== 'string' || !color.trim()) {
+    return;
+  }
+  metaTag.setAttribute('content', color);
 }
 
 const PRAYER_CONFIG = {
@@ -1818,6 +1848,7 @@ function applyTheme(appRoot, selection) {
     counterShadowComplete: 'counter-shadow-complete',
     counterCompleteBg: 'counter-complete-bg',
     counterCompleteText: 'counter-complete-text',
+    themeColor: 'meta-theme-color',
   };
 
   Object.entries(overrideMap).forEach(([configKey, cssVar]) => {
@@ -1914,6 +1945,15 @@ function applyTheme(appRoot, selection) {
       : 'rgba(255, 255, 255, 0.8)';
   }
 
+  if (!tokens['meta-theme-color']) {
+    if (normalized.mode === 'dark') {
+      const candidate = modeConfig.surfaceColor || tokens['surface-color'];
+      tokens['meta-theme-color'] = isValidHex(candidate) ? candidate : '#1c1c1a';
+    } else {
+      tokens['meta-theme-color'] = isValidHex(tokens['accent-color']) ? tokens['accent-color'] : '#556b2f';
+    }
+  }
+
   appRoot.dataset.theme = normalized.themeId;
   appRoot.dataset.mode = normalized.mode;
   document.documentElement.style.setProperty('color-scheme', normalized.mode);
@@ -1932,6 +1972,7 @@ function applyTheme(appRoot, selection) {
   state.themeSelection = normalized;
   saveThemeSelection(normalized);
   updateThemeSelectorUI(normalized.themeId);
+  updateMetaThemeColor(tokens['meta-theme-color']);
 }
 
 function attachThemeToggle(appRoot) {
