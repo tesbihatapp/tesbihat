@@ -573,6 +573,38 @@ button {
   font-size: 0.98rem;
 }
 
+.install-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  border: 1px dashed rgba(85, 107, 47, 0.38);
+  background: rgba(133, 150, 104, 0.12);
+}
+
+.install-banner__title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.install-banner__description {
+  margin: 0;
+  line-height: 1.6;
+  color: var(--muted-text);
+}
+
+.install-banner__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.install-banner__hint {
+  font-size: 0.95rem;
+  color: var(--text-color);
+}
+
 .collection-wrapper,
 .collection-detail {
   display: flex;
