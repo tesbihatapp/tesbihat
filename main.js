@@ -103,6 +103,206 @@ const MANUAL_NAME_MEANINGS = {
   azim: 'Azameti sonsuz olan.',
 };
 
+const MANUAL_NAME_KEYS = {
+  "allah": "Allah",
+  "errahman": "Er-Rahmân",
+  "errahmanu": "Er-Rahmân",
+  "errahim": "Er-Rahîm",
+  "errahimu": "Er-Rahîm",
+  "elmelik": "El-Melik",
+  "elmeliku": "El-Melik",
+  "elkuddus": "El-Kuddûs",
+  "elkuddusu": "El-Kuddûs",
+  "esselam": "Es-Selâm",
+  "esselamu": "Es-Selâm",
+  "elmumin": "El-Mü'min",
+  "elmuminu": "El-Mü'min",
+  "elmuheymin": "El-Müheymin",
+  "elmuheyminu": "El-Müheymin",
+  "elaziz": "El-Azîz",
+  "elazizu": "El-Azîz",
+  "elcebbar": "El-Cebbâr",
+  "elcebbaru": "El-Cebbâr",
+  "elmutekebbir": "El-Mütekebbir",
+  "elmutekebbiru": "El-Mütekebbir",
+  "elhalik": "El-Hâlık",
+  "elhaliku": "El-Hâlık",
+  "elbari": "El-Bâri",
+  "elbariu": "El-Bâri",
+  "elmusavvir": "El-Musavvir",
+  "elmusavviru": "El-Musavvir",
+  "elgaffar": "El-Gaffâr",
+  "elgaffaru": "El-Gaffâr",
+  "elkahhar": "El-Kahhâr",
+  "elkahharu": "El-Kahhâr",
+  "elvehhab": "El-Vehhâb",
+  "elvehhabu": "El-Vehhâb",
+  "errezzak": "Er-Rezzâk",
+  "errezzaku": "Er-Rezzâk",
+  "elfettah": "El-Fettâh",
+  "elfettahu": "El-Fettâh",
+  "elalim": "El-Alîm",
+  "elalimu": "El-Alîm",
+  "elkabid": "El-Kâbıd",
+  "elkabidu": "El-Kâbıd",
+  "elbasit": "El-Bâsıt",
+  "elbasitu": "El-Bâsıt",
+  "elhafid": "El-Hâfıd",
+  "elhafidu": "El-Hâfıd",
+  "errafi": "Er-Râfi",
+  "errafiu": "Er-Râfi",
+  "elmuiz": "El-Mu'ız",
+  "elmuizu": "El-Mu'ız",
+  "elmuzil": "El-Müzil",
+  "elmuzilu": "El-Müzil",
+  "essemi": "Es-Semi",
+  "essemiu": "Es-Semi",
+  "elbasir": "El-Basîr",
+  "elbasiru": "El-Basîr",
+  "elhakem": "El-Hakem",
+  "elhakemu": "El-Hakem",
+  "eladl": "El-Adl",
+  "eladlu": "El-Adl",
+  "ellatif": "El-Latîf",
+  "ellatifu": "El-Latîf",
+  "elhabir": "El-Habîr",
+  "elhabiru": "El-Habîr",
+  "elhalim": "El-Halîm",
+  "elhalimu": "El-Halîm",
+  "elazim": "El-Azîm",
+  "elazimu": "El-Azîm",
+  "elgafur": "El-Gafûr",
+  "elgafuru": "El-Gafûr",
+  "essekur": "Eş-Şekûr",
+  "essekuru": "Eş-Şekûr",
+  "elaliyy": "El-Aliyy",
+  "elaliyyu": "El-Aliyy",
+  "elkebir": "El-Kebîr",
+  "elkebiru": "El-Kebîr",
+  "elhafiz": "El-Hafîz",
+  "elhafizu": "El-Hafîz",
+  "elmukit": "El-Mukît",
+  "elmukitu": "El-Mukît",
+  "elhasib": "El-Hasîb",
+  "elhasibu": "El-Hasîb",
+  "elcelil": "El-Celîl",
+  "elcelilu": "El-Celîl",
+  "elkerim": "El-Kerîm",
+  "elkerimu": "El-Kerîm",
+  "errakib": "Er-Rakîb",
+  "errakibu": "Er-Rakîb",
+  "elmucib": "El-Mucîb",
+  "elmucibu": "El-Mucîb",
+  "elvasi": "El-Vâsi",
+  "elvasiu": "El-Vâsi",
+  "elhakim": "El-Hakîm",
+  "elhakimu": "El-Hakîm",
+  "elvedud": "El-Vedûd",
+  "elvedudu": "El-Vedûd",
+  "elmecid": "El-Mecîd",
+  "elmecidu": "El-Mecîd",
+  "elbais": "El-Bâis",
+  "elbaisu": "El-Bâis",
+  "essehid": "Eş-Şehîd",
+  "essehidu": "Eş-Şehîd",
+  "elhakk": "El-Hakk",
+  "elhakku": "El-Hakk",
+  "elvekil": "El-Vekîl",
+  "elvekilu": "El-Vekîl",
+  "elkaviyy": "El-Kaviyy",
+  "elkaviyyu": "El-Kaviyy",
+  "elmetin": "El-Metîn",
+  "elmetinu": "El-Metîn",
+  "elveliyy": "El-Veliyy",
+  "elveliyyu": "El-Veliyy",
+  "elhamid": "El-Hamîd",
+  "elhamidu": "El-Hamîd",
+  "elmuhsi": "El-Muhsî",
+  "elmuhsiu": "El-Muhsî",
+  "elmubdi": "El-Mübdi",
+  "elmubdiu": "El-Mübdi",
+  "elmuid": "El-Muîd",
+  "elmuidu": "El-Muîd",
+  "elmuhyi": "El-Muhyî",
+  "elmuhyiu": "El-Muhyî",
+  "elmumit": "El-Mümît",
+  "elmumitu": "El-Mümît",
+  "elhayy": "El-Hayy",
+  "elhayyu": "El-Hayy",
+  "elkayyum": "El-Kayyûm",
+  "elkayyumu": "El-Kayyûm",
+  "elvacid": "El-Vâcid",
+  "elvacidu": "El-Vâcid",
+  "elmacid": "El-Macîd",
+  "elmacidu": "El-Macîd",
+  "elvahid": "El-Vâhid",
+  "elvahidu": "El-Vâhid",
+  "essamed": "Es-Samed",
+  "essamedu": "Es-Samed",
+  "elkadir": "El-Kâdir",
+  "elkadiru": "El-Kâdir",
+  "elmuktedir": "El-Muktedir",
+  "elmuktediru": "El-Muktedir",
+  "elmukaddim": "El-Mukaddim",
+  "elmukaddimu": "El-Mukaddim",
+  "elmuahhir": "El-Muahhir",
+  "elmuahhiru": "El-Muahhir",
+  "elevvel": "El-Evvel",
+  "elevvelu": "El-Evvel",
+  "elahir": "El-Âhir",
+  "elahiru": "El-Âhir",
+  "elzahir": "El-Zâhir",
+  "elzahiru": "El-Zâhir",
+  "elbatin": "El-Bâtın",
+  "elbatinu": "El-Bâtın",
+  "elvali": "El-Vâlî",
+  "elvaliu": "El-Vâlî",
+  "elmuteali": "El-Müteâlî",
+  "elmutealiu": "El-Müteâlî",
+  "elberr": "El-Berr",
+  "elberru": "El-Berr",
+  "ettevvab": "Et-Tevvâb",
+  "ettevvabu": "Et-Tevvâb",
+  "elmuntekim": "El-Müntekim",
+  "elmuntekimu": "El-Müntekim",
+  "elafuvv": "El-Afüvv",
+  "elafuvvu": "El-Afüvv",
+  "errauf": "Er-Raûf",
+  "erraufu": "Er-Raûf",
+  "malikulmulk": "Mâlik-ül Mülk",
+  "malikulmulku": "Mâlik-ül Mülk",
+  "zulcelalivelikram": "Zül-Celâli vel ikrâm",
+  "zulcelalivelikramu": "Zül-Celâli vel ikrâm",
+  "elmuksit": "El-Muksit",
+  "elmuksitu": "El-Muksit",
+  "elcami": "El-Câmi",
+  "elcamiu": "El-Câmi",
+  "elganiyy": "El-Ganiyy",
+  "elganiyyu": "El-Ganiyy",
+  "elmugni": "El-Mugnî",
+  "elmugniu": "El-Mugnî",
+  "elmani": "El-Mâni",
+  "elmaniu": "El-Mâni",
+  "eddarr": "Ed-Dârr",
+  "eddarru": "Ed-Dârr",
+  "ennafi": "En-Nâfi",
+  "ennafiu": "En-Nâfi",
+  "ennur": "En-Nûr",
+  "ennuru": "En-Nûr",
+  "elhadi": "El-Hâdî",
+  "elhadiu": "El-Hâdî",
+  "elbedi": "El-Bedî",
+  "elbediu": "El-Bedî",
+  "elbaki": "El-Bâkî",
+  "elbakiu": "El-Bâkî",
+  "elvaris": "El-Vâris",
+  "elvarisu": "El-Vâris",
+  "erresid": "Er-Reşîd",
+  "erresidu": "Er-Reşîd",
+  "essabur": "Es-Sabûr",
+  "essaburu": "Es-Sabûr"
+};
+
 const state = {
   counters: loadCounters(),
   theme: loadTheme(),
@@ -116,6 +316,7 @@ const state = {
   tooltipElement: null,
   activeTooltipTarget: null,
   nameLookup: new Map(),
+  nameKeys: new Map(),
   missingNames: new Set(),
 };
 
@@ -800,6 +1001,7 @@ async function ensureNamesLoaded() {
     const data = await response.json();
     state.names = data;
     state.nameLookup = new Map();
+    state.nameKeys = new Map();
     state.missingNames = new Set();
 
     Object.entries(data).forEach(([raw, meaning]) => {
@@ -890,6 +1092,7 @@ function createNameBadge(name, meaning) {
   button.textContent = name;
   button.dataset.name = name;
   button.dataset.meaning = meaning;
+  button.dataset.lookupKey = findLookupKey(name);
   button.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -957,9 +1160,11 @@ function registerNameVariants(rawName, meaning) {
     }
     if (!state.nameLookup.has(canonical)) {
       state.nameLookup.set(canonical, meaning);
+      recordNameKey(canonical, rawName);
     }
     if (!canonical.endsWith('u') && !state.nameLookup.has(`${canonical}u`)) {
       state.nameLookup.set(`${canonical}u`, meaning);
+      recordNameKey(`${canonical}u`, rawName);
     }
   });
 }
@@ -973,6 +1178,63 @@ function canonicalizeName(value) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z]/g, '');
+}
+
+function recordNameKey(canonical, fallback) {
+  if (!canonical) {
+    return;
+  }
+  if (!state.nameKeys) {
+    state.nameKeys = new Map();
+  }
+  if (state.nameKeys.has(canonical)) {
+    return;
+  }
+  const manual = MANUAL_NAME_KEYS[canonical];
+  state.nameKeys.set(canonical, manual || fallback || canonical);
+}
+
+function findLookupKey(name) {
+  if (!name) {
+    return name;
+  }
+  const canonical = canonicalizeName(name);
+  if (!canonical) {
+    return name;
+  }
+  const fromMap = state.nameKeys?.get(canonical);
+  if (fromMap) {
+    return fromMap;
+  }
+
+  const manualDirect = MANUAL_NAME_KEYS[canonical];
+  if (manualDirect) {
+    recordNameKey(canonical, manualDirect);
+    return manualDirect;
+  }
+
+  const trimmed = canonical.replace(/(u|a|i|e)$/i, '');
+  if (trimmed) {
+    const trimmedKey = state.nameKeys?.get(trimmed);
+    if (trimmedKey) {
+      recordNameKey(canonical, trimmedKey);
+      return trimmedKey;
+    }
+    const manualTrimmed = MANUAL_NAME_KEYS[trimmed];
+    if (manualTrimmed) {
+      recordNameKey(canonical, manualTrimmed);
+      return manualTrimmed;
+    }
+  }
+
+  if (/u$/i.test(name)) {
+    const baseName = name.slice(0, -1);
+    const fallback = `El-${baseName}`;
+    recordNameKey(canonical, fallback);
+    return fallback;
+  }
+
+  return name;
 }
 
 function resolveNameMeaning(name, canonicalOverride, encountered) {
@@ -1077,7 +1339,8 @@ function getNameTooltipElement() {
 
 function showNameTooltip(button, name, meaning) {
   const tooltip = getNameTooltipElement();
-  tooltip.innerHTML = `<strong>${name}</strong><p>${meaning}</p>`;
+  const lookupKey = button.dataset.lookupKey || name;
+  tooltip.innerHTML = `<strong>${lookupKey}</strong><p>${meaning}</p>`;
   tooltip.hidden = false;
   tooltip.classList.add('is-visible');
   tooltip.style.visibility = 'hidden';
