@@ -524,10 +524,107 @@ function saveThemeSelection(selection) {
 
 function updateMetaThemeColor(color) {
   const metaTag = document.querySelector('meta[name="theme-color"]');
-  if (!metaTag || typeof color !== 'string' || !color.trim()) {
+  if (!metaTag || typeof color !== 'string') {
     return;
   }
-  metaTag.setAttribute('content', color);
+  const value = color.trim();
+  if (!value) {
+    return;
+  }
+
+  try {
+    if (metaTag.parentNode) {
+      const replacement = metaTag.cloneNode(true);
+      replacement.setAttribute('content', value);
+      metaTag.parentNode.replaceChild(replacement, metaTag);
+    } else {
+      metaTag.setAttribute('content', value);
+    }
+  } catch (error) {
+    metaTag.setAttribute('content', value);
+  }
+}
+
+function ensureBaseManifest() {
+  if (state.manifestPromise) {
+    return state.manifestPromise;
+  }
+
+  const link = document.querySelector('link[rel="manifest"]');
+  if (!link) {
+    state.manifestPromise = Promise.resolve(null);
+    return state.manifestPromise;
+  }
+
+  try {
+    const href = link.getAttribute('href');
+    if (!href) {
+      state.manifestPromise = Promise.resolve(null);
+      return state.manifestPromise;
+    }
+    const absolute = new URL(href, window.location.href).toString();
+    state.manifestPromise = fetch(absolute, { cache: 'no-store' })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Manifest okunamadı: ${absolute}`);
+        }
+        return response.json();
+      })
+      .then((json) => {
+        state.manifestBase = json;
+        return json;
+      })
+      .catch((error) => {
+        console.warn('Manifest yüklenemedi, dinamik güncelleme atlanacak.', error);
+        return null;
+      });
+    return state.manifestPromise;
+  } catch (error) {
+    console.warn('Manifest okunurken hata oluştu.', error);
+    state.manifestPromise = Promise.resolve(null);
+    return state.manifestPromise;
+  }
+}
+
+function updateManifestThemeColor(themeColor, backgroundColor) {
+  if (!isValidHex(themeColor)) {
+    return;
+  }
+
+  ensureBaseManifest().then((baseManifest) => {
+    if (!baseManifest) {
+      return;
+    }
+
+    const manifestLink = document.querySelector('link[rel="manifest"]');
+    if (!manifestLink) {
+      return;
+    }
+
+    const nextManifest = {
+      ...baseManifest,
+      theme_color: themeColor,
+      background_color: isValidHex(backgroundColor) ? backgroundColor : baseManifest.background_color,
+    };
+
+    try {
+      if (state.manifestBlobUrl) {
+        URL.revokeObjectURL(state.manifestBlobUrl);
+        state.manifestBlobUrl = null;
+      }
+    } catch (_error) {
+      // ignore
+    }
+
+    try {
+      const blob = new Blob([JSON.stringify(nextManifest)], { type: 'application/manifest+json' });
+      const objectUrl = URL.createObjectURL(blob);
+      manifestLink.setAttribute('href', objectUrl);
+      state.manifestBlobUrl = objectUrl;
+    } catch (error) {
+      console.warn('Manifest güncellenemedi.', error);
+    }
+  });
 }
 
 const PRAYER_CONFIG = {
@@ -854,6 +951,9 @@ const state = {
   installPromptEvent: null,
   installPromptVisible: false,
   themeOptionElements: new Map(),
+  manifestBase: null,
+  manifestBlobUrl: null,
+  manifestPromise: null,
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1973,6 +2073,7 @@ function applyTheme(appRoot, selection) {
   saveThemeSelection(normalized);
   updateThemeSelectorUI(normalized.themeId);
   updateMetaThemeColor(tokens['meta-theme-color']);
+  updateManifestThemeColor(tokens['meta-theme-color'], tokens['surface-color']);
 }
 
 function attachThemeToggle(appRoot) {
