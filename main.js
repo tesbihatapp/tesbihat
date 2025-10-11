@@ -21,6 +21,485 @@ const NAME_SECTIONS = [
   },
 ];
 
+const DEFAULT_THEME_ID = 'evergreen';
+const DEFAULT_THEME_MODE = 'light';
+
+const BASE_THEME_TOKENS = {
+  light: {
+    'surface-color': '#f9f6ee',
+    'surface-elevated': '#ffffff',
+    'surface-muted': '#f1ecd9',
+    'surface-hero': 'linear-gradient(160deg, #76885b 0%, #556b2f 100%)',
+    'text-color': '#2b2b2b',
+    'muted-text': '#5f5a4c',
+    'accent-color': '#556b2f',
+    'accent-contrast': '#f9f6ee',
+    'border-color': 'rgba(85, 107, 47, 0.18)',
+    'shadow-soft': '0 10px 35px rgba(71, 88, 39, 0.12)',
+    'shadow-soft-hover': '0 18px 45px rgba(71, 88, 39, 0.18)',
+    'card-shadow': '0 10px 32px rgba(24, 50, 115, 0.14)',
+    'card-shadow-hover': '0 18px 45px rgba(24, 50, 115, 0.18)',
+    'counter-shadow': '0 16px 30px rgba(31, 84, 255, 0.25)',
+    'counter-shadow-complete': '0 22px 48px rgba(40, 177, 120, 0.35)',
+    'counter-complete-bg': 'linear-gradient(145deg, #22c55e 0%, #16a34a 100%)',
+    'counter-complete-text': '#22c55e',
+    'tooltip-bg': 'rgba(255, 255, 255, 0.98)',
+    'tooltip-text': '#2b2b2b',
+    'tooltip-border': 'rgba(85, 107, 47, 0.2)',
+    'tooltip-shadow': '0 18px 40px rgba(24, 50, 115, 0.25)',
+    'name-badge-bg': 'rgba(133, 150, 104, 0.28)',
+    'name-badge-color': '#2b3b23',
+    'name-badge-hover-bg': 'rgba(133, 150, 104, 0.35)',
+    'surface-overlay': 'rgba(133, 150, 104, 0.14)',
+    'surface-overlay-strong': 'rgba(133, 150, 104, 0.2)',
+    'accent-soft-bg': 'rgba(133, 150, 104, 0.18)',
+    'accent-soft-hover': 'rgba(133, 150, 104, 0.28)',
+    'tab-active-bg': '#ffffff',
+    'tab-active-text': '#1b3ca6',
+    'tab-inactive-bg': 'rgba(255, 255, 255, 0.15)',
+    'tab-inactive-hover': 'rgba(255, 255, 255, 0.25)',
+    'tab-inactive-text': 'rgba(255, 255, 255, 0.8)',
+    'highlight-overlay': 'linear-gradient(140deg, rgba(85, 107, 47, 0.14) 0%, rgba(85, 107, 47, 0.05) 100%)',
+    'install-border': 'rgba(85, 107, 47, 0.38)',
+    'install-background': 'rgba(133, 150, 104, 0.12)',
+    'icon-button-bg': 'rgba(255, 255, 255, 0.18)',
+    'icon-button-hover': 'rgba(255, 255, 255, 0.28)',
+    'counter-reset-bg': 'rgba(133, 150, 104, 0.18)',
+    'counter-reset-hover': 'rgba(133, 150, 104, 0.28)',
+    'focus-outline': 'rgba(255, 255, 255, 0.85)',
+    'action-button-bg': 'rgba(95, 123, 255, 0.16)',
+    'action-button-hover': 'rgba(95, 123, 255, 0.26)',
+    'hero-subtitle-color': 'rgba(255, 255, 255, 0.8)',
+  },
+  dark: {
+    'surface-color': '#1c1c1a',
+    'surface-elevated': '#232320',
+    'surface-muted': '#181816',
+    'surface-hero': 'linear-gradient(160deg, #3a3b32 0%, #2c2d25 100%)',
+    'text-color': '#edece9',
+    'muted-text': '#b7b6ac',
+    'accent-color': '#c2cbaa',
+    'accent-contrast': '#1c1c1a',
+    'border-color': 'rgba(194, 203, 170, 0.22)',
+    'shadow-soft': '0 14px 40px rgba(10, 11, 8, 0.5)',
+    'shadow-soft-hover': '0 18px 50px rgba(10, 11, 8, 0.6)',
+    'card-shadow': '0 14px 35px rgba(2, 8, 20, 0.48)',
+    'card-shadow-hover': '0 20px 48px rgba(2, 8, 20, 0.58)',
+    'counter-shadow': '0 16px 30px rgba(0, 0, 0, 0.35)',
+    'counter-shadow-complete': '0 22px 48px rgba(26, 122, 89, 0.42)',
+    'counter-complete-bg': 'linear-gradient(145deg, #1fb975 0%, #158856 100%)',
+    'counter-complete-text': '#4ce9a0',
+    'tooltip-bg': 'rgba(28, 29, 24, 0.96)',
+    'tooltip-text': '#edece9',
+    'tooltip-border': 'rgba(194, 203, 170, 0.28)',
+    'tooltip-shadow': '0 18px 40px rgba(0, 0, 0, 0.55)',
+    'name-badge-bg': 'rgba(194, 203, 170, 0.28)',
+    'name-badge-color': '#1c1c1a',
+    'name-badge-hover-bg': 'rgba(194, 203, 170, 0.34)',
+    'surface-overlay': 'rgba(194, 203, 170, 0.1)',
+    'surface-overlay-strong': 'rgba(194, 203, 170, 0.16)',
+    'accent-soft-bg': 'rgba(194, 203, 170, 0.18)',
+    'accent-soft-hover': 'rgba(194, 203, 170, 0.28)',
+    'tab-active-bg': 'rgba(255, 255, 255, 0.18)',
+    'tab-active-text': '#0e1010',
+    'tab-inactive-bg': 'rgba(255, 255, 255, 0.08)',
+    'tab-inactive-hover': 'rgba(255, 255, 255, 0.14)',
+    'tab-inactive-text': 'rgba(255, 255, 255, 0.85)',
+    'highlight-overlay': 'linear-gradient(140deg, rgba(194, 203, 170, 0.18) 0%, rgba(194, 203, 170, 0.08) 100%)',
+    'install-border': 'rgba(194, 203, 170, 0.32)',
+    'install-background': 'rgba(194, 203, 170, 0.16)',
+    'icon-button-bg': 'rgba(255, 255, 255, 0.14)',
+    'icon-button-hover': 'rgba(255, 255, 255, 0.22)',
+    'counter-reset-bg': 'rgba(194, 203, 170, 0.2)',
+    'counter-reset-hover': 'rgba(194, 203, 170, 0.32)',
+    'focus-outline': 'rgba(255, 255, 255, 0.75)',
+    'action-button-bg': 'rgba(255, 255, 255, 0.12)',
+    'action-button-hover': 'rgba(255, 255, 255, 0.18)',
+    'hero-subtitle-color': 'rgba(255, 255, 255, 0.82)',
+  },
+};
+
+const THEME_PRESETS = [
+  {
+    id: 'evergreen',
+    label: 'Evergreen',
+    description: 'Doğanın sakin yeşilleri',
+    light: {
+      surfaceColor: '#f9f6ee',
+      surfaceElevated: '#ffffff',
+      surfaceMuted: '#f1ecd9',
+      heroGradient: 'linear-gradient(160deg, #76885b 0%, #556b2f 100%)',
+      textColor: '#2b2b2b',
+      mutedText: '#5f5a4c',
+      accent: '#556b2f',
+      accentContrast: '#f9f6ee',
+      borderColor: 'rgba(85, 107, 47, 0.18)',
+    },
+    dark: {
+      surfaceColor: '#1c1c1a',
+      surfaceElevated: '#232320',
+      surfaceMuted: '#181816',
+      heroGradient: 'linear-gradient(160deg, #3a3b32 0%, #2c2d25 100%)',
+      textColor: '#edece9',
+      mutedText: '#b7b6ac',
+      accent: '#c2cbaa',
+      accentContrast: '#1c1c1a',
+      borderColor: 'rgba(194, 203, 170, 0.22)',
+      tooltipBg: 'rgba(28, 29, 24, 0.96)',
+      tooltipText: '#edece9',
+      tooltipBorder: 'rgba(194, 203, 170, 0.28)',
+    },
+  },
+  {
+    id: 'sunrise',
+    label: 'Sunrise',
+    description: 'Sıcak gün doğumu',
+    light: {
+      surfaceColor: '#fff6ef',
+      surfaceElevated: '#ffffff',
+      surfaceMuted: '#fde4d6',
+      heroGradient: 'linear-gradient(160deg, #fbd0aa 0%, #f1787c 100%)',
+      textColor: '#43221f',
+      mutedText: '#84514c',
+      accent: '#f1787c',
+      accentContrast: '#fffaf7',
+      borderColor: 'rgba(241, 120, 124, 0.22)',
+      heroSubtitleColor: 'rgba(255, 255, 255, 0.9)',
+    },
+    dark: {
+      surfaceColor: '#2c1f24',
+      surfaceElevated: '#35252a',
+      surfaceMuted: '#23161a',
+      heroGradient: 'linear-gradient(160deg, #7f3138 0%, #b95455 100%)',
+      textColor: '#f9e1de',
+      mutedText: '#d59a93',
+      accent: '#f39c8f',
+      accentContrast: '#1f1113',
+      borderColor: 'rgba(243, 156, 143, 0.28)',
+      heroSubtitleColor: 'rgba(255, 255, 255, 0.82)',
+    },
+  },
+  {
+    id: 'ocean',
+    label: 'Ocean',
+    description: 'Serin deniz esintisi',
+    light: {
+      surfaceColor: '#edf6fb',
+      surfaceElevated: '#ffffff',
+      surfaceMuted: '#dceff7',
+      heroGradient: 'linear-gradient(160deg, #86d1ee 0%, #397ad1 100%)',
+      textColor: '#17324a',
+      mutedText: '#4b6d8a',
+      accent: '#2f88d1',
+      accentContrast: '#f1f9ff',
+      borderColor: 'rgba(47, 136, 209, 0.22)',
+    },
+    dark: {
+      surfaceColor: '#10202c',
+      surfaceElevated: '#152a3a',
+      surfaceMuted: '#0c1924',
+      heroGradient: 'linear-gradient(160deg, #1f4f7a 0%, #2f88c7 100%)',
+      textColor: '#dbefff',
+      mutedText: '#98c5df',
+      accent: '#4fbffc',
+      accentContrast: '#07111b',
+      borderColor: 'rgba(79, 191, 252, 0.28)',
+    },
+  },
+  {
+    id: 'desert',
+    label: 'Desert',
+    description: 'Gün batımı kum tonları',
+    light: {
+      surfaceColor: '#fff6e8',
+      surfaceElevated: '#ffffff',
+      surfaceMuted: '#f4e1c7',
+      heroGradient: 'linear-gradient(160deg, #e8c391 0%, #c4934b 100%)',
+      textColor: '#4d3923',
+      mutedText: '#83684a',
+      accent: '#c2853b',
+      accentContrast: '#fffbf1',
+      borderColor: 'rgba(194, 133, 59, 0.22)',
+    },
+    dark: {
+      surfaceColor: '#251c12',
+      surfaceElevated: '#312317',
+      surfaceMuted: '#1e140c',
+      heroGradient: 'linear-gradient(160deg, #7b5022 0%, #b98237 100%)',
+      textColor: '#f6e8d4',
+      mutedText: '#d1b48f',
+      accent: '#d79b4f',
+      accentContrast: '#120c05',
+      borderColor: 'rgba(215, 155, 79, 0.3)',
+    },
+  },
+  {
+    id: 'rose',
+    label: 'Rose',
+    description: 'Zarif gül pembesi',
+    light: {
+      surfaceColor: '#fef2f6',
+      surfaceElevated: '#ffffff',
+      surfaceMuted: '#f8dceb',
+      heroGradient: 'linear-gradient(160deg, #f4a6c5 0%, #cf6ec7 100%)',
+      textColor: '#431f3a',
+      mutedText: '#7d4d6a',
+      accent: '#cf6ec7',
+      accentContrast: '#fff6fb',
+      borderColor: 'rgba(207, 110, 199, 0.22)',
+    },
+    dark: {
+      surfaceColor: '#281627',
+      surfaceElevated: '#331b32',
+      surfaceMuted: '#1f1020',
+      heroGradient: 'linear-gradient(160deg, #7a3771 0%, #b65aa5 100%)',
+      textColor: '#fce5f5',
+      mutedText: '#d4a2c7',
+      accent: '#f19fd6',
+      accentContrast: '#1b0b1a',
+      borderColor: 'rgba(241, 159, 214, 0.28)',
+    },
+  },
+  {
+    id: 'orchard',
+    label: 'Orchard',
+    description: 'Canlı bahçe tonları',
+    light: {
+      surfaceColor: '#f3f7f2',
+      surfaceElevated: '#ffffff',
+      surfaceMuted: '#e0f0e2',
+      heroGradient: 'linear-gradient(160deg, #9ad593 0%, #4f9e6b 100%)',
+      textColor: '#23402e',
+      mutedText: '#4e6d51',
+      accent: '#4f9e6b',
+      accentContrast: '#f5fbf4',
+      borderColor: 'rgba(79, 158, 107, 0.22)',
+    },
+    dark: {
+      surfaceColor: '#132018',
+      surfaceElevated: '#1d2d22',
+      surfaceMuted: '#0e1a13',
+      heroGradient: 'linear-gradient(160deg, #2f6d47 0%, #4ca777 100%)',
+      textColor: '#ddeecc',
+      mutedText: '#93c4a7',
+      accent: '#7bd195',
+      accentContrast: '#0a140f',
+      borderColor: 'rgba(123, 209, 149, 0.3)',
+    },
+  },
+  {
+    id: 'ember',
+    label: 'Ember',
+    description: 'Sıcak ateş tonları',
+    light: {
+      surfaceColor: '#fff3ed',
+      surfaceElevated: '#ffffff',
+      surfaceMuted: '#fde1d3',
+      heroGradient: 'linear-gradient(160deg, #ffb17a 0%, #e7603b 100%)',
+      textColor: '#4a261d',
+      mutedText: '#865345',
+      accent: '#e7603b',
+      accentContrast: '#fff7f2',
+      borderColor: 'rgba(231, 96, 59, 0.22)',
+    },
+    dark: {
+      surfaceColor: '#2b1b16',
+      surfaceElevated: '#361f19',
+      surfaceMuted: '#1f120e',
+      heroGradient: 'linear-gradient(160deg, #8a3828 0%, #d1613a 100%)',
+      textColor: '#f9dfd5',
+      mutedText: '#d49988',
+      accent: '#ff9369',
+      accentContrast: '#180d0a',
+      borderColor: 'rgba(255, 147, 105, 0.3)',
+    },
+  },
+  {
+    id: 'mist',
+    label: 'Mist',
+    description: 'Yumuşak gri-mavi',
+    light: {
+      surfaceColor: '#f4f6fb',
+      surfaceElevated: '#ffffff',
+      surfaceMuted: '#e4e9f3',
+      heroGradient: 'linear-gradient(160deg, #b9c7e6 0%, #7d93c7 100%)',
+      textColor: '#273247',
+      mutedText: '#55607a',
+      accent: '#7d93c7',
+      accentContrast: '#f7f9ff',
+      borderColor: 'rgba(125, 147, 199, 0.22)',
+    },
+    dark: {
+      surfaceColor: '#161b26',
+      surfaceElevated: '#1f2633',
+      surfaceMuted: '#111622',
+      heroGradient: 'linear-gradient(160deg, #374366 0%, #6282c1 100%)',
+      textColor: '#e2e9ff',
+      mutedText: '#9fb1d6',
+      accent: '#8ea4e8',
+      accentContrast: '#0c111f',
+      borderColor: 'rgba(142, 164, 232, 0.28)',
+    },
+  },
+  {
+    id: 'aurora',
+    label: 'Aurora',
+    description: 'Kuzey ışıkları hissi',
+    light: {
+      surfaceColor: '#f3f6ff',
+      surfaceElevated: '#ffffff',
+      surfaceMuted: '#e4ecfb',
+      heroGradient: 'linear-gradient(160deg, #a2b4ff 0%, #4cc7c0 100%)',
+      textColor: '#1f2d4a',
+      mutedText: '#4a5f7f',
+      accent: '#4cc7c0',
+      accentContrast: '#f6fffe',
+      borderColor: 'rgba(76, 199, 192, 0.22)',
+    },
+    dark: {
+      surfaceColor: '#101825',
+      surfaceElevated: '#172231',
+      surfaceMuted: '#0b1521',
+      heroGradient: 'linear-gradient(160deg, #364f9b 0%, #2daaa4 100%)',
+      textColor: '#def4f4',
+      mutedText: '#9bc9c8',
+      accent: '#70f1e9',
+      accentContrast: '#071117',
+      borderColor: 'rgba(112, 241, 233, 0.35)',
+    },
+  },
+  {
+    id: 'sapphire',
+    label: 'Sapphire',
+    description: 'Derin mavi tonları',
+    light: {
+      surfaceColor: '#eef2ff',
+      surfaceElevated: '#ffffff',
+      surfaceMuted: '#dfe6ff',
+      heroGradient: 'linear-gradient(160deg, #8aa6ff 0%, #3f66d4 100%)',
+      textColor: '#1d2a4d',
+      mutedText: '#4a5c86',
+      accent: '#3f66d4',
+      accentContrast: '#f2f5ff',
+      borderColor: 'rgba(63, 102, 212, 0.22)',
+    },
+    dark: {
+      surfaceColor: '#101527',
+      surfaceElevated: '#182035',
+      surfaceMuted: '#0b1122',
+      heroGradient: 'linear-gradient(160deg, #2f4ea0 0%, #3f73d4 100%)',
+      textColor: '#dbe3ff',
+      mutedText: '#93a6e6',
+      accent: '#6f9bff',
+      accentContrast: '#090e1a',
+      borderColor: 'rgba(111, 155, 255, 0.34)',
+    },
+  },
+];
+
+const THEME_PRESET_MAP = new Map(THEME_PRESETS.map((preset) => [preset.id, preset]));
+
+function isValidHex(value) {
+  return typeof value === 'string' && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(value.trim());
+}
+
+function hexToRgb(hex) {
+  if (!isValidHex(hex)) {
+    return null;
+  }
+  let value = hex.trim().replace('#', '');
+  if (value.length === 3) {
+    value = value.split('').map((char) => char + char).join('');
+  }
+  const numeric = Number.parseInt(value, 16);
+  return {
+    r: (numeric >> 16) & 255,
+    g: (numeric >> 8) & 255,
+    b: numeric & 255,
+  };
+}
+
+function rgbToHex(r, g, b) {
+  const toHex = (component) => Math.max(0, Math.min(255, Math.round(component))).toString(16).padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function mixColors(colorA, colorB, ratio = 0.5) {
+  const rgbA = hexToRgb(colorA);
+  const rgbB = hexToRgb(colorB);
+  if (!rgbA || !rgbB) {
+    return colorA;
+  }
+  const clamped = Math.max(0, Math.min(1, ratio));
+  const r = rgbA.r * (1 - clamped) + rgbB.r * clamped;
+  const g = rgbA.g * (1 - clamped) + rgbB.g * clamped;
+  const b = rgbA.b * (1 - clamped) + rgbB.b * clamped;
+  return rgbToHex(r, g, b);
+}
+
+function toRgba(hex, alpha) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) {
+    return '';
+  }
+  const clampedAlpha = Math.max(0, Math.min(1, alpha));
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${clampedAlpha})`;
+}
+
+function deriveAlphaColor(color, alpha, fallback) {
+  if (isValidHex(color)) {
+    const value = toRgba(color, alpha);
+    if (value) {
+      return value;
+    }
+  }
+  return fallback;
+}
+
+function createHighlightGradient(accent, mode, fallback) {
+  if (!isValidHex(accent)) {
+    return fallback;
+  }
+  const startAlpha = mode === 'dark' ? 0.24 : 0.14;
+  const endAlpha = mode === 'dark' ? 0.12 : 0.05;
+  const mixTarget = mode === 'dark' ? '#000000' : '#ffffff';
+  const endColor = mixColors(accent, mixTarget, mode === 'dark' ? 0.4 : 0.6);
+  const start = toRgba(accent, startAlpha);
+  const end = toRgba(endColor, endAlpha);
+  if (!start || !end) {
+    return fallback;
+  }
+  return `linear-gradient(140deg, ${start} 0%, ${end} 100%)`;
+}
+
+function normalizeThemeSelection(selection) {
+  const themeId = selection && THEME_PRESET_MAP.has(selection.themeId) ? selection.themeId : DEFAULT_THEME_ID;
+  const mode = selection && selection.mode === 'dark' ? 'dark' : DEFAULT_THEME_MODE;
+  return { themeId, mode };
+}
+
+function loadThemeSelection() {
+  try {
+    const raw = localStorage.getItem(THEME_STORAGE_KEY);
+    if (!raw) {
+      return { themeId: DEFAULT_THEME_ID, mode: DEFAULT_THEME_MODE };
+    }
+    const parsed = JSON.parse(raw);
+    return normalizeThemeSelection(parsed);
+  } catch (error) {
+    console.warn('Tema seçimi okunamadı, varsayılan kullanılacak.', error);
+    return { themeId: DEFAULT_THEME_ID, mode: DEFAULT_THEME_MODE };
+  }
+}
+
+function saveThemeSelection(selection) {
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(selection));
+  } catch (error) {
+    console.warn('Tema seçimi kaydedilemedi.', error);
+  }
+}
+
 const PRAYER_CONFIG = {
   home: { label: 'Anasayfa', homepage: true },
   sabah: { label: 'Sabah', markdown: 'sabah.md', supportsDua: true },
@@ -327,7 +806,7 @@ const MANUAL_NAME_KEYS = {
 
 const state = {
   counters: loadCounters(),
-  theme: loadTheme(),
+  themeSelection: loadThemeSelection(),
   currentPrayer: 'home',
   duaSource: loadSelectedDuaSource(),
   duaCache: {},
@@ -344,6 +823,7 @@ const state = {
   activeImportanceMessage: null,
   installPromptEvent: null,
   installPromptVisible: false,
+  themeOptionElements: new Map(),
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -352,10 +832,11 @@ document.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
-  applyTheme(appRoot, state.theme);
+  applyTheme(appRoot, state.themeSelection);
   applyFontScale(state.fontScale);
   attachThemeToggle(appRoot);
   attachSettingsToggle(appRoot);
+  initThemeSelector(appRoot);
   attachHomeNavigation(appRoot);
   initPrayerTabs(appRoot);
   initDuaSourceSelector(appRoot);
@@ -1282,18 +1763,175 @@ function formatNumber(value) {
   return new Intl.NumberFormat('tr-TR').format(value);
 }
 
-function loadTheme() {
-  return localStorage.getItem(THEME_STORAGE_KEY) || 'light';
-}
+function applyTheme(appRoot, selection) {
+  if (!appRoot) {
+    return;
+  }
+  const normalized = normalizeThemeSelection(selection);
+  const themePreset = THEME_PRESET_MAP.get(normalized.themeId) || THEME_PRESET_MAP.get(DEFAULT_THEME_ID);
+  const modeConfig = themePreset?.[normalized.mode] || {};
+  const baseTokens = { ...BASE_THEME_TOKENS[normalized.mode] };
+  const tokens = { ...baseTokens };
 
-function applyTheme(appRoot, theme) {
-  const nextTheme = theme === 'dark' ? 'dark' : 'light';
-  appRoot.dataset.theme = nextTheme;
+  const overrideMap = {
+    surfaceColor: 'surface-color',
+    surfaceElevated: 'surface-elevated',
+    surfaceMuted: 'surface-muted',
+    heroGradient: 'surface-hero',
+    textColor: 'text-color',
+    mutedText: 'muted-text',
+    accent: 'accent-color',
+    accentContrast: 'accent-contrast',
+    borderColor: 'border-color',
+    tooltipBg: 'tooltip-bg',
+    tooltipText: 'tooltip-text',
+    tooltipBorder: 'tooltip-border',
+    tooltipShadow: 'tooltip-shadow',
+    nameBadgeBg: 'name-badge-bg',
+    nameBadgeColor: 'name-badge-color',
+    nameBadgeHoverBg: 'name-badge-hover-bg',
+    surfaceOverlay: 'surface-overlay',
+    surfaceOverlayStrong: 'surface-overlay-strong',
+    accentSoftBg: 'accent-soft-bg',
+    accentSoftHover: 'accent-soft-hover',
+    tabActiveBg: 'tab-active-bg',
+    tabActiveText: 'tab-active-text',
+    tabInactiveBg: 'tab-inactive-bg',
+    tabInactiveHover: 'tab-inactive-hover',
+    tabInactiveText: 'tab-inactive-text',
+    highlightOverlay: 'highlight-overlay',
+    installBorder: 'install-border',
+    installBackground: 'install-background',
+    iconButtonBg: 'icon-button-bg',
+    iconButtonHover: 'icon-button-hover',
+    counterResetBg: 'counter-reset-bg',
+    counterResetHover: 'counter-reset-hover',
+    focusOutline: 'focus-outline',
+    actionButtonBg: 'action-button-bg',
+    actionButtonHover: 'action-button-hover',
+    heroSubtitleColor: 'hero-subtitle-color',
+    shadowSoft: 'shadow-soft',
+    shadowSoftHover: 'shadow-soft-hover',
+    cardShadow: 'card-shadow',
+    cardShadowHover: 'card-shadow-hover',
+    counterShadow: 'counter-shadow',
+    counterShadowComplete: 'counter-shadow-complete',
+    counterCompleteBg: 'counter-complete-bg',
+    counterCompleteText: 'counter-complete-text',
+  };
+
+  Object.entries(overrideMap).forEach(([configKey, cssVar]) => {
+    if (modeConfig[configKey] !== undefined) {
+      tokens[cssVar] = modeConfig[configKey];
+    }
+  });
+
+  if (!isValidHex(tokens['accent-color'])) {
+    tokens['accent-color'] = baseTokens['accent-color'];
+  }
+
+  if (modeConfig.accentContrast) {
+    tokens['accent-contrast'] = modeConfig.accentContrast;
+  } else if (!tokens['accent-contrast']) {
+    tokens['accent-contrast'] = normalized.mode === 'dark' ? '#0e1114' : '#ffffff';
+  }
+
+  tokens['border-color'] = modeConfig.borderColor || deriveAlphaColor(tokens['accent-color'], normalized.mode === 'dark' ? 0.32 : 0.22, tokens['border-color']);
+
+  tokens['surface-overlay'] = modeConfig.surfaceOverlay || deriveAlphaColor(tokens['accent-color'], normalized.mode === 'dark' ? 0.16 : 0.14, tokens['surface-overlay']);
+  tokens['surface-overlay-strong'] = modeConfig.surfaceOverlayStrong || deriveAlphaColor(tokens['accent-color'], normalized.mode === 'dark' ? 0.24 : 0.2, tokens['surface-overlay-strong']);
+  tokens['accent-soft-bg'] = modeConfig.accentSoftBg || deriveAlphaColor(tokens['accent-color'], normalized.mode === 'dark' ? 0.2 : 0.18, tokens['accent-soft-bg']);
+  tokens['accent-soft-hover'] = modeConfig.accentSoftHover || deriveAlphaColor(tokens['accent-color'], normalized.mode === 'dark' ? 0.3 : 0.26, tokens['accent-soft-hover']);
+  tokens['counter-reset-bg'] = modeConfig.counterResetBg || tokens['accent-soft-bg'];
+  tokens['counter-reset-hover'] = modeConfig.counterResetHover || tokens['accent-soft-hover'];
+  tokens['install-border'] = modeConfig.installBorder || deriveAlphaColor(tokens['accent-color'], normalized.mode === 'dark' ? 0.45 : 0.38, tokens['install-border']);
+  tokens['install-background'] = modeConfig.installBackground || deriveAlphaColor(tokens['accent-color'], normalized.mode === 'dark' ? 0.18 : 0.12, tokens['install-background']);
+  tokens['action-button-bg'] = modeConfig.actionButtonBg || deriveAlphaColor(tokens['accent-color'], normalized.mode === 'dark' ? 0.24 : 0.18, tokens['action-button-bg']);
+  tokens['action-button-hover'] = modeConfig.actionButtonHover || deriveAlphaColor(tokens['accent-color'], normalized.mode === 'dark' ? 0.32 : 0.26, tokens['action-button-hover']);
+
+  if (!modeConfig.highlightOverlay) {
+    const generatedHighlight = createHighlightGradient(tokens['accent-color'], normalized.mode, tokens['highlight-overlay']);
+    if (generatedHighlight) {
+      tokens['highlight-overlay'] = generatedHighlight;
+    }
+  }
+
+  if (!modeConfig.nameBadgeBg) {
+    tokens['name-badge-bg'] = deriveAlphaColor(tokens['accent-color'], normalized.mode === 'dark' ? 0.3 : 0.28, tokens['name-badge-bg']);
+  }
+  if (!modeConfig.nameBadgeHoverBg) {
+    tokens['name-badge-hover-bg'] = deriveAlphaColor(tokens['accent-color'], normalized.mode === 'dark' ? 0.4 : 0.35, tokens['name-badge-hover-bg']);
+  }
+  if (!modeConfig.nameBadgeColor) {
+    if (normalized.mode === 'dark') {
+      tokens['name-badge-color'] = tokens['surface-color'];
+    } else {
+      const mixed = mixColors(tokens['accent-color'], '#202020', 0.25);
+      tokens['name-badge-color'] = isValidHex(mixed) ? mixed : tokens['accent-color'];
+    }
+  }
+
+  if (!modeConfig.surfaceColor) {
+    tokens['surface-color'] = baseTokens['surface-color'];
+  }
+
+  if (!modeConfig.iconButtonBg) {
+    tokens['icon-button-bg'] = deriveAlphaColor('#ffffff', normalized.mode === 'dark' ? 0.14 : 0.18, tokens['icon-button-bg']);
+  }
+  if (!modeConfig.iconButtonHover) {
+    tokens['icon-button-hover'] = deriveAlphaColor('#ffffff', normalized.mode === 'dark' ? 0.22 : 0.28, tokens['icon-button-hover']);
+  }
+
+  if (!modeConfig.focusOutline) {
+    tokens['focus-outline'] = deriveAlphaColor('#ffffff', normalized.mode === 'dark' ? 0.75 : 0.85, tokens['focus-outline']);
+  }
+
+  if (!modeConfig.tabActiveBg) {
+    tokens['tab-active-bg'] = normalized.mode === 'dark'
+      ? deriveAlphaColor('#ffffff', 0.18, tokens['tab-active-bg'])
+      : (tokens['accent-contrast'] || tokens['surface-elevated']);
+  }
+  if (!modeConfig.tabActiveText) {
+    tokens['tab-active-text'] = tokens['accent-color'];
+  }
+  if (!modeConfig.tabInactiveBg) {
+    tokens['tab-inactive-bg'] = normalized.mode === 'dark'
+      ? deriveAlphaColor('#ffffff', 0.08, tokens['tab-inactive-bg'])
+      : deriveAlphaColor('#ffffff', 0.15, tokens['tab-inactive-bg']);
+  }
+  if (!modeConfig.tabInactiveHover) {
+    tokens['tab-inactive-hover'] = normalized.mode === 'dark'
+      ? deriveAlphaColor('#ffffff', 0.14, tokens['tab-inactive-hover'])
+      : deriveAlphaColor('#ffffff', 0.24, tokens['tab-inactive-hover']);
+  }
+  if (!modeConfig.tabInactiveText) {
+    tokens['tab-inactive-text'] = 'rgba(255, 255, 255, 0.85)';
+  }
+
+  if (!modeConfig.heroSubtitleColor) {
+    tokens['hero-subtitle-color'] = normalized.mode === 'dark'
+      ? 'rgba(255, 255, 255, 0.82)'
+      : 'rgba(255, 255, 255, 0.8)';
+  }
+
+  appRoot.dataset.theme = normalized.themeId;
+  appRoot.dataset.mode = normalized.mode;
+  document.documentElement.style.setProperty('color-scheme', normalized.mode);
+
+  Object.entries(tokens).forEach(([cssVar, value]) => {
+    if (typeof value === 'string') {
+      appRoot.style.setProperty(`--${cssVar}`, value);
+    }
+  });
 
   const toggleIcon = appRoot.querySelector('.theme-toggle__icon');
   if (toggleIcon) {
-    toggleIcon.textContent = nextTheme === 'dark' ? '🌙' : '☀️';
+    toggleIcon.textContent = normalized.mode === 'dark' ? '🌙' : '☀️';
   }
+
+  state.themeSelection = normalized;
+  saveThemeSelection(normalized);
+  updateThemeSelectorUI(normalized.themeId);
 }
 
 function attachThemeToggle(appRoot) {
@@ -1303,11 +1941,8 @@ function attachThemeToggle(appRoot) {
   }
 
   toggleButton.addEventListener('click', () => {
-    const currentTheme = appRoot.dataset.theme === 'dark' ? 'dark' : 'light';
-    const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    state.theme = nextTheme;
-    applyTheme(appRoot, nextTheme);
-    localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+    const nextMode = state.themeSelection.mode === 'dark' ? 'light' : 'dark';
+    applyTheme(appRoot, { themeId: state.themeSelection.themeId, mode: nextMode });
   });
 }
 
@@ -1326,6 +1961,134 @@ function attachSettingsToggle(appRoot) {
     } else {
       panel.setAttribute('hidden', '');
     }
+  });
+}
+
+function resolveThemePreviewBackground(preset, mode) {
+  const config = preset?.[mode];
+  if (config?.heroGradient) {
+    return config.heroGradient;
+  }
+  if (config?.accent && isValidHex(config.accent)) {
+    const mixTarget = mode === 'dark' ? '#000000' : '#ffffff';
+    const secondary = mixColors(config.accent, mixTarget, mode === 'dark' ? 0.35 : 0.55);
+    return `linear-gradient(135deg, ${config.accent} 0%, ${secondary} 100%)`;
+  }
+  const base = BASE_THEME_TOKENS[mode];
+  return base['surface-hero'] || base['accent-color'];
+}
+
+function initThemeSelector(appRoot) {
+  const accordion = appRoot.querySelector('[data-theme-accordion]');
+  const panel = appRoot.querySelector('[data-theme-options]');
+
+  if (!accordion || !panel) {
+    return;
+  }
+
+  const initialExpanded = !panel.hasAttribute('hidden');
+
+  const setExpanded = (expanded) => {
+    accordion.classList.toggle('is-open', expanded);
+    accordion.setAttribute('aria-expanded', String(expanded));
+    if (expanded) {
+      panel.classList.add('is-open');
+      panel.removeAttribute('hidden');
+    } else {
+      panel.classList.remove('is-open');
+      panel.setAttribute('hidden', '');
+    }
+  };
+
+  setExpanded(initialExpanded);
+
+  accordion.addEventListener('click', () => {
+    const nextExpanded = !accordion.classList.contains('is-open');
+    setExpanded(nextExpanded);
+  });
+
+  accordion.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      accordion.click();
+    }
+  });
+
+  panel.innerHTML = '';
+  state.themeOptionElements = new Map();
+
+  THEME_PRESETS.forEach((preset) => {
+    const option = document.createElement('button');
+    option.type = 'button';
+    option.className = 'theme-option';
+    option.dataset.themeId = preset.id;
+    option.setAttribute('aria-pressed', 'false');
+    option.setAttribute('aria-label', `${preset.label} temasını seç`);
+
+    const accentColor = preset.light?.accent || preset.dark?.accent || BASE_THEME_TOKENS.light['accent-color'];
+    if (isValidHex(accentColor)) {
+      option.style.setProperty('--theme-option-accent', accentColor);
+    }
+
+    const swatch = document.createElement('div');
+    swatch.className = 'theme-option__swatch';
+
+    const lightTone = document.createElement('span');
+    lightTone.className = 'theme-option__tone theme-option__tone--light';
+    lightTone.style.background = resolveThemePreviewBackground(preset, 'light');
+
+    const darkTone = document.createElement('span');
+    darkTone.className = 'theme-option__tone theme-option__tone--dark';
+    darkTone.style.background = resolveThemePreviewBackground(preset, 'dark');
+
+    const accentChip = document.createElement('span');
+    accentChip.className = 'theme-option__accent';
+    if (isValidHex(accentColor)) {
+      accentChip.style.background = accentColor;
+    }
+
+    swatch.append(lightTone, darkTone, accentChip);
+
+    const info = document.createElement('div');
+    info.className = 'theme-option__info';
+
+    const title = document.createElement('span');
+    title.className = 'theme-option__title';
+    title.textContent = preset.label;
+    info.append(title);
+
+    if (preset.description) {
+      const meta = document.createElement('span');
+      meta.className = 'theme-option__meta';
+      meta.textContent = preset.description;
+      info.append(meta);
+    }
+
+    option.append(swatch, info);
+
+    option.addEventListener('click', () => {
+      if (state.themeSelection.themeId === preset.id) {
+        return;
+      }
+      applyTheme(appRoot, { themeId: preset.id, mode: state.themeSelection.mode });
+    });
+
+    panel.append(option);
+    state.themeOptionElements.set(preset.id, option);
+  });
+
+  updateThemeSelectorUI(state.themeSelection.themeId);
+}
+
+function updateThemeSelectorUI(selectedThemeId) {
+  if (!(state.themeOptionElements instanceof Map)) {
+    return;
+  }
+
+  state.themeOptionElements.forEach((button, id) => {
+    const isActive = id === selectedThemeId;
+    button.classList.toggle('is-active', isActive);
+    button.setAttribute('aria-pressed', String(isActive));
   });
 }
 

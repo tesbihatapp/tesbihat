@@ -50,7 +50,14 @@
       <main class="main">
         <aside class="settings-panel card" data-settings hidden>
           <h2>Ayarlar</h2>
-          <p>Dua kaynağı seçimleri yakında burada olacak.</p>
+          <p>Uygulamanın görünümünü ve dua takibini buradan yönetebilirsiniz.</p>
+          <div class="settings-group">
+            <button type="button" class="settings-accordion" data-theme-accordion>
+              <span>Tema seç</span>
+              <span class="settings-accordion__icon" aria-hidden="true">⌄</span>
+            </button>
+            <div class="settings-accordion__panel" data-theme-options hidden></div>
+          </div>
           <div class="settings-group">
             <label class="settings-label" for="dua-source">Dua kaynağı</label>
             <select id="dua-source" name="dua-source" disabled>
