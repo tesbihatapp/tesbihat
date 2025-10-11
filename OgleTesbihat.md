@@ -112,7 +112,7 @@ Yâ **Kahhâru** Yâ Allah, Yâ **Cebbâru** Yâ Allah
 
 Yâ **Ğaffâru** Yâ Allah, Yâ **Fettâhu** Yâ Allah
 
-**eller yukarı kaldırılır ve şöyle duâ edilir:**
+**Sonra eller yukarı kaldırılır ve şöyle duâ edilir:**
 
 Yâ Rabbe’s-semâvâti ve’l-ard, Yâ Ze’l-celâli ve’l-ikrâm. Nes’eluke bi hakkı hâzihi’l-esmâi kullihâ en tusalliye ‘alâ seyyidinâ Muhammedin ve ‘alâ âl-i seyyidinâ Muhammed, ve’rham seyyidenâ Muhammeden kemâ salleyte ve sellemte ve bârakte ve rahimte ve terahhamte ‘alâ seyyidinâ İbrâhîme ve ‘alâ âl-i seyyidinâ İbrâhîme fi’l-‘âlemîn, Rabbenâ inneke hamîdun mecîd, bi rahmetike Yâ Erhame’r-Râhimîn, ve’l-hamdu lillâhi Rabbi’l-‘alemîn.
 
