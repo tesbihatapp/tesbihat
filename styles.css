@@ -1,5 +1,6 @@
 :root {
   --font-family: 'Poppins', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-family-arabic: 'Scheherazade New', 'Amiri', 'Noto Naskh Arabic', serif;
   --transition-fast: 0.2s ease;
   --transition-slow: 0.35s ease;
   --font-scale: 1;
@@ -67,6 +68,21 @@ body {
   font-size: calc(16px * var(--font-scale));
   background: var(--surface-color);
   color: var(--text-color);
+}
+
+.arabic-text {
+  font-family: var(--font-family-arabic);
+  font-size: calc(1.28rem * var(--font-scale));
+  line-height: 2;
+  direction: rtl;
+  text-align: right;
+  letter-spacing: 0.01em;
+  word-spacing: 0.05em;
+}
+
+.arabic-text strong,
+.arabic-text b {
+  font-weight: 700;
 }
 
 button {

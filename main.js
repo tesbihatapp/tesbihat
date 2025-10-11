@@ -659,6 +659,7 @@ const DUA_SOURCES = {
 };
 
 const SINGLE_TOOLTIP_NAMES = new Set(['allah', 'rahman']);
+const ARABIC_SCRIPT_REGEX = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/;
 
 const MANUAL_NAME_MEANINGS = {
   allah: 'Bütün güzel isimlerin sahibi olan yüce Allah\'ın özel ismidir.',
@@ -1355,6 +1356,47 @@ function renderTesbihat(container, markdownText) {
 
   const html = DOMPurify.sanitize(marked.parse(normalised, { mangle: false, headerIds: false }));
   container.innerHTML = html;
+  enhanceArabicText(container);
+}
+
+function enhanceArabicText(root) {
+  if (!root) {
+    return;
+  }
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let current;
+
+  while ((current = walker.nextNode())) {
+    const value = current.nodeValue;
+    if (!value || !ARABIC_SCRIPT_REGEX.test(value)) {
+      continue;
+    }
+
+    const blockAncestor = findArabicBlockAncestor(current.parentElement);
+    if (!blockAncestor || blockAncestor.classList.contains('arabic-text')) {
+      continue;
+    }
+
+    if (blockAncestor.closest('.counter-card')) {
+      continue;
+    }
+
+    blockAncestor.classList.add('arabic-text');
+    if (!blockAncestor.hasAttribute('dir')) {
+      blockAncestor.setAttribute('dir', 'rtl');
+    }
+  }
+}
+
+function findArabicBlockAncestor(element) {
+  while (element) {
+    if (element.matches && element.matches('p, blockquote, li, div, h1, h2, h3, h4, h5, h6')) {
+      return element;
+    }
+    element = element.parentElement;
+  }
+  return null;
 }
 
 async function ensureImportanceMessages() {
