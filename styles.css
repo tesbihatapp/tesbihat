@@ -112,6 +112,25 @@ button {
   font-weight: 700;
 }
 
+.hero__title--link {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  transition: transform var(--transition-fast), opacity var(--transition-fast);
+}
+
+.hero__title--link:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.hero__title--link:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.85);
+  outline-offset: 4px;
+  border-radius: 8px;
+}
+
 .hero__subtitle {
   margin: 0.8rem 0 1.2rem;
   color: rgba(255, 255, 255, 0.8);
@@ -463,6 +482,95 @@ button {
   font-size: 0.9rem;
   line-height: 1.45;
   color: var(--tooltip-text);
+}
+
+.home-highlight {
+  position: relative;
+  overflow: hidden;
+  padding: 1.4rem 1.5rem 1.6rem;
+  background: var(--surface-elevated);
+  border: none;
+}
+
+.home-highlight::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(140deg, rgba(85, 107, 47, 0.14) 0%, rgba(85, 107, 47, 0.05) 100%);
+  opacity: 0.9;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.home-highlight::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  border: 1px solid rgba(85, 107, 47, 0.18);
+  pointer-events: none;
+}
+
+.home-highlight > * {
+  position: relative;
+  z-index: 1;
+}
+
+.home-highlight__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--accent-color);
+  background: rgba(133, 150, 104, 0.18);
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  margin-bottom: 0.9rem;
+}
+
+.home-highlight__quote {
+  margin: 0;
+  font-size: 1.15rem;
+  line-height: 1.7;
+  font-weight: 600;
+  font-style: italic;
+  color: var(--text-color);
+}
+
+.home-highlight__note {
+  margin: 0.85rem 0 0;
+  color: var(--muted-text);
+  line-height: 1.6;
+  font-size: 0.98rem;
+}
+
+.home-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.home-fallback {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  color: var(--text-color);
+}
+
+.home-fallback h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.home-fallback p {
+  margin: 0;
+  color: var(--muted-text);
+  line-height: 1.6;
+  font-size: 0.98rem;
 }
 
 .collection-wrapper,

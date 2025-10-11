@@ -6,6 +6,7 @@ const FONT_SCALE_STORAGE_KEY = 'tesbihat:font-scale';
 const FONT_SCALE_MIN = 0.85;
 const FONT_SCALE_MAX = 1.3;
 const FONT_SCALE_STEP = 0.05;
+const IMPORTANCE_SOURCE_PATH = 'TesbihatinOnemi.txt';
 
 const NAME_SECTIONS = [
   {
@@ -19,6 +20,7 @@ const NAME_SECTIONS = [
 ];
 
 const PRAYER_CONFIG = {
+  home: { label: 'Anasayfa', homepage: true },
   sabah: { label: 'Sabah', markdown: 'sabah.md', supportsDua: true },
   ogle: { label: 'Öğle', markdown: 'OgleTesbihat.md', supportsDua: true },
   ikindi: { label: 'İkindi', markdown: 'IkindiTesbihat.md', supportsDua: true },
@@ -324,7 +326,7 @@ const MANUAL_NAME_KEYS = {
 const state = {
   counters: loadCounters(),
   theme: loadTheme(),
-  currentPrayer: 'sabah',
+  currentPrayer: 'home',
   duaSource: loadSelectedDuaSource(),
   duaCache: {},
   duaState: null,
@@ -336,6 +338,8 @@ const state = {
   nameLookup: new Map(),
   nameKeys: new Map(),
   missingNames: new Set(),
+  importanceMessages: null,
+  activeImportanceMessage: null,
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -348,6 +352,7 @@ document.addEventListener('DOMContentLoaded', () => {
   applyFontScale(state.fontScale);
   attachThemeToggle(appRoot);
   attachSettingsToggle(appRoot);
+  attachHomeNavigation(appRoot);
   initPrayerTabs(appRoot);
   initDuaSourceSelector(appRoot);
   attachFontScaleControls(appRoot);
@@ -406,6 +411,11 @@ async function loadPrayerContent(prayerId) {
     return;
   }
 
+  if (config.homepage) {
+    await renderHomePage(content);
+    return;
+  }
+
   if (Array.isArray(config.items)) {
     renderPrayerCollection(content, prayerId, config);
     return;
@@ -426,6 +436,7 @@ async function loadPrayerContent(prayerId) {
   try {
     const markdown = await fetchText(config.markdown);
     renderTesbihat(content, markdown);
+
     await ensureNamesLoaded();
     annotateNames(content);
     setupCounters(content, prayerId);
@@ -561,6 +572,59 @@ async function renderPrayerCollectionItem(container, prayerId, config, item) {
   }
 }
 
+async function renderHomePage(container) {
+  hideNameTooltip();
+  container.innerHTML = `<div class="loading">İçerik yükleniyor…</div>`;
+
+  try {
+    const layout = document.createElement('div');
+    layout.className = 'home-screen';
+
+    const highlight = await createHomeHighlightCard();
+    if (highlight) {
+      layout.append(highlight);
+    }
+
+    if (!highlight) {
+      const fallback = document.createElement('article');
+      fallback.className = 'card home-fallback';
+      fallback.innerHTML = `
+        <h2>Hoş geldiniz</h2>
+        <p>Günün tesbihatlarına yukarıdaki sekmelerden ulaşabilirsiniz.</p>
+      `;
+      layout.append(fallback);
+    }
+
+    container.innerHTML = '';
+    container.append(layout);
+  } catch (error) {
+    console.error('Anasayfa hazırlanırken hata oluştu.', error);
+    container.innerHTML = `
+      <article class="card">
+        <h2>İçerik yüklenemedi</h2>
+        <p>Lütfen sayfayı yenileyip tekrar deneyin.</p>
+      </article>
+    `;
+  }
+}
+
+async function createHomeHighlightCard() {
+  try {
+    const messages = await ensureImportanceMessages();
+    if (!messages.length) {
+      return null;
+    }
+    const message = pickRandomImportanceMessage(messages);
+    if (!message) {
+      return null;
+    }
+    return buildHomeHighlightCard(message);
+  } catch (error) {
+    console.warn('Tesbihat önemi mesajları hazırlanırken hata oluştu.', error);
+    return null;
+  }
+}
+
 function renderTesbihat(container, markdownText) {
   hideNameTooltip();
   const normalised = markdownText
@@ -570,6 +634,75 @@ function renderTesbihat(container, markdownText) {
 
   const html = DOMPurify.sanitize(marked.parse(normalised, { mangle: false, headerIds: false }));
   container.innerHTML = html;
+}
+
+async function ensureImportanceMessages() {
+  if (Array.isArray(state.importanceMessages)) {
+    return state.importanceMessages;
+  }
+
+  try {
+    const raw = await fetchText(IMPORTANCE_SOURCE_PATH);
+    const normalised = raw.replace(/\r\n/g, '\n');
+    const parts = normalised
+      .split(/\s*-split-\s*/g)
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    state.importanceMessages = parts;
+  } catch (error) {
+    console.warn('Tesbihat önemi metinleri yüklenemedi.', error);
+    state.importanceMessages = [];
+  }
+
+  return state.importanceMessages;
+}
+
+function pickRandomImportanceMessage(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return null;
+  }
+
+  const index = Math.floor(Math.random() * messages.length);
+  const text = messages[index];
+  state.activeImportanceMessage = { index, text };
+  return text;
+}
+
+function buildHomeHighlightCard(message) {
+  if (!message) {
+    return null;
+  }
+
+  const card = document.createElement('article');
+  card.className = 'card home-highlight';
+  card.dataset.disableTooltips = 'true';
+
+  const label = document.createElement('span');
+  label.className = 'home-highlight__eyebrow';
+  label.textContent = 'Tesbihâtın Önemi';
+  card.append(label);
+
+  const segments = message
+    .split(/\r?\n/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+
+  const quote = document.createElement('blockquote');
+  quote.className = 'home-highlight__quote';
+  quote.textContent = segments[0] || message.trim();
+  card.append(quote);
+
+  if (segments.length > 1) {
+    segments.slice(1).forEach((segment) => {
+      const paragraph = document.createElement('p');
+      paragraph.className = 'home-highlight__note';
+      paragraph.textContent = segment;
+      card.append(paragraph);
+    });
+  }
+
+  return card;
 }
 
 function setupCounters(container, prayerId) {
@@ -1086,6 +1219,30 @@ function attachSettingsToggle(appRoot) {
   });
 }
 
+function attachHomeNavigation(appRoot) {
+  const title = appRoot.querySelector('.hero__title');
+  if (!title) {
+    return;
+  }
+
+  title.classList.add('hero__title--link');
+  title.setAttribute('role', 'button');
+  title.setAttribute('tabindex', '0');
+
+  const navigateHome = () => {
+    hideNameTooltip();
+    setActivePrayer('home');
+  };
+
+  title.addEventListener('click', navigateHome);
+  title.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      navigateHome();
+    }
+  });
+}
+
 function attachFontScaleControls(appRoot) {
   const decreaseButton = appRoot.querySelector('.text-decrease');
   const increaseButton = appRoot.querySelector('.text-increase');
@@ -1259,7 +1416,16 @@ function collectNameEligibleNodes(root) {
 
     const value = current.nodeValue;
     const parent = current.parentElement;
-    if (parent && (parent.closest('.counter-card') || parent.closest('.name-badge') || parent.tagName === 'SCRIPT' || parent.tagName === 'STYLE')) {
+    if (
+      parent
+      && (
+        parent.closest('.counter-card')
+        || parent.closest('.name-badge')
+        || parent.closest('[data-disable-tooltips="true"]')
+        || parent.tagName === 'SCRIPT'
+        || parent.tagName === 'STYLE'
+      )
+    ) {
       continue;
     }
 
