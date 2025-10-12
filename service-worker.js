@@ -13,6 +13,7 @@ const ASSETS = [
   './AksamYatsiZikirleri.md',
   './GunlukZikirler.md',
   './BirKirikDilekce.txt',
+  './KuranDualari.txt',
   './TesbihatinOnemi.txt',
   './names.json',
   './icons/icon-180.png',
