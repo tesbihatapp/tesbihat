@@ -940,6 +940,7 @@ const MANUAL_NAME_KEYS = {
 };
 
 const state = {
+  appRoot: null,
   counters: loadCounters(),
   themeSelection: loadThemeSelection(),
   currentPrayer: 'home',
@@ -975,6 +976,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
+  state.appRoot = appRoot;
   applyTheme(appRoot, state.themeSelection);
   applyFontScale(state.fontScale);
   attachThemeToggle(appRoot);
@@ -2542,7 +2544,11 @@ function initThemeSelector() {
       if (state.themeSelection.themeId === preset.id) {
         return;
       }
-      applyTheme(appRoot, { themeId: preset.id, mode: state.themeSelection.mode });
+      const root = state.appRoot || document.querySelector('.app');
+      if (!root) {
+        return;
+      }
+      applyTheme(root, { themeId: preset.id, mode: state.themeSelection.mode });
     });
 
     panel.append(option);
