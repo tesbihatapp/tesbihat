@@ -1,5 +1,6 @@
 const COUNTER_STORAGE_KEY = 'tesbihat:counters';
 const DUA_STORAGE_KEY = 'tesbihat:duas';
+const DUA_STORAGE_VERSION = 2;
 const THEME_STORAGE_KEY = 'tesbihat:theme';
 const DUA_SOURCE_STORAGE_KEY = 'tesbihat:dua-source';
 const FONT_SCALE_STORAGE_KEY = 'tesbihat:font-scale';
@@ -9,6 +10,7 @@ const FONT_SCALE_STEP = 0.05;
 const IMPORTANCE_SOURCE_PATH = 'TesbihatinOnemi.txt';
 const INSTALL_PROMPT_STORAGE_KEY = 'tesbihat:install-dismissed';
 const INSTALL_PROMPT_DELAY = 24 * 60 * 60 * 1000;
+let duaRepository = null;
 
 const NAME_SECTIONS = [
   {
@@ -655,8 +657,12 @@ const PRAYER_CONFIG = {
 };
 
 const DUA_SOURCES = {
+  kurandualari: { label: 'Kur\'an-ı Kerimden Dualar', path: 'KuranDualari.txt' },
   birkirikdilekce: { label: 'Bir Kırık Dilekçe', path: 'BirKirikDilekce.txt' },
+  all: { label: 'Tüm Dualar', composite: true },
 };
+
+const DUA_SOURCE_ORDER = ['birkirikdilekce', 'kurandualari', 'all'];
 
 const SINGLE_TOOLTIP_NAMES = new Set(['allah', 'rahman']);
 const ARABIC_SCRIPT_REGEX = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/;
@@ -939,7 +945,10 @@ const state = {
   duaSource: loadSelectedDuaSource(),
   duaCache: {},
   duaState: null,
+  duaStates: new Map(),
   duas: [],
+  duaSourceSelect: null,
+  duaResetButton: null,
   fontScale: loadFontScale(),
   names: null,
   tooltipElement: null,
@@ -955,6 +964,7 @@ const state = {
   manifestBase: null,
   manifestBlobUrl: null,
   manifestPromise: null,
+  duaUI: null,
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -967,12 +977,12 @@ document.addEventListener('DOMContentLoaded', () => {
   applyFontScale(state.fontScale);
   attachThemeToggle(appRoot);
   attachSettingsToggle(appRoot);
-  initThemeSelector(appRoot);
+  initThemeSelector();
   attachHomeNavigation(appRoot);
   initPrayerTabs(appRoot);
-  initDuaSourceSelector(appRoot);
+  initDuaSourceSelector();
   attachFontScaleControls(appRoot);
-  attachSettingsActions(appRoot);
+  attachSettingsActions();
   registerInstallPromptHandlers();
   registerServiceWorker();
 
@@ -1059,10 +1069,8 @@ async function loadPrayerContent(prayerId) {
     setupCounters(content, prayerId);
 
     if (config.supportsDua) {
-      const duas = await loadDuaSourceData(state.duaSource);
-      state.duas = duas;
-      state.duaState = ensureDuaState(duas.length, state.duaSource);
-      setupDuaSection(content, duas, state.duaSource);
+      await changeDuaSource(state.duaSource, { persist: false, refresh: false });
+      setupDuaSection(content, state.duas, state.duaSource);
     }
   } catch (error) {
     console.error('İçerik yüklenirken hata oluştu.', error);
@@ -1632,109 +1640,188 @@ function updateCounterUI(wrapper, value, target) {
 
 function setupDuaSection(container, duas, sourceId) {
   if (!duas.length) {
+    if (state.duaUI?.card && state.duaUI.card.isConnected) {
+      state.duaUI.card.remove();
+    }
+    state.duaUI = null;
     return;
   }
 
   const anchor = findAnchorParagraph(container, 'Akabinde namaz duâsı yapılır.');
   if (!anchor) {
+    if (state.duaUI?.card && state.duaUI.card.isConnected) {
+      state.duaUI.card.remove();
+    }
+    state.duaUI = null;
     return;
   }
 
-  const card = document.createElement('article');
-  card.className = 'card dua-card';
+  const existingCard = state.duaUI?.card && state.duaUI.card.isConnected ? state.duaUI.card : null;
+  let card = existingCard;
+  let title;
+  let subtitle;
+  let body;
+  let newButton;
+  let okButton;
+  let resetButton;
 
-  const header = document.createElement('div');
-  header.className = 'dua-header';
+  if (!card) {
+    card = document.createElement('article');
+    card.className = 'card dua-card';
 
-  const title = document.createElement('h2');
-  title.className = 'dua-title';
-  const duaLabel = DUA_SOURCES[sourceId]?.label || 'Bir Kırık Dilekçe';
-  title.textContent = duaLabel;
+    const header = document.createElement('div');
+    header.className = 'dua-header';
 
-  const subtitle = document.createElement('div');
-  subtitle.className = 'dua-subtitle';
+    title = document.createElement('h2');
+    title.className = 'dua-title';
 
-  header.append(title, subtitle);
+    subtitle = document.createElement('div');
+    subtitle.className = 'dua-subtitle';
 
-  const body = document.createElement('div');
-  body.className = 'dua-body';
-  body.setAttribute('aria-live', 'polite');
+    header.append(title, subtitle);
 
-  const actions = document.createElement('div');
-  actions.className = 'dua-actions';
+    body = document.createElement('div');
+    body.className = 'dua-body';
+    body.setAttribute('aria-live', 'polite');
 
-  const newButton = document.createElement('button');
-  newButton.className = 'button-pill secondary';
-  newButton.type = 'button';
-  newButton.textContent = 'Yeni dua getir';
+    const actions = document.createElement('div');
+    actions.className = 'dua-actions';
 
-  const okButton = document.createElement('button');
-  okButton.className = 'button-pill';
-  okButton.type = 'button';
-  okButton.textContent = 'Okudum';
+    newButton = document.createElement('button');
+    newButton.className = 'button-pill secondary';
+    newButton.type = 'button';
+    newButton.textContent = 'Yeni dua getir';
 
-  const resetButton = document.createElement('button');
-  resetButton.className = 'button-pill secondary';
-  resetButton.type = 'button';
-  resetButton.textContent = 'Baştan başlat';
-  resetButton.hidden = true;
+    okButton = document.createElement('button');
+    okButton.className = 'button-pill';
+    okButton.type = 'button';
+    okButton.textContent = 'Okudum';
 
-  actions.append(newButton, okButton, resetButton);
-  card.append(header, body, actions);
+    resetButton = document.createElement('button');
+    resetButton.className = 'button-pill secondary';
+    resetButton.type = 'button';
+    resetButton.textContent = 'Baştan başlat';
+    resetButton.hidden = true;
+
+    actions.append(newButton, okButton, resetButton);
+    card.append(header, body, actions);
+
+    newButton.addEventListener('click', handleDuaNewClick);
+    okButton.addEventListener('click', handleDuaOkClick);
+    resetButton.addEventListener('click', handleDuaResetClick);
+  } else {
+    title = state.duaUI.title;
+    subtitle = state.duaUI.subtitle;
+    body = state.duaUI.body;
+    newButton = state.duaUI.newButton;
+    okButton = state.duaUI.okButton;
+    resetButton = state.duaUI.resetButton;
+  }
+
+  card.dataset.duaSource = sourceId;
   anchor.after(card);
 
-  renderDuaCard();
+  state.duaUI = {
+    card,
+    title,
+    subtitle,
+    body,
+    newButton,
+    okButton,
+    resetButton,
+    anchor,
+    container,
+  };
 
-  newButton.addEventListener('click', () => {
-    if (!state.duaState || state.duaState.remaining.length === 0) {
-      return;
-    }
-    const picked = pickRandomFrom(state.duaState.remaining);
-    state.duaState.current = picked;
-    saveDuaState();
-    renderDuaCard();
-  });
+  refreshDuaUI();
+}
 
-  okButton.addEventListener('click', () => {
-    if (!state.duaState) {
-      return;
-    }
-
-    const { current, remaining } = state.duaState;
-    if (current === null) {
-      return;
-    }
-
-    const idx = remaining.indexOf(current);
-    if (idx !== -1) {
-      remaining.splice(idx, 1);
-    }
-
-    if (remaining.length === 0) {
-      state.duaState.cycles += 1;
-      state.duaState.current = null;
-      saveDuaState();
-      renderDuaCard();
-      return;
-    }
-
-    state.duaState.current = pickRandomFrom(remaining);
-    saveDuaState();
-    renderDuaCard();
-  });
-
-  resetButton.addEventListener('click', () => {
-    state.duaState = resetDuaState(state.duas.length, sourceId, state.duaState ? state.duaState.cycles : 0);
-    state.duaState.current = pickRandomFrom(state.duaState.remaining);
-    saveDuaState();
-    renderDuaCard();
-  });
-
-  function renderDuaCard() {
-    updateDuaSubtitle(subtitle);
-    updateDuaBody(body);
-    updateDuaButtons(newButton, okButton, resetButton);
+function handleDuaNewClick() {
+  if (!state.duaState || state.duaState.remaining.length === 0) {
+    return;
   }
+  const picked = pickRandomFrom(state.duaState.remaining);
+  state.duaState.current = picked;
+  saveDuaState();
+  refreshDuaUI();
+}
+
+function handleDuaOkClick() {
+  if (!state.duaState) {
+    return;
+  }
+
+  const { current, remaining } = state.duaState;
+  if (current === null) {
+    return;
+  }
+
+  const idx = remaining.indexOf(current);
+  if (idx !== -1) {
+    remaining.splice(idx, 1);
+  }
+
+  if (remaining.length === 0) {
+    state.duaState.cycles += 1;
+    state.duaState.current = null;
+    saveDuaState();
+    refreshDuaUI();
+    return;
+  }
+
+  state.duaState.current = pickRandomFrom(remaining);
+  saveDuaState();
+  refreshDuaUI();
+}
+
+function handleDuaResetClick() {
+  const total = state.duas.length;
+  if (!total) {
+    return;
+  }
+
+  const sourceId = state.duaSource;
+  const cycles = state.duaState ? state.duaState.cycles : 0;
+  const nextState = resetDuaState(total, sourceId, cycles);
+  if (nextState.remaining.length > 0) {
+    nextState.current = pickRandomFrom(nextState.remaining);
+    saveDuaState();
+  } else {
+    saveDuaState();
+  }
+  refreshDuaUI();
+}
+
+function refreshDuaUI() {
+  const ui = state.duaUI;
+  if (!ui || !ui.card) {
+    return;
+  }
+
+  if (!ui.card.isConnected) {
+    state.duaUI = null;
+    return;
+  }
+
+  const sourceId = state.duaSource;
+  const label = DUA_SOURCES[sourceId]?.label || 'Dualar';
+
+  ui.title.textContent = label;
+  ui.card.dataset.duaSource = sourceId;
+
+  if (!state.duaState || state.duaState.sourceId !== sourceId) {
+    ui.subtitle.textContent = 'Dualar yükleniyor…';
+    ui.body.innerHTML = '<p>Dualar yükleniyor…</p>';
+    ui.newButton.disabled = true;
+    ui.okButton.disabled = true;
+    ui.resetButton.hidden = true;
+    ui.resetButton.disabled = true;
+    return;
+  }
+
+  updateDuaSubtitle(ui.subtitle);
+  updateDuaBody(ui.body);
+  updateDuaButtons(ui.newButton, ui.okButton, ui.resetButton);
 }
 
 function updateDuaSubtitle(subtitle) {
@@ -1745,10 +1832,11 @@ function updateDuaSubtitle(subtitle) {
   const total = state.duaState.total;
   const remaining = state.duaState.remaining.length;
   const cycles = state.duaState.cycles;
+  const label = DUA_SOURCES[state.duaState.sourceId]?.label || 'Dualar';
 
   if (remaining === 0) {
     const times = Math.max(1, cycles);
-    subtitle.textContent = `Bir Kırık Dilekçeyi ${formatNumber(times)} kere tamamladınız.`;
+    subtitle.textContent = `${label} ${formatNumber(times)} kere tamamladınız.`;
     return;
   }
 
@@ -1806,8 +1894,27 @@ async function loadDuaSourceData(sourceId) {
     return [];
   }
 
-  const raw = await fetchText(config.path);
-  const list = sanitiseDuas(raw);
+  let list = [];
+
+  if (config.composite) {
+    const baseSources = Object.entries(DUA_SOURCES)
+      .filter(([, item]) => item && item.path);
+    const results = await Promise.all(
+      baseSources.map(([id]) => loadDuaSourceData(id)),
+    );
+    list = [];
+    baseSources.forEach(([id, item], index) => {
+      const entries = results[index] || [];
+      const label = item.label || id;
+      entries.forEach((dua) => {
+        list.push(`**${label}**\n\n${dua}`);
+      });
+    });
+  } else if (config.path) {
+    const raw = await fetchText(config.path);
+    list = sanitiseDuas(raw);
+  }
+
   state.duaCache[sourceId] = list;
   return list;
 }
@@ -1818,24 +1925,156 @@ function sanitiseDuas(raw) {
   }
 
   const clean = raw.replace(/\ufeff/g, '');
-  return clean
-    .split('-split-')
+  const normalised = clean.replace(/[\u2013\u2014]\s*split\s*[\u2013\u2014]/gi, '-split-');
+  return normalised
+    .split(/-split-/i)
     .map((entry) => entry.trim())
     .map((entry) => entry.replace(/^\d+\.\s*/, ''))
     .filter((entry) => entry.length > 0);
 }
 
 function ensureDuaState(total, sourceId) {
-  if (!state.duaState || state.duaState.total !== total || state.duaState.sourceId !== sourceId) {
-    state.duaState = loadDuaState(total, sourceId);
+  const repository = ensureDuaRepository();
+  let stored = repository.states[sourceId];
+  let needsPersist = false;
+
+  if (!stored) {
+    stored = createFreshDuaState(total, sourceId, 0);
+    repository.states[sourceId] = stored;
+    needsPersist = true;
+  } else if (stored.total !== total) {
+    stored = createFreshDuaState(total, sourceId, stored.cycles || 0);
+    repository.states[sourceId] = stored;
+    needsPersist = true;
+  } else {
+    const sanitised = sanitizeStoredDuaState(stored, total, sourceId);
+    if (sanitised !== stored) {
+      repository.states[sourceId] = sanitised;
+      stored = sanitised;
+      needsPersist = true;
+    }
   }
 
-  if (state.duaState.current === null && state.duaState.remaining.length > 0) {
-    state.duaState.current = pickRandomFrom(state.duaState.remaining);
-    saveDuaState();
+  if (stored.current === null && stored.remaining.length > 0) {
+    stored.current = pickRandomFrom(stored.remaining);
+    needsPersist = true;
   }
 
-  return state.duaState;
+  repository.current = sourceId;
+  state.duaStates.set(sourceId, stored);
+  state.duaState = stored;
+
+  if (needsPersist) {
+    persistDuaRepository();
+  }
+
+  return stored;
+}
+
+function ensureDuaRepository() {
+  if (duaRepository) {
+    return duaRepository;
+  }
+
+  try {
+    const raw = localStorage.getItem(DUA_STORAGE_KEY);
+    if (!raw) {
+      duaRepository = createEmptyDuaRepository();
+      return duaRepository;
+    }
+
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.version === DUA_STORAGE_VERSION && parsed.states && typeof parsed.states === 'object') {
+      duaRepository = {
+        version: DUA_STORAGE_VERSION,
+        current: parsed.current || null,
+        states: parsed.states,
+      };
+      return duaRepository;
+    }
+
+    if (parsed && typeof parsed === 'object' && parsed.total !== undefined) {
+      const legacySource = parsed.sourceId || 'birkirikdilekce';
+      const migrated = sanitizeStoredDuaState(parsed, parsed.total, legacySource);
+      duaRepository = createEmptyDuaRepository();
+      duaRepository.states[legacySource] = migrated;
+      duaRepository.current = legacySource;
+      persistDuaRepository();
+      return duaRepository;
+    }
+  } catch (error) {
+    console.warn('Dua depolama bilgisi okunamadı, sıfırlanıyor.', error);
+  }
+
+  duaRepository = createEmptyDuaRepository();
+  return duaRepository;
+}
+
+function createEmptyDuaRepository() {
+  return { version: DUA_STORAGE_VERSION, current: null, states: {} };
+}
+
+function createFreshDuaState(total, sourceId, existingCycles = 0) {
+  return {
+    remaining: Array.from({ length: total }, (_value, index) => index),
+    cycles: Math.max(0, Math.floor(existingCycles || 0)),
+    current: null,
+    total,
+    sourceId,
+  };
+}
+
+function sanitizeStoredDuaState(stored, total, sourceId) {
+  if (!stored || typeof stored !== 'object') {
+    return createFreshDuaState(total, sourceId, 0);
+  }
+
+  const seen = new Set();
+  const remaining = [];
+
+  if (Array.isArray(stored.remaining)) {
+    stored.remaining.forEach((idx) => {
+      if (Number.isInteger(idx) && idx >= 0 && idx < total && !seen.has(idx)) {
+        seen.add(idx);
+        remaining.push(idx);
+      }
+    });
+  }
+
+  remaining.sort((a, b) => a - b);
+
+  const cycles = Math.max(0, Math.floor(stored.cycles || 0));
+  let current = Number.isInteger(stored.current) ? stored.current : null;
+
+  if (current !== null && (!seen.has(current) || current < 0 || current >= total)) {
+    current = null;
+  }
+
+  if (!remaining.length && total > 0) {
+    // keep completion status but ensure structure is valid
+    current = null;
+  }
+
+  return {
+    remaining,
+    cycles,
+    current,
+    total,
+    sourceId,
+  };
+}
+
+function persistDuaRepository() {
+  try {
+    const repository = ensureDuaRepository();
+    localStorage.setItem(DUA_STORAGE_KEY, JSON.stringify({
+      version: DUA_STORAGE_VERSION,
+      current: repository.current,
+      states: repository.states,
+    }));
+  } catch (error) {
+    console.warn('Dua durumu kaydedilemedi.', error);
+  }
 }
 
 function loadCounters() {
@@ -1852,61 +2091,24 @@ function saveCounters() {
   localStorage.setItem(COUNTER_STORAGE_KEY, JSON.stringify(state.counters));
 }
 
-function loadDuaState(total, sourceId) {
-  try {
-    const raw = localStorage.getItem(DUA_STORAGE_KEY);
-    if (!raw) {
-      return resetDuaState(total, sourceId, 0);
-    }
-
-    const parsed = JSON.parse(raw);
-    const remaining = Array.isArray(parsed.remaining) ? parsed.remaining : [];
-    const validRemaining = remaining.filter((idx) => typeof idx === 'number' && idx >= 0 && idx < total);
-
-    if (parsed.total !== total || parsed.sourceId !== sourceId || validRemaining.length === 0) {
-      return resetDuaState(total, sourceId, Math.max(0, parsed.cycles || 0));
-    }
-
-    return {
-      remaining: validRemaining,
-      cycles: Math.max(0, Math.floor(parsed.cycles || 0)),
-      current: typeof parsed.current === 'number' ? parsed.current : null,
-      total,
-      sourceId,
-    };
-  } catch (error) {
-    console.warn('Dua durumu okunamadı, yeniden başlatılıyor.', error);
-    return resetDuaState(total, sourceId, 0);
-  }
-}
-
 function saveDuaState() {
   if (!state.duaState) {
     return;
   }
-
-  const payload = {
-    remaining: state.duaState.remaining,
-    cycles: state.duaState.cycles,
-    current: state.duaState.current,
-    total: state.duaState.total,
-    sourceId: state.duaState.sourceId,
-  };
-
-  localStorage.setItem(DUA_STORAGE_KEY, JSON.stringify(payload));
+  const repository = ensureDuaRepository();
+  repository.states[state.duaState.sourceId] = state.duaState;
+  repository.current = state.duaState.sourceId;
+  persistDuaRepository();
 }
 
 function resetDuaState(total, sourceId, existingCycles = 0) {
-  const remaining = Array.from({ length: total }, (_value, index) => index);
-  const base = {
-    remaining,
-    cycles: Math.max(0, Math.floor(existingCycles)),
-    current: null,
-    total,
-    sourceId,
-  };
+  const repository = ensureDuaRepository();
+  const base = createFreshDuaState(total, sourceId, existingCycles);
+  repository.states[sourceId] = base;
+  repository.current = sourceId;
   state.duaState = base;
-  saveDuaState();
+  state.duaStates.set(sourceId, base);
+  persistDuaRepository();
   return base;
 }
 
@@ -2132,18 +2334,61 @@ function attachThemeToggle(appRoot) {
 
 function attachSettingsToggle(appRoot) {
   const toggleButton = appRoot.querySelector('.settings-toggle');
-  const panel = appRoot.querySelector('[data-settings]');
+  const overlay = document.querySelector('[data-settings]');
+  const closeButton = overlay?.querySelector('[data-close-settings]');
+  const sheet = overlay?.querySelector('.settings-sheet');
 
-  if (!toggleButton || !panel) {
+  if (!toggleButton || !overlay || !sheet) {
     return;
   }
 
+  if (!sheet.hasAttribute('tabindex')) {
+    sheet.setAttribute('tabindex', '-1');
+  }
+
+  const handleKeydown = (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeSettings();
+    }
+  };
+
+  const openSettings = () => {
+    overlay.removeAttribute('hidden');
+    document.body.classList.add('settings-open');
+    document.addEventListener('keydown', handleKeydown);
+    const focusTarget = closeButton || sheet;
+    window.requestAnimationFrame(() => {
+      focusTarget?.focus?.();
+    });
+  };
+
+  const closeSettings = () => {
+    overlay.setAttribute('hidden', '');
+    document.body.classList.remove('settings-open');
+    document.removeEventListener('keydown', handleKeydown);
+    window.requestAnimationFrame(() => {
+      toggleButton.focus();
+    });
+  };
+
   toggleButton.addEventListener('click', () => {
-    const isHidden = panel.hasAttribute('hidden');
-    if (isHidden) {
-      panel.removeAttribute('hidden');
+    if (overlay.hasAttribute('hidden')) {
+      openSettings();
     } else {
-      panel.setAttribute('hidden', '');
+      closeSettings();
+    }
+  });
+
+  if (closeButton) {
+    closeButton.addEventListener('click', () => {
+      closeSettings();
+    });
+  }
+
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) {
+      closeSettings();
     }
   });
 }
@@ -2162,9 +2407,9 @@ function resolveThemePreviewBackground(preset, mode) {
   return base['surface-hero'] || base['accent-color'];
 }
 
-function initThemeSelector(appRoot) {
-  const accordion = appRoot.querySelector('[data-theme-accordion]');
-  const panel = appRoot.querySelector('[data-theme-options]');
+function initThemeSelector() {
+  const accordion = document.querySelector('[data-theme-accordion]');
+  const panel = document.querySelector('[data-theme-options]');
 
   if (!accordion || !panel) {
     return;
@@ -2790,42 +3035,90 @@ function hideNameTooltip() {
   state.activeTooltipTarget = null;
 }
 
-function initDuaSourceSelector(appRoot) {
-  const select = appRoot.querySelector('#dua-source');
+function initDuaSourceSelector() {
+  const select = document.querySelector('#dua-source');
   if (!select) {
     return;
   }
 
-  select.value = state.duaSource;
+  const options = DUA_SOURCE_ORDER.filter((id) => DUA_SOURCES[id]);
+  select.innerHTML = '';
+  options.forEach((id) => {
+    const option = document.createElement('option');
+    option.value = id;
+    option.textContent = DUA_SOURCES[id]?.label || id;
+    select.append(option);
+  });
+
+  const resolved = resolveDuaSourceId(state.duaSource);
+  state.duaSource = resolved;
+  select.value = resolved;
+  select.disabled = false;
 
   select.addEventListener('change', async (event) => {
     const nextSource = event.target.value;
-    if (!DUA_SOURCES[nextSource]) {
-      return;
-    }
-
-    state.duaSource = nextSource;
-    localStorage.setItem(DUA_SOURCE_STORAGE_KEY, nextSource);
-    state.duaState = null;
-
-    if (state.currentPrayer === 'sabah') {
-      await loadPrayerContent('sabah');
-    }
+    await changeDuaSource(nextSource);
   });
+
+  state.duaSourceSelect = select;
+  updateSettingsDuaControls();
 }
 
-function attachSettingsActions(appRoot) {
-  const resetButton = appRoot.querySelector('[data-reset-dua]');
+async function changeDuaSource(nextSource, { persist = true, refresh = true } = {}) {
+  const resolved = resolveDuaSourceId(nextSource);
+  if (persist) {
+    try {
+      localStorage.setItem(DUA_SOURCE_STORAGE_KEY, resolved);
+    } catch (error) {
+      console.warn('Dua kaynağı tercihi saklanamadı.', error);
+    }
+  }
+
+  state.duaSource = resolved;
+
+  if (refresh) {
+    refreshDuaUI();
+  }
+
+  const duas = await loadDuaSourceData(resolved);
+  state.duas = duas;
+  state.duaState = ensureDuaState(duas.length, resolved);
+
+  if (refresh) {
+    refreshDuaUI();
+    updateSettingsDuaControls();
+  }
+}
+
+function updateSettingsDuaControls() {
+  const sourceId = resolveDuaSourceId(state.duaSource);
+  const label = DUA_SOURCES[sourceId]?.label || 'Seçili dua kaynağı';
+
+  if (state.duaSourceSelect) {
+    state.duaSourceSelect.value = sourceId;
+  }
+
+  if (state.duaResetButton) {
+    state.duaResetButton.textContent = `${label} ilerlemesini sıfırla`;
+  }
+}
+
+function attachSettingsActions() {
+  const resetButton = document.querySelector('[data-reset-dua]');
   if (!resetButton) {
     return;
   }
+
+  state.duaResetButton = resetButton;
+  updateSettingsDuaControls();
 
   resetButton.addEventListener('click', async () => {
     if (resetButton.disabled) {
       return;
     }
 
-    const confirmed = window.confirm('Bir Kırık Dilekçe okuma ilerlemesini sıfırlamak istiyor musunuz?');
+    const label = DUA_SOURCES[state.duaSource]?.label || 'seçili dua kaynağı';
+    const confirmed = window.confirm(`${label} okuma ilerlemesini sıfırlamak istiyor musunuz?`);
     if (!confirmed) {
       return;
     }
@@ -2834,12 +3127,14 @@ function attachSettingsActions(appRoot) {
     try {
       const duas = await loadDuaSourceData(state.duaSource);
       state.duas = duas;
-      resetDuaState(duas.length, state.duaSource, 0);
-
-      const currentConfig = PRAYER_CONFIG[state.currentPrayer];
-      if (currentConfig && currentConfig.supportsDua) {
-        await loadPrayerContent(state.currentPrayer);
+      const nextState = resetDuaState(duas.length, state.duaSource, 0);
+      if (nextState.remaining.length > 0) {
+        nextState.current = pickRandomFrom(nextState.remaining);
+        saveDuaState();
+      } else {
+        saveDuaState();
       }
+      refreshDuaUI();
     } catch (error) {
       console.error('Dua ilerlemesi sıfırlanamadı.', error);
     } finally {
@@ -2850,10 +3145,19 @@ function attachSettingsActions(appRoot) {
 
 function loadSelectedDuaSource() {
   const stored = localStorage.getItem(DUA_SOURCE_STORAGE_KEY);
-  if (stored && DUA_SOURCES[stored]) {
-    return stored;
+  return resolveDuaSourceId(stored);
+}
+
+function resolveDuaSourceId(candidate) {
+  if (candidate && DUA_SOURCES[candidate]) {
+    return candidate;
   }
-  return 'birkirikdilekce';
+  const fallback = DUA_SOURCE_ORDER.find((id) => DUA_SOURCES[id]);
+  if (fallback) {
+    return fallback;
+  }
+  const firstKey = Object.keys(DUA_SOURCES)[0];
+  return firstKey || 'birkirikdilekce';
 }
 
 function registerServiceWorker() {

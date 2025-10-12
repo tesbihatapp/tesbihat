@@ -49,9 +49,19 @@
         </div>
       </header>
       <main class="main">
-        <aside class="settings-panel card" data-settings hidden>
-          <h2>Ayarlar</h2>
-          <p>Uygulamanın görünümünü ve dua takibini buradan yönetebilirsiniz.</p>
+        <section id="content" class="content" aria-live="polite">
+          <div class="loading">İçerik yükleniyor…</div>
+        </section>
+      </main>
+    </div>
+    <div class="settings-overlay" data-settings hidden>
+      <div class="settings-sheet card" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <header class="settings-sheet__header">
+          <h2 id="settings-title">Ayarlar</h2>
+          <button type="button" class="settings-close" data-close-settings aria-label="Ayarları kapat">✕</button>
+        </header>
+        <p class="settings-sheet__intro">Uygulamanın görünümünü ve dua takibini buradan yönetebilirsiniz.</p>
+        <div class="settings-sheet__content">
           <div class="settings-group">
             <button type="button" class="settings-accordion" data-theme-accordion>
               <span>Tema seç</span>
@@ -61,21 +71,16 @@
           </div>
           <div class="settings-group">
             <label class="settings-label" for="dua-source">Dua kaynağı</label>
-            <select id="dua-source" name="dua-source" disabled>
-              <option value="birkirikdilekce" selected>Bir Kırık Dilekçe (varsayılan)</option>
-            </select>
+            <select id="dua-source" name="dua-source"></select>
           </div>
           <div class="settings-actions">
             <button type="button" class="settings-action-button" data-reset-dua>
-              Bir Kırık Dilekçe ilerlemesini sıfırla
+              Dua ilerlemesini sıfırla
             </button>
             <small class="settings-hint">Bu işlem mevcut okuma takibini sıfırlar.</small>
           </div>
-        </aside>
-        <section id="content" class="content" aria-live="polite">
-          <div class="loading">İçerik yükleniyor…</div>
-        </section>
-      </main>
+        </div>
+      </div>
     </div>
   </body>
 </html>

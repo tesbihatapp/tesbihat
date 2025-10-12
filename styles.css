@@ -70,6 +70,10 @@ body {
   color: var(--text-color);
 }
 
+body.settings-open {
+  overflow: hidden;
+}
+
 .arabic-text {
   font-family: var(--font-family-arabic);
   font-size: calc(1.28rem * var(--font-scale));
@@ -234,23 +238,82 @@ button {
   background: var(--surface-muted);
 }
 
-.settings-panel {
-  max-width: 760px;
-  margin: 0 auto;
-  width: 100%;
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.42);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  z-index: 1000;
+}
+
+.settings-overlay[hidden] {
+  display: none !important;
+}
+
+.settings-sheet {
+  width: min(100%, 680px);
+  max-height: min(90vh, 760px);
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 1rem;
+  position: relative;
+  overflow: hidden;
 }
 
-.settings-panel h2 {
+.settings-sheet__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.settings-sheet__header h2 {
   margin: 0;
-  font-size: 1.2rem;
+  font-size: 1.35rem;
 }
 
-.settings-panel p {
+.settings-close {
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+  background: var(--surface-muted);
+  color: var(--text-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  transition: background-color var(--transition-fast), transform var(--transition-fast);
+}
+
+.settings-close:hover,
+.settings-close:focus-visible {
+  background: var(--surface-overlay);
+  transform: translateY(-1px);
+}
+
+.settings-close:focus-visible {
+  outline: 2px solid var(--focus-outline);
+  outline-offset: 2px;
+}
+
+.settings-sheet__intro {
   margin: 0;
   color: var(--muted-text);
+}
+
+.settings-sheet__content {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  overflow-y: auto;
+  padding-right: 0.2rem;
 }
 
 .settings-group {
@@ -319,7 +382,7 @@ button {
   display: block;
 }
 
-.settings-panel select {
+.settings-sheet select {
   padding: 0.65rem 0.75rem;
   border-radius: 12px;
   border: 1px solid var(--border-color);
