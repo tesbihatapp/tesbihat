@@ -11,6 +11,7 @@ const IMPORTANCE_SOURCE_PATH = 'TesbihatinOnemi.txt';
 const INSTALL_PROMPT_STORAGE_KEY = 'tesbihat:install-dismissed';
 const INSTALL_PROMPT_DELAY = 24 * 60 * 60 * 1000;
 let duaRepository = null;
+const FEATURES_SOURCE_PATH = 'HomeFeatures.md';
 
 const NAME_SECTIONS = [
   {
@@ -965,6 +966,7 @@ const state = {
   manifestBlobUrl: null,
   manifestPromise: null,
   duaUI: null,
+  homeFeaturesHtml: null,
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1210,6 +1212,11 @@ async function renderHomePage(container) {
       layout.append(highlight);
     }
 
+    const features = await createHomeFeaturesCard();
+    if (features) {
+      layout.append(features);
+    }
+
     const installBanner = buildInstallBanner();
     if (installBanner) {
       layout.append(installBanner);
@@ -1246,6 +1253,24 @@ async function createHomeHighlightCard() {
     return buildHomeHighlightCard(message);
   } catch (error) {
     console.warn('Tesbihat önemi mesajları hazırlanırken hata oluştu.', error);
+    return null;
+  }
+}
+
+async function createHomeFeaturesCard() {
+  try {
+    const html = await ensureHomeFeaturesHtml();
+    if (!html) {
+      return null;
+    }
+
+    const card = document.createElement('article');
+    card.className = 'card home-features';
+    card.dataset.disableTooltips = 'true';
+    card.innerHTML = html;
+    return card;
+  } catch (error) {
+    console.warn('Uygulama özellikleri hazırlanırken hata oluştu.', error);
     return null;
   }
 }
@@ -1427,6 +1452,24 @@ async function ensureImportanceMessages() {
   }
 
   return state.importanceMessages;
+}
+
+async function ensureHomeFeaturesHtml() {
+  if (typeof state.homeFeaturesHtml === 'string') {
+    return state.homeFeaturesHtml;
+  }
+
+  try {
+    const raw = await fetchText(FEATURES_SOURCE_PATH);
+    const normalised = raw.replace(/\r\n/g, '\n');
+    const html = DOMPurify.sanitize(marked.parse(normalised, { mangle: false, headerIds: false }));
+    state.homeFeaturesHtml = html;
+    return html;
+  } catch (error) {
+    console.warn('Uygulama özellikleri yüklenemedi.', error);
+    state.homeFeaturesHtml = '';
+    return '';
+  }
 }
 
 function pickRandomImportanceMessage(messages) {
