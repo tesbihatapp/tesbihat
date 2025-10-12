@@ -14,7 +14,7 @@
 
 - **Ayarlar size özel:** Dilediğiniz temayı seçip uygulamayı kendi zevkinize göre düzenleyebilirsiniz.
 - **Veri gizliliği:** Uygulama hiçbir kişisel veri toplamaz; tüm ayarlarınız, sayaç ilerlemeleriniz ve dua kayıtlarınız yalnızca cihazınızda saklanır.
-- **Önerilere açığız:** Görüş ve önerilerinizi **tesbihatapp@gmail.com** adresine iletebilirsiniz.
+- **Görüş ve dualarınızı bizimle paylaşabilirsiniz:** Görüş ve önerilerinizi **tesbihatapp@gmail.com** adresine iletebilirsiniz.
 
 </details>
 
