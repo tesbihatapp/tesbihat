@@ -658,12 +658,13 @@ const PRAYER_CONFIG = {
 };
 
 const DUA_SOURCES = {
-  kurandualari: { label: 'Kur\'an-ı Kerimden Dualar', path: 'KuranDualari.txt' },
   birkirikdilekce: { label: 'Bir Kırık Dilekçe', path: 'BirKirikDilekce.txt' },
+  kurandualari: { label: 'Kur\'an-ı Kerimden Dualar', path: 'KuranDualari.txt' },
+  hadislerden: { label: 'Hadislerden Dualar', path: 'HadislerdenDualar.txt' },
   all: { label: 'Tüm Dualar', composite: true },
 };
 
-const DUA_SOURCE_ORDER = ['all', 'birkirikdilekce', 'kurandualari'];
+const DUA_SOURCE_ORDER = ['all', 'birkirikdilekce', 'kurandualari', 'hadislerden'];
 
 const SINGLE_TOOLTIP_NAMES = new Set(['allah', 'rahman']);
 const ARABIC_SCRIPT_REGEX = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/;
