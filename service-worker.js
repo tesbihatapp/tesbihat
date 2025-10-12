@@ -14,6 +14,7 @@ const ASSETS = [
   './GunlukZikirler.md',
   './BirKirikDilekce.txt',
   './KuranDualari.txt',
+  './HadislerdenDualar.txt',
   './HomeFeatures.md',
   './TesbihatinOnemi.txt',
   './names.json',
