@@ -6,6 +6,7 @@
 - **Esnek tercih:** İsterseniz Ayarlar’dan listeyi sıfırlayabilir ya da sadece Bir Kırık Dilekçe veya Kur’an dualarından oluşan seriyi tamamlayana kadar devam edebilirsiniz.
 - **Esmaü’l-Hüsnâ açıklamaları:** Tesbihat içinde geçen isimlerin üzerine dokunduğunuzda, ilgili ismin Türkçe anlamı küçük bir pencerede nazikçe gösterilir.
 - **Tema ve yazı boyutu uyumu:** Açık/koyu mod ve farklı tema paletleri anında uygulanır; yazı boyutunu büyüterek uzun okumalarda göz yorgunluğunu azaltabilirsiniz.
+- **Tesbihat dili seçimi:** Ayarlardan Türkçe veya Arapça tesbihat dosyalarına tek dokunuşla geçebilir, iki dil arasında kaydınız bozulmadan dolaşabilirsiniz.
 
 </details>
 
@@ -23,6 +24,7 @@
 
 - **Yerel kayıt:** Sayaçlar ve dua durumları tarayıcıda güvenle saklanır, her yeniden açılışta kaldığınız yerden devam edersiniz.
 - **Birleşik “Tüm Dualar” listesi:** Diğer kaynakları ayrı ayrı izlerken toplam dua deneyimini sürdürür.
+- **Çok dilli içerik:** Tesbihat dosyaları Türkçe ve Arapça sürümleriyle birlikte geliyor; seçim yaptığınız anda ilgili Markdown dosyası otomatik yükleniyor.
 - **PWA desteği:** Servis worker sayesinde çevrimdışı okuma ve ana ekrana ekleme desteği sunar.
 - **Dokunmatik odaklı etkileşimler:** Mobil jestler ve erişilebilirlik odaklı klavye kısayolları sorunsuz kullanım sağlar.
 

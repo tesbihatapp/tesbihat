@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tesbihat-cache-v15';
+const CACHE_NAME = 'tesbihat-cache-v16';
 const ASSETS = [
   './',
   './index.html',
@@ -6,10 +6,15 @@ const ASSETS = [
   './main.js',
   './manifest.webmanifest',
   './sabah.md',
+  './sabahCleanAR.md',
   './OgleTesbihat.md',
+  './oglenCleanAR.md',
   './IkindiTesbihat.md',
+  './ikindiCleanAR.md',
   './AksamTesbihat.md',
+  './aksamCleanAR.md',
   './YatsiTesbihat.md',
+  './yatsiCleanAR.md',
   './AksamYatsiZikirleri.md',
   './GunlukZikirler.md',
   './BirKirikDilekce.txt',
