@@ -662,7 +662,7 @@ const DUA_SOURCES = {
   all: { label: 'Tüm Dualar', composite: true },
 };
 
-const DUA_SOURCE_ORDER = ['birkirikdilekce', 'kurandualari', 'all'];
+const DUA_SOURCE_ORDER = ['all', 'birkirikdilekce', 'kurandualari'];
 
 const SINGLE_TOOLTIP_NAMES = new Set(['allah', 'rahman']);
 const ARABIC_SCRIPT_REGEX = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/;
