@@ -3,6 +3,7 @@ const DUA_STORAGE_KEY = 'tesbihat:duas';
 const DUA_STORAGE_VERSION = 2;
 const THEME_STORAGE_KEY = 'tesbihat:theme';
 const DUA_SOURCE_STORAGE_KEY = 'tesbihat:dua-source';
+const LANGUAGE_STORAGE_KEY = 'tesbihat:language';
 const FONT_SCALE_STORAGE_KEY = 'tesbihat:font-scale';
 const FONT_SCALE_MIN = 0.85;
 const FONT_SCALE_MAX = 1.3;
@@ -10,6 +11,8 @@ const FONT_SCALE_STEP = 0.05;
 const IMPORTANCE_SOURCE_PATH = 'TesbihatinOnemi.txt';
 const INSTALL_PROMPT_STORAGE_KEY = 'tesbihat:install-dismissed';
 const INSTALL_PROMPT_DELAY = 24 * 60 * 60 * 1000;
+const DEFAULT_LANGUAGE = 'tr';
+const LANGUAGE_OPTIONS = ['tr', 'ar'];
 let duaRepository = null;
 const FEATURES_SOURCE_PATH = 'HomeFeatures.md';
 
@@ -632,11 +635,31 @@ function updateManifestThemeColor(themeColor, backgroundColor) {
 
 const PRAYER_CONFIG = {
   home: { label: 'Anasayfa', homepage: true },
-  sabah: { label: 'Sabah', markdown: 'sabah.md', supportsDua: true },
-  ogle: { label: 'Öğle', markdown: 'OgleTesbihat.md', supportsDua: true },
-  ikindi: { label: 'İkindi', markdown: 'IkindiTesbihat.md', supportsDua: true },
-  aksam: { label: 'Akşam', markdown: 'AksamTesbihat.md', supportsDua: true },
-  yatsi: { label: 'Yatsı', markdown: 'YatsiTesbihat.md', supportsDua: true },
+  sabah: {
+    label: 'Sabah',
+    markdown: { tr: 'sabah.md', ar: 'sabahCleanAR.md' },
+    supportsDua: true,
+  },
+  ogle: {
+    label: 'Öğle',
+    markdown: { tr: 'OgleTesbihat.md', ar: 'oglenCleanAR.md' },
+    supportsDua: true,
+  },
+  ikindi: {
+    label: 'İkindi',
+    markdown: { tr: 'IkindiTesbihat.md', ar: 'ikindiCleanAR.md' },
+    supportsDua: true,
+  },
+  aksam: {
+    label: 'Akşam',
+    markdown: { tr: 'AksamTesbihat.md', ar: 'aksamCleanAR.md' },
+    supportsDua: true,
+  },
+  yatsi: {
+    label: 'Yatsı',
+    markdown: { tr: 'YatsiTesbihat.md', ar: 'yatsiCleanAR.md' },
+    supportsDua: true,
+  },
   dualar: {
     label: 'Dualar',
     description: 'Dua içeriklerini görmek için seçim yapın.',
@@ -952,6 +975,7 @@ const state = {
   duas: [],
   duaSourceSelect: null,
   duaResetButton: null,
+  language: loadLanguageSelection(),
   fontScale: loadFontScale(),
   names: null,
   tooltipElement: null,
@@ -969,6 +993,7 @@ const state = {
   manifestPromise: null,
   duaUI: null,
   homeFeaturesHtml: null,
+  languageToggleButtons: new Map(),
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -978,11 +1003,13 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   state.appRoot = appRoot;
+  document.documentElement.setAttribute('lang', state.language === 'ar' ? 'ar' : 'tr');
   applyTheme(appRoot, state.themeSelection);
   applyFontScale(state.fontScale);
   attachThemeToggle(appRoot);
   attachSettingsToggle(appRoot);
   initThemeSelector();
+  initLanguageToggle();
   attachHomeNavigation(appRoot);
   initPrayerTabs(appRoot);
   initDuaSourceSelector();
@@ -1055,7 +1082,9 @@ async function loadPrayerContent(prayerId) {
 
   content.innerHTML = `<div class="loading">İçerik yükleniyor…</div>`;
 
-  if (!config.markdown) {
+  const markdownPath = resolveMarkdownPath(config.markdown, state.language);
+
+  if (!markdownPath) {
     content.innerHTML = `
       <article class="card">
         <h2>${config.label} Tesbihatı</h2>
@@ -1066,7 +1095,7 @@ async function loadPrayerContent(prayerId) {
   }
 
   try {
-    const markdown = await fetchText(config.markdown);
+    const markdown = await fetchText(markdownPath);
     renderTesbihat(content, markdown);
 
     await ensureNamesLoaded();
@@ -1182,12 +1211,17 @@ async function renderPrayerCollectionItem(container, prayerId, config, item) {
   contentCard.className = 'card collection-detail__content';
   contentCard.innerHTML = `<div class="loading">İçerik yükleniyor…</div>`;
 
+  const markdownPath = resolveMarkdownPath(item.markdown, state.language);
+
   wrapper.append(contentCard);
 
   container.append(wrapper);
 
   try {
-    const markdown = await fetchText(item.markdown);
+    if (!markdownPath) {
+      throw new Error('İçerik dosyası bulunamadı.');
+    }
+    const markdown = await fetchText(markdownPath);
     renderTesbihat(contentCard, markdown);
     if (!item.disableNameAnnotations) {
       await ensureNamesLoaded();
@@ -1385,14 +1419,48 @@ function updateHomeInstallBanner() {
 
 function renderTesbihat(container, markdownText) {
   hideNameTooltip();
-  const normalised = markdownText
-    .replace(/\r\n/g, '\n')
+  const prepared = markdownText.replace(/\r\n/g, '\n');
+  const withAutoCounters = injectAutoCounters(prepared);
+  const normalised = withAutoCounters
     .replace(/\*\*\(counter:(\d+)\)\*\*/g, '(counter:$1)')
     .replace(/\(counter:(\d+)\)/g, (_match, count) => `<span class="counter-placeholder" data-counter-target="${count}"></span>`);
 
   const html = DOMPurify.sanitize(marked.parse(normalised, { mangle: false, headerIds: false }));
   container.innerHTML = html;
   enhanceArabicText(container);
+}
+
+function injectAutoCounters(markdown) {
+  const lines = markdown.split('\n');
+  const result = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    result.push(line);
+
+    if (!line || line.includes('(counter:')) {
+      continue;
+    }
+
+    const match = line.match(/\(\s*(\d+)\s*(?:defa)?\)([^0-9]*)$/i);
+    if (!match) {
+      continue;
+    }
+
+    const value = Number.parseInt(match[1], 10);
+    if (!Number.isFinite(value) || value < 7) {
+      continue;
+    }
+
+    const nextLine = lines[index + 1];
+    if (nextLine && /^\s*\(counter:\s*\d+\)/i.test(nextLine)) {
+      continue;
+    }
+
+    result.push(`(counter:${value})`);
+  }
+
+  return result.join('\n');
 }
 
 function enhanceArabicText(root) {
@@ -2158,6 +2226,29 @@ function resetDuaState(total, sourceId, existingCycles = 0) {
   return base;
 }
 
+function resolveMarkdownPath(source, language) {
+  if (!source) {
+    return null;
+  }
+  if (typeof source === 'string') {
+    return source;
+  }
+  if (typeof source === 'object') {
+    const targetLanguage = language && typeof language === 'string' ? language : DEFAULT_LANGUAGE;
+    if (typeof source[targetLanguage] === 'string') {
+      return source[targetLanguage];
+    }
+    if (typeof source[DEFAULT_LANGUAGE] === 'string') {
+      return source[DEFAULT_LANGUAGE];
+    }
+    const fallback = Object.values(source).find((value) => typeof value === 'string' && value);
+    if (fallback) {
+      return fallback;
+    }
+  }
+  return null;
+}
+
 function fetchText(path) {
   if (window.location.protocol === 'file:') {
     console.warn('Dosya protokolü üzerinden fetch yapılmaya çalışılıyor; yerel sunucu kullanılması önerilir.');
@@ -2557,6 +2648,42 @@ function initThemeSelector() {
   });
 
   updateThemeSelectorUI(state.themeSelection.themeId);
+}
+
+function initLanguageToggle() {
+  const container = document.querySelector('.language-toggle');
+  if (!container) {
+    return;
+  }
+
+  const buttons = Array.from(container.querySelectorAll('[data-language]'));
+  if (!buttons.length) {
+    return;
+  }
+
+  state.languageToggleButtons = new Map();
+
+  buttons.forEach((button) => {
+    const option = resolveLanguage(button.dataset.language);
+    state.languageToggleButtons.set(option, button);
+    button.type = 'button';
+    button.addEventListener('click', () => {
+      changeLanguage(option);
+    });
+  });
+
+  updateLanguageToggleUI(state.language);
+}
+
+function updateLanguageToggleUI(language) {
+  if (!(state.languageToggleButtons instanceof Map)) {
+    return;
+  }
+  state.languageToggleButtons.forEach((button, option) => {
+    const isActive = option === language;
+    button.classList.toggle('is-active', isActive);
+    button.setAttribute('aria-pressed', String(isActive));
+  });
 }
 
 function updateThemeSelectorUI(selectedThemeId) {
@@ -3140,6 +3267,30 @@ async function changeDuaSource(nextSource, { persist = true, refresh = true } = 
   }
 }
 
+async function changeLanguage(nextLanguage, { persist = true } = {}) {
+  const resolved = resolveLanguage(nextLanguage);
+  if (resolved === state.language) {
+    updateLanguageToggleUI(resolved);
+    return;
+  }
+
+  state.language = resolved;
+  if (persist) {
+    try {
+      localStorage.setItem(LANGUAGE_STORAGE_KEY, resolved);
+    } catch (error) {
+      console.warn('Dil tercihi kaydedilemedi.', error);
+    }
+  }
+
+  updateLanguageToggleUI(resolved);
+  document.documentElement.setAttribute('lang', resolved === 'ar' ? 'ar' : 'tr');
+
+  if (state.currentPrayer) {
+    await loadPrayerContent(state.currentPrayer);
+  }
+}
+
 function updateSettingsDuaControls() {
   const sourceId = resolveDuaSourceId(state.duaSource);
   const label = DUA_SOURCES[sourceId]?.label || 'Seçili dua kaynağı';
@@ -3196,6 +3347,18 @@ function attachSettingsActions() {
 function loadSelectedDuaSource() {
   const stored = localStorage.getItem(DUA_SOURCE_STORAGE_KEY);
   return resolveDuaSourceId(stored);
+}
+
+function loadLanguageSelection() {
+  const stored = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+  return resolveLanguage(stored);
+}
+
+function resolveLanguage(candidate) {
+  if (candidate && LANGUAGE_OPTIONS.includes(candidate)) {
+    return candidate;
+  }
+  return DEFAULT_LANGUAGE;
 }
 
 function resolveDuaSourceId(candidate) {

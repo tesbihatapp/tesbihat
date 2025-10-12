@@ -62,23 +62,42 @@
         </header>
         <p class="settings-sheet__intro">Uygulamanın görünümünü ve dua takibini buradan yönetebilirsiniz.</p>
         <div class="settings-sheet__content">
-          <div class="settings-group">
-            <button type="button" class="settings-accordion" data-theme-accordion>
-              <span>Tema seç</span>
-              <span class="settings-accordion__icon" aria-hidden="true">⌄</span>
-            </button>
-            <div class="settings-accordion__panel" data-theme-options hidden></div>
-          </div>
-          <div class="settings-group">
-            <label class="settings-label" for="dua-source">Dua kaynağı</label>
-            <select id="dua-source" name="dua-source"></select>
-          </div>
-          <div class="settings-actions">
-            <button type="button" class="settings-action-button" data-reset-dua>
-              Dua ilerlemesini sıfırla
-            </button>
-            <small class="settings-hint">Bu işlem mevcut okuma takibini sıfırlar.</small>
-          </div>
+          <section class="settings-section">
+            <header class="settings-section__header">
+              <span class="settings-section__icon" aria-hidden="true">🎨</span>
+              <h3>Görünüm</h3>
+            </header>
+            <div class="settings-group">
+              <button type="button" class="settings-accordion" data-theme-accordion>
+                <span>Tema seç</span>
+                <span class="settings-accordion__icon" aria-hidden="true">⌄</span>
+              </button>
+              <div class="settings-accordion__panel" data-theme-options hidden></div>
+            </div>
+            <div class="settings-group">
+              <span class="settings-label">Tesbihat Dili</span>
+              <div class="language-toggle" role="group" aria-label="Tesbihat dili">
+                <button type="button" class="language-toggle__option" data-language="tr">Türkçe</button>
+                <button type="button" class="language-toggle__option" data-language="ar">Arapça</button>
+              </div>
+            </div>
+          </section>
+          <section class="settings-section">
+            <header class="settings-section__header">
+              <span class="settings-section__icon" aria-hidden="true">🤲🏼</span>
+              <h3>Dua Yönetimi</h3>
+            </header>
+            <div class="settings-group">
+              <label class="settings-label" for="dua-source">Dua kaynağı</label>
+              <select id="dua-source" name="dua-source"></select>
+            </div>
+            <div class="settings-actions">
+              <button type="button" class="settings-action-button" data-reset-dua>
+                Dua ilerlemesini sıfırla
+              </button>
+              <small class="settings-hint">Bu işlem mevcut okuma takibini sıfırlar.</small>
+            </div>
+          </section>
         </div>
       </div>
     </div>
