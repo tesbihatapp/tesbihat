@@ -1,0 +1,24 @@
+name: Deploy Prod
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      # PROD'u gh-pages köküne bas
+      - name: Deploy to gh-pages (root)
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: ./        # statik kök
+          keep_files: true       # /staging klasörünü silme
+          exclude_assets: |
+            .github, .gitignore, README.md, LICENSE
+          commit_message: "prod: ${{ github.sha }}"
