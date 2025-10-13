@@ -1093,6 +1093,10 @@ button {
   color: inherit;
 }
 
+.dua-card[data-show-arabic="false"] .dua-arabic-block {
+  display: none;
+}
+
 .dua-actions {
   display: flex;
   flex-wrap: wrap;
