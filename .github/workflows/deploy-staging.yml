@@ -1,0 +1,29 @@
+name: Deploy Staging
+
+on:
+  push:
+    branches: [ staging ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare /staging folder
+        run: |
+          rm -rf out-staging
+          mkdir -p out-staging/staging
+          shopt -s extglob
+          cp -r !(out-staging|.git|.github) out-staging/staging/
+
+      - name: Deploy /staging to gh-pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: ./out-staging
+          keep_files: true
+          exclude_assets: |
+            .github, .gitignore, README.md, LICENSE
+          commit_message: "staging: ${{ github.sha }}"
