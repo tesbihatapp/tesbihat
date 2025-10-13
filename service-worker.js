@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tesbihat-cache-v17';
+const CACHE_NAME = 'tesbihat-cache-v18';
 const ASSETS = [
   './',
   './index.html',
@@ -22,6 +22,7 @@ const ASSETS = [
   './HadislerdenDualar.txt',
   './HomeFeatures.md',
   './TesbihatinOnemi.txt',
+  './zikir-defaults.json',
   './names.json',
   './icons/icon-180.png',
   './icons/icon-192.png',

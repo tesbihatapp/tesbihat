@@ -1,0 +1,51 @@
+[
+  {
+    "id": "core-l-il-he-ill-ente-s-bh-neke-inn-k-nt-mine-z-z-lim-n",
+    "title": "“Lâ ilâhe illâ ente sübhâneke innî küntü mine’z-zâlimîn”",
+    "markdown": "### **“Lâ ilâhe illâ ente sübhâneke innî küntü mine’z-zâlimîn”** (100 defa)\n\nلَا إِلٰهَ إِلَّا أَنْتَ سُبْحَانَكَ إِنِّي كُنْتُ مِنَ الظَّالِمِينَ\n\n**Anlamı:** Senden başka ilah yoktur. Seni her türlü noksandan tenzih ederim.\n\nGerçekten ben kendine zulmedenlerden oldum.\n\n*(Enbiyâ Sûresi 21/87)*\n\n(counter:100)",
+    "order": 0,
+    "visible": true
+  },
+  {
+    "id": "core-hasbunall-hu-ve-ni-me-l-vek-l",
+    "title": "“Hasbunallâhu ve ni’me’l-vekîl”",
+    "markdown": "### **“Hasbunallâhu ve ni’me’l-vekîl”** (100 defa)\n\nحَسْبُنَا اللّٰهُ وَنِعْمَ الْوَكِيلُ\n\n**Anlamı:** Allah bize yeter, O ne güzel vekildir.\n\n(counter:100)",
+    "order": 1,
+    "visible": true
+  },
+  {
+    "id": "core-l-havle-ve-l-kuvvete-ill-bill-h",
+    "title": "“Lâ havle ve lâ kuvvete illâ billâh”",
+    "markdown": "### **“Lâ havle ve lâ kuvvete illâ billâh”** (100 defa)\n\nلَا حَوْلَ وَلَا قُوَّةَ إِلَّا بِاللّٰهِ\n\n**Anlamı:** Güç ve kuvvet ancak Allah’ın yardımıyladır.\n\n(counter:100)",
+    "order": 2,
+    "visible": true
+  },
+  {
+    "id": "core-y-lat-f",
+    "title": "“Yâ Latîf”",
+    "markdown": "### **“Yâ Latîf”** (129 defa)\n\n**Anlamı:** Lütuf ve keremi bol olan.\n\n(counter:129)",
+    "order": 3,
+    "visible": true
+  },
+  {
+    "id": "core-s-bh-nall-hi-ve-bi-hamdih-esta-firull-he-ve-et-b-ileyh",
+    "title": "“Sübhânallâhi ve bi-hamdihî, estağfirullâhe ve etûbü ileyh”",
+    "markdown": "### **“Sübhânallâhi ve bi-hamdihî, estağfirullâhe ve etûbü ileyh”** (100 defa)\n\nسُبْحَانَ اللَّهِ وَبِحَمْدِهِ أَسْتَغْفِرُ اللَّهَ وَأَتُوبُ إِلَيْهِ\n\n**Anlamı:** Ben Allah’ı ulûhiyet makamına yakışmayan sıfatlardan tenzih eder, O’na hamdederim. Allah’tan beni bağışlamasını diler ve günahlarıma tövbe ederim.\n\n(counter:100)",
+    "order": 4,
+    "visible": true
+  },
+  {
+    "id": "core-l-havle-vel-kuvvete-ill-bill-hil-aliyyil-az-m",
+    "title": "“Lâ havle velâ kuvvete illâ billâhil aliyyil azîm”",
+    "markdown": "### **“Lâ havle velâ kuvvete illâ billâhil aliyyil azîm”**(100 defa)\n\nلَا حَوْلَ وَلَا قُوَّةَ إِلَّا بِاللّٰهِ الْعَلِيِّ الْعَظِيمِ\n\n**Anlamı:** Allah’ın güç ve kudretinden başka hiçbir güç ve kudret yoktur.\n\n(counter:100)",
+    "order": 5,
+    "visible": true
+  },
+  {
+    "id": "core-l-il-he-illallah-100-defa",
+    "title": "“Lâ ilâhe illallah”(100 defa)",
+    "markdown": "### **“Lâ ilâhe illallah”(100 defa)**\n\nلَا إِلٰهَ إِلَّا اللّٰهُ\n\n**Anlamı:** Allah’tan başka ilah yoktur.\n\n(counter:100)",
+    "order": 6,
+    "visible": true
+  }
+]
