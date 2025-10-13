@@ -5,6 +5,8 @@ const THEME_STORAGE_KEY = 'tesbihat:theme';
 const DUA_SOURCE_STORAGE_KEY = 'tesbihat:dua-source';
 const LANGUAGE_STORAGE_KEY = 'tesbihat:language';
 const DUA_ARABIC_STORAGE_KEY = 'tesbihat:dua-arabic';
+const ZIKIR_STORAGE_KEY = 'tesbihat:zikirs';
+const ZIKIR_STORAGE_VERSION = 1;
 const FONT_SCALE_STORAGE_KEY = 'tesbihat:font-scale';
 const FONT_SCALE_MIN = 0.85;
 const FONT_SCALE_MAX = 1.3;
@@ -14,9 +16,12 @@ const INSTALL_PROMPT_STORAGE_KEY = 'tesbihat:install-dismissed';
 const INSTALL_PROMPT_DELAY = 24 * 60 * 60 * 1000;
 const DEFAULT_LANGUAGE = 'tr';
 const DEFAULT_SHOW_ARABIC_DUAS = true;
+const DEFAULT_ZIKIR_VIEW = 'list';
 const LANGUAGE_OPTIONS = ['tr', 'ar'];
 let duaRepository = null;
+let zikirDefaultsPromise = null;
 const FEATURES_SOURCE_PATH = 'HomeFeatures.md';
+const ZIKIR_DEFAULTS_PATH = 'zikir-defaults.json';
 
 const NAME_SECTIONS = [
   {
@@ -662,6 +667,10 @@ const PRAYER_CONFIG = {
     markdown: { tr: 'YatsiTesbihat.md', ar: 'yatsiCleanAR.md' },
     supportsDua: true,
   },
+  zikirler: {
+    label: 'Zikirler',
+    zikirManager: true,
+  },
   dualar: {
     label: 'Dualar',
     description: 'Dua içeriklerini görmek için seçim yapın.',
@@ -979,6 +988,11 @@ const state = {
   duaResetButton: null,
   showArabicDuas: loadDuaArabicPreference(),
   language: loadLanguageSelection(),
+  zikirRepository: null,
+  zikirDefaults: null,
+  zikirs: [],
+  zikirUI: null,
+  zikirView: DEFAULT_ZIKIR_VIEW,
   fontScale: loadFontScale(),
   names: null,
   tooltipElement: null,
@@ -1075,6 +1089,11 @@ async function loadPrayerContent(prayerId) {
 
   if (config.homepage) {
     await renderHomePage(content);
+    return;
+  }
+
+  if (config.zikirManager) {
+    await renderZikirManager(content);
     return;
   }
 
@@ -1280,6 +1299,719 @@ async function renderHomePage(container) {
   }
 }
 
+async function renderZikirManager(container) {
+  hideNameTooltip();
+  container.innerHTML = `<div class="loading">Zikirler yükleniyor…</div>`;
+  state.zikirUI = null;
+  state.zikirView = DEFAULT_ZIKIR_VIEW;
+
+  try {
+    await ensureZikirRepositoryReady();
+    const ui = buildZikirShell();
+    state.zikirUI = ui;
+    container.innerHTML = '';
+    container.append(ui.root);
+    refreshZikirState();
+    refreshZikirUI();
+  } catch (error) {
+    console.error('Zikir yöneticisi hazırlanırken hata oluştu.', error);
+    container.innerHTML = `
+      <article class="card">
+        <h2>Zikirler yüklenemedi</h2>
+        <p>Lütfen sayfayı yeniledikten sonra tekrar deneyin.</p>
+      </article>
+    `;
+  }
+}
+
+
+function buildZikirShell() {
+  const root = document.createElement('div');
+  root.className = 'zikir-shell';
+  root.innerHTML = `
+    <div class="zikir-tabs" role="tablist">
+      <button type="button" class="zikir-tab is-active" data-zikir-tab="list" aria-pressed="true">Zikirler</button>
+      <button type="button" class="zikir-tab" data-zikir-tab="manage" aria-pressed="false">Zikir ayarları</button>
+    </div>
+    <div class="zikir-panels">
+      <div class="zikir-panel" data-zikir-panel="list"></div>
+      <div class="zikir-panel" data-zikir-panel="manage" hidden></div>
+    </div>
+  `;
+
+  const tabButtons = Array.from(root.querySelectorAll('[data-zikir-tab]'));
+  tabButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      setZikirView(button.dataset.zikirTab);
+    });
+  });
+
+  const listPanel = root.querySelector('[data-zikir-panel="list"]');
+  const managePanelWrapper = root.querySelector('[data-zikir-panel="manage"]');
+
+  listPanel.innerHTML = `
+    <article class="card zikir-reader">
+      <header class="zikir-reader__header">
+        <div class="zikir-reader__heading">
+          <h2>Günlük zikirler</h2>
+          <p>Seçtiğiniz zikirleri buradan okuyabilirsiniz.</p>
+        </div>
+        <button type="button" class="button-pill secondary" data-zikir-open-manage>Zikir ayarları</button>
+      </header>
+      <div class="zikir-preview__body" data-zikir-preview></div>
+    </article>
+  `;
+
+  const openManageButton = listPanel.querySelector('[data-zikir-open-manage]');
+  if (openManageButton) {
+    openManageButton.addEventListener('click', () => setZikirView('manage'));
+  }
+
+  const managePanel = buildZikirManagePanel();
+  managePanelWrapper.append(managePanel.root);
+
+  return {
+    root,
+    tabButtons,
+    panels: {
+      list: listPanel,
+      manage: managePanelWrapper,
+    },
+    previewContainer: listPanel.querySelector('[data-zikir-preview]'),
+    manage: managePanel,
+  };
+}
+
+function buildZikirManagePanel() {
+  const root = document.createElement('div');
+  root.className = 'zikir-manage';
+  root.innerHTML = `
+    <div class="zikir-manage__toolbar">
+      <button type="button" class="button-pill secondary" data-zikir-open-list>Okuma ekranına dön</button>
+    </div>
+    <div class="zikir-manage__grid">
+      <article class="card zikir-card zikir-card--list" data-disable-tooltips="true">
+        <header class="zikir-card__header">
+          <h2>Zikir listesi</h2>
+          <p>Zikirleri görünürlük ve sıralama tercihlerine göre düzenleyin.</p>
+        </header>
+        <div class="zikir-list" data-zikir-list>
+          <div class="zikir-list__items" data-zikir-items></div>
+          <p class="zikir-list__empty" data-zikir-empty hidden>Henüz zikir eklenmedi.</p>
+        </div>
+      </article>
+
+      <article class="card zikir-card zikir-card--form">
+        <header class="zikir-card__header">
+          <h2>Yeni zikir ekle</h2>
+          <p>Başlık ve metin girerek listeye yeni bir zikir ekleyebilirsiniz.</p>
+        </header>
+        <form class="zikir-form" data-zikir-form novalidate>
+          <label class="zikir-form__label">
+            <span>Başlık</span>
+            <input type="text" name="title" maxlength="160" autocomplete="off" required />
+          </label>
+          <label class="zikir-form__label">
+            <span>İçerik (Markdown destekli)</span>
+            <textarea name="content" rows="6" required></textarea>
+          </label>
+          <div class="zikir-form__row">
+            <label class="zikir-form__label zikir-form__label--inline">
+              <span>Tekrar sayısı</span>
+              <input type="number" name="count" min="1" max="10000" inputmode="numeric" placeholder="İsteğe bağlı" />
+            </label>
+            <button type="submit" class="button-pill">Zikri ekle</button>
+            <button type="reset" class="button-pill secondary">Temizle</button>
+          </div>
+          <p class="zikir-form__hint">İçerikte Arapça metin, anlam veya açıklama ekleyebilirsiniz. Tekrar sayısı girerseniz sayaç otomatik oluşturulur.</p>
+          <p class="zikir-form__message" data-zikir-form-message hidden></p>
+        </form>
+      </article>
+    </div>
+  `;
+
+  const listContainer = root.querySelector('[data-zikir-items]');
+  const listEmpty = root.querySelector('[data-zikir-empty]');
+  const form = root.querySelector('[data-zikir-form]');
+  const formMessage = root.querySelector('[data-zikir-form-message]');
+  const titleInput = form.querySelector('input[name="title"]');
+  const contentInput = form.querySelector('textarea[name="content"]');
+  const countInput = form.querySelector('input[name="count"]');
+  const openListButton = root.querySelector('[data-zikir-open-list]');
+
+  if (openListButton) {
+    openListButton.addEventListener('click', () => setZikirView('list'));
+  }
+
+  listContainer.addEventListener('click', handleZikirListAction);
+  form.addEventListener('submit', handleZikirFormSubmit);
+  form.addEventListener('reset', () => {
+    formMessage.hidden = true;
+    formMessage.textContent = '';
+    formMessage.removeAttribute('data-status');
+  });
+
+  return {
+    root,
+    listContainer,
+    listEmpty,
+    form,
+    formMessage,
+    titleInput,
+    contentInput,
+    countInput,
+  };
+}
+
+function refreshZikirState() {
+  if (!state.zikirRepository) {
+    state.zikirs = [];
+    return;
+  }
+  state.zikirs = getZikirItems({ includeHidden: true });
+}
+
+function refreshZikirUI() {
+  const ui = state.zikirUI;
+  if (!ui) {
+    return;
+  }
+
+  renderZikirList(ui.manage.listContainer, ui.manage.listEmpty);
+  renderZikirPreview(ui.previewContainer).catch((error) => {
+    console.error('Zikir önizlemesi hazırlanamadı.', error);
+    if (ui.previewContainer) {
+      ui.previewContainer.innerHTML = '<p class="zikir-preview__empty">Zikirler görüntülenemedi. Lütfen daha sonra tekrar deneyin.</p>';
+    }
+  });
+
+  setZikirView(state.zikirView);
+}
+
+function setZikirView(view) {
+  const normalized = view === 'manage' ? 'manage' : DEFAULT_ZIKIR_VIEW;
+  state.zikirView = normalized;
+
+  const ui = state.zikirUI;
+  if (!ui) {
+    return;
+  }
+
+  Object.entries(ui.panels).forEach(([key, panel]) => {
+    if (!panel) {
+      return;
+    }
+    panel.hidden = key !== normalized;
+  });
+
+  ui.tabButtons.forEach((button) => {
+    const isActive = button.dataset.zikirTab === normalized;
+    button.classList.toggle('is-active', isActive);
+    button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  });
+}
+
+function renderZikirList(container, emptyElement) {
+  if (!container || !state.zikirs) {
+    return;
+  }
+
+  container.innerHTML = '';
+  const items = state.zikirs;
+
+  if (!items.length) {
+    if (emptyElement) {
+      emptyElement.hidden = false;
+    }
+    return;
+  }
+
+  if (emptyElement) {
+    emptyElement.hidden = true;
+  }
+
+  items.forEach((item, index) => {
+    const row = document.createElement('div');
+    row.className = 'zikir-item';
+    row.dataset.zikirId = item.id;
+    if (item.type === 'custom') {
+      row.dataset.zikirCustom = 'true';
+    }
+    if (!item.visible) {
+      row.classList.add('is-hidden');
+    }
+
+    const info = document.createElement('div');
+    info.className = 'zikir-item__info';
+
+    const title = document.createElement('span');
+    title.className = 'zikir-item__title';
+    title.textContent = item.title || 'Adsız zikir';
+    info.append(title);
+
+    if (item.type === 'custom') {
+      const badge = document.createElement('span');
+      badge.className = 'zikir-item__badge';
+      badge.textContent = 'Özel';
+      info.append(badge);
+    }
+
+    if (!item.visible) {
+      const badge = document.createElement('span');
+      badge.className = 'zikir-item__badge zikir-item__badge--muted';
+      badge.textContent = 'Gizli';
+      info.append(badge);
+    }
+
+    const controls = document.createElement('div');
+    controls.className = 'zikir-item__actions';
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'zikir-item__button';
+    toggle.dataset.action = 'toggle';
+    toggle.textContent = item.visible ? 'Gizle' : 'Göster';
+    controls.append(toggle);
+
+    const upButton = document.createElement('button');
+    upButton.type = 'button';
+    upButton.className = 'zikir-item__button';
+    upButton.dataset.action = 'move-up';
+    upButton.textContent = 'Yukarı';
+    upButton.disabled = index === 0;
+    controls.append(upButton);
+
+    const downButton = document.createElement('button');
+    downButton.type = 'button';
+    downButton.className = 'zikir-item__button';
+    downButton.dataset.action = 'move-down';
+    downButton.textContent = 'Aşağı';
+    downButton.disabled = index === items.length - 1;
+    controls.append(downButton);
+
+    if (item.type === 'custom') {
+      const removeButton = document.createElement('button');
+      removeButton.type = 'button';
+      removeButton.className = 'zikir-item__button zikir-item__button--danger';
+      removeButton.dataset.action = 'remove';
+      removeButton.textContent = 'Sil';
+      controls.append(removeButton);
+    }
+
+    row.append(info, controls);
+    container.append(row);
+  });
+}
+
+async function renderZikirPreview(container) {
+  if (!container) {
+    return;
+  }
+
+  container.innerHTML = '';
+  const visibleItems = getZikirItems({ includeHidden: false });
+
+  if (!visibleItems.length) {
+    container.innerHTML = '<p class="zikir-preview__empty">Görünür zikir bulunmuyor. Zikir ayarlarından seçim yapabilirsiniz.</p>';
+    return;
+  }
+
+  visibleItems.forEach((item) => {
+    const section = document.createElement('section');
+    section.className = 'zikir-preview__item';
+    section.dataset.zikirId = item.id;
+
+    const content = document.createElement('div');
+    content.className = 'zikir-preview__content';
+    renderTesbihat(content, item.markdown);
+
+    const placeholders = content.querySelectorAll('.counter-placeholder');
+    placeholders.forEach((placeholder, index) => {
+      placeholder.dataset.counterKey = `zikir-${item.id}-${index + 1}`;
+    });
+
+    section.append(content);
+    container.append(section);
+    setupCounters(section, `zikir-${item.id}`);
+  });
+
+  try {
+    await ensureNamesLoaded();
+    annotateNames(container);
+  } catch (error) {
+    console.warn('Zikir isim açıklamaları uygulanamadı.', error);
+  }
+}
+
+function handleZikirListAction(event) {
+  const button = event.target.closest('button[data-action]');
+  if (!button) {
+    return;
+  }
+
+  const action = button.dataset.action;
+  const row = button.closest('[data-zikir-id]');
+  if (!row || !action) {
+    return;
+  }
+
+  const zikirId = row.dataset.zikirId;
+  if (!zikirId) {
+    return;
+  }
+
+  switch (action) {
+    case 'toggle':
+      toggleZikirVisibility(zikirId);
+      break;
+    case 'move-up':
+      moveZikir(zikirId, -1);
+      break;
+    case 'move-down':
+      moveZikir(zikirId, 1);
+      break;
+    case 'remove':
+      removeCustomZikir(zikirId);
+      break;
+    default:
+      break;
+  }
+}
+
+function handleZikirFormSubmit(event) {
+  event.preventDefault();
+  const ui = state.zikirUI;
+  if (!ui) {
+    return;
+  }
+
+  const title = ui.titleInput.value.trim();
+  const content = ui.contentInput.value.trim();
+  const countValue = ui.countInput.value.trim();
+  const hasCount = countValue.length > 0;
+  const repeatCount = hasCount ? Number.parseInt(countValue, 10) : null;
+
+  if (!title) {
+    updateZikirFormMessage('error', 'Başlık alanı boş bırakılamaz.');
+    ui.titleInput.focus();
+    return;
+  }
+
+  if (!content) {
+    updateZikirFormMessage('error', 'İçerik alanı boş bırakılamaz.');
+    ui.contentInput.focus();
+    return;
+  }
+
+  if (hasCount && (!Number.isFinite(repeatCount) || repeatCount <= 0)) {
+    updateZikirFormMessage('error', 'Tekrar sayısı için geçerli bir sayı girin.');
+    ui.countInput.focus();
+    return;
+  }
+
+  try {
+    addCustomZikir({
+      title,
+      content,
+      repeatCount: hasCount ? repeatCount : null,
+    });
+    ui.form.reset();
+    updateZikirFormMessage('success', `"${title}" zikri listeye eklendi.`);
+  } catch (error) {
+    console.error('Zikir eklenirken hata oluştu.', error);
+    updateZikirFormMessage('error', error.message || 'Zikir eklenemedi. Lütfen tekrar deneyin.');
+  }
+}
+
+function updateZikirFormMessage(status, message) {
+  const ui = state.zikirUI;
+  if (!ui || !ui.formMessage) {
+    return;
+  }
+  ui.formMessage.hidden = false;
+  ui.formMessage.textContent = message;
+  ui.formMessage.dataset.status = status;
+}
+
+async function ensureZikirRepositoryReady() {
+  if (state.zikirRepository) {
+    return state.zikirRepository;
+  }
+
+  const defaults = await ensureZikirDefaults();
+  const stored = loadStoredZikirRepository();
+  const repository = mergeZikirRepository(defaults, stored);
+  state.zikirDefaults = defaults;
+  state.zikirRepository = repository;
+  refreshZikirState();
+  return repository;
+}
+
+async function ensureZikirDefaults() {
+  if (Array.isArray(state.zikirDefaults) && state.zikirDefaults.length > 0) {
+    return state.zikirDefaults;
+  }
+
+  if (!zikirDefaultsPromise) {
+    zikirDefaultsPromise = fetchText(ZIKIR_DEFAULTS_PATH)
+      .then((raw) => JSON.parse(raw))
+      .catch((error) => {
+        zikirDefaultsPromise = null;
+        throw error;
+      });
+  }
+
+  const defaults = await zikirDefaultsPromise;
+  state.zikirDefaults = Array.isArray(defaults) ? defaults : [];
+  return state.zikirDefaults;
+}
+
+function loadStoredZikirRepository() {
+  try {
+    const raw = localStorage.getItem(ZIKIR_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      return parsed;
+    }
+  } catch (error) {
+    console.warn('Zikir ayarları okunamadı, varsayılanlar kullanılacak.', error);
+  }
+  return null;
+}
+
+function mergeZikirRepository(defaults, stored) {
+  const repository = createDefaultZikirRepository(defaults);
+
+  if (!stored || typeof stored !== 'object') {
+    return repository;
+  }
+
+  const storedItems = stored.items && typeof stored.items === 'object' ? stored.items : {};
+  const customItems = [];
+
+  Object.values(storedItems).forEach((item) => {
+    if (!item || typeof item !== 'object' || !item.id) {
+      return;
+    }
+
+    if (item.type === 'custom') {
+      customItems.push(item);
+      return;
+    }
+
+    if (repository.items[item.id]) {
+      repository.items[item.id].visible = item.visible !== false;
+    }
+  });
+
+  customItems.forEach((item) => {
+    repository.items[item.id] = {
+      id: item.id,
+      title: item.title || 'Özel zikir',
+      markdown: item.markdown || '',
+      visible: item.visible !== false,
+      type: 'custom',
+      createdAt: item.createdAt || null,
+    };
+  });
+
+  const storedOrder = Array.isArray(stored.order) ? stored.order.filter((id) => repository.items[id]) : [];
+  const remaining = Object.keys(repository.items).filter((id) => !storedOrder.includes(id));
+  repository.order = storedOrder.concat(remaining);
+
+  if (Number.isFinite(stored.nextCustomIndex)) {
+    repository.nextCustomIndex = Math.max(1, Number.parseInt(stored.nextCustomIndex, 10));
+  }
+
+  return repository;
+}
+
+function createDefaultZikirRepository(defaults) {
+  const items = {};
+  const order = [];
+
+  const sorted = Array.isArray(defaults) ? [...defaults] : [];
+  sorted.sort((a, b) => {
+    const left = Number.isFinite(a?.order) ? a.order : 0;
+    const right = Number.isFinite(b?.order) ? b.order : 0;
+    return left - right;
+  });
+
+  sorted.forEach((item, index) => {
+    if (!item || !item.id) {
+      return;
+    }
+    items[item.id] = {
+      id: item.id,
+      title: item.title || `Zikir ${index + 1}`,
+      markdown: item.markdown || '',
+      visible: item.visible !== false,
+      type: 'core',
+    };
+    order.push(item.id);
+  });
+
+  return {
+    version: ZIKIR_STORAGE_VERSION,
+    items,
+    order,
+    nextCustomIndex: 1,
+  };
+}
+
+function persistZikirRepository() {
+  if (!state.zikirRepository) {
+    return;
+  }
+
+  try {
+    const payload = {
+      version: ZIKIR_STORAGE_VERSION,
+      items: state.zikirRepository.items,
+      order: state.zikirRepository.order,
+      nextCustomIndex: state.zikirRepository.nextCustomIndex || 1,
+    };
+    localStorage.setItem(ZIKIR_STORAGE_KEY, JSON.stringify(payload));
+  } catch (error) {
+    console.warn('Zikir ayarları kaydedilemedi.', error);
+  }
+}
+
+function getZikirItems({ includeHidden = true } = {}) {
+  const repository = state.zikirRepository;
+  if (!repository) {
+    return [];
+  }
+
+  const items = [];
+  const order = Array.isArray(repository.order) ? repository.order : Object.keys(repository.items);
+
+  order.forEach((id) => {
+    const item = repository.items[id];
+    if (!item) {
+      return;
+    }
+    if (!includeHidden && item.visible === false) {
+      return;
+    }
+    items.push({ ...item });
+  });
+
+  return items;
+}
+
+function toggleZikirVisibility(zikirId) {
+  const repository = state.zikirRepository;
+  if (!repository || !repository.items[zikirId]) {
+    return;
+  }
+  repository.items[zikirId].visible = !repository.items[zikirId].visible;
+  persistZikirRepository();
+  refreshZikirState();
+  refreshZikirUI();
+}
+
+function moveZikir(zikirId, direction) {
+  const repository = state.zikirRepository;
+  if (!repository || !Array.isArray(repository.order) || !repository.items[zikirId]) {
+    return;
+  }
+
+  const currentIndex = repository.order.indexOf(zikirId);
+  if (currentIndex === -1) {
+    return;
+  }
+
+  const targetIndex = currentIndex + direction;
+  if (targetIndex < 0 || targetIndex >= repository.order.length) {
+    return;
+  }
+
+  const [entry] = repository.order.splice(currentIndex, 1);
+  repository.order.splice(targetIndex, 0, entry);
+  persistZikirRepository();
+  refreshZikirState();
+  refreshZikirUI();
+}
+
+function removeCustomZikir(zikirId) {
+  const repository = state.zikirRepository;
+  if (!repository) {
+    return;
+  }
+
+  const item = repository.items[zikirId];
+  if (!item || item.type !== 'custom') {
+    return;
+  }
+
+  const confirmed = window.confirm(`"${item.title || 'Bu zikir'}" kaydını silmek istediğinize emin misiniz?`);
+  if (!confirmed) {
+    return;
+  }
+
+  delete repository.items[zikirId];
+  repository.order = repository.order.filter((id) => id !== zikirId);
+  persistZikirRepository();
+  refreshZikirState();
+  refreshZikirUI();
+}
+
+function addCustomZikir({ title, content, repeatCount }) {
+  const repository = state.zikirRepository;
+  if (!repository) {
+    throw new Error('Zikir listesi henüz hazır değil.');
+  }
+
+  const trimmedTitle = title.trim();
+  const trimmedContent = content.trim();
+  if (!trimmedTitle) {
+    throw new Error('Başlık gerekli.');
+  }
+  if (!trimmedContent) {
+    throw new Error('İçerik gerekli.');
+  }
+
+  let counter = null;
+  if (Number.isFinite(repeatCount) && repeatCount > 0) {
+    counter = Math.min(10000, Math.max(1, Math.floor(repeatCount)));
+  }
+
+  const heading = `### **${trimmedTitle}**${counter ? ` (${counter} defa)` : ''}`;
+  const segments = [heading, trimmedContent];
+
+  if (counter && !/\(counter:\s*\d+\)/i.test(trimmedContent)) {
+    segments.push(`(counter:${counter})`);
+  }
+
+  const markdown = segments.filter(Boolean).join('\n\n').trim();
+  const id = generateCustomZikirId(repository);
+
+  repository.items[id] = {
+    id,
+    title: trimmedTitle,
+    markdown,
+    visible: true,
+    type: 'custom',
+    createdAt: new Date().toISOString(),
+  };
+  repository.order.push(id);
+  repository.nextCustomIndex = (repository.nextCustomIndex || 1) + 1;
+
+  persistZikirRepository();
+  refreshZikirState();
+  refreshZikirUI();
+}
+
+function generateCustomZikirId(repository) {
+  const counter = repository.nextCustomIndex || 1;
+  const timestamp = Date.now().toString(36);
+  return `custom-${timestamp}-${counter}`;
+}
+
 async function createHomeHighlightCard() {
   try {
     const messages = await ensureImportanceMessages();
@@ -1460,6 +2192,28 @@ function injectAutoCounters(markdown) {
       continue;
     }
 
+    let lookaheadIndex = index + 1;
+    let hasExistingCounter = false;
+    while (lookaheadIndex < lines.length) {
+      const lookaheadLine = lines[lookaheadIndex];
+      if (!lookaheadLine.trim()) {
+        lookaheadIndex += 1;
+        continue;
+      }
+      if (/^#{2,}\s/.test(lookaheadLine) || /^-{3,}\s*$/.test(lookaheadLine)) {
+        break;
+      }
+      if (lookaheadLine.includes('(counter:')) {
+        hasExistingCounter = true;
+        break;
+      }
+      lookaheadIndex += 1;
+    }
+
+    if (hasExistingCounter) {
+      continue;
+    }
+
     result.push(`(counter:${value})`);
   }
 
@@ -1598,7 +2352,8 @@ function setupCounters(container, prayerId) {
 
   counterNodes.forEach((node, index) => {
     const target = Number.parseInt(node.dataset.counterTarget, 10) || 0;
-    const counterKey = `${prayerId}-${index + 1}`;
+    const customKey = typeof node.dataset.counterKey === 'string' && node.dataset.counterKey.trim();
+    const counterKey = customKey || `${prayerId}-${index + 1}`;
     const savedValue = Number.isFinite(state.counters[counterKey]) ? state.counters[counterKey] : 0;
     state.counters[counterKey] = savedValue;
 
