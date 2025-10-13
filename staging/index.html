@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>Sabah Tesbihatı</title>
+    <meta name="theme-color" content="#556b2f">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <link rel="apple-touch-icon" href="icons/icon-180.png">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Scheherazade+New:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.1/marked.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js" defer></script>
+    <script src="main.js" defer></script>
+  </head>
+  <body>
+    <div class="app" data-theme="light">
+      <header class="hero">
+        <div class="hero__top">
+          <h1 class="hero__title">Tesbihat</h1>
+          <div class="hero__actions">
+            <button class="icon-button text-decrease" aria-label="Yazı boyutunu küçült">
+              <span aria-hidden="true">A−</span>
+            </button>
+            <button class="icon-button text-increase" aria-label="Yazı boyutunu büyüt">
+              <span aria-hidden="true">A+</span>
+            </button>
+            <button class="icon-button theme-toggle" aria-label="Temayı değiştir">
+              <span class="theme-toggle__icon" aria-hidden="true">☀️</span>
+            </button>
+            <button class="icon-button settings-toggle" aria-label="Ayarları aç">
+              <span aria-hidden="true">⚙️</span>
+            </button>
+          </div>
+        </div>
+        <p class="hero__subtitle">Seçmek istediğiniz vakti aşağıdan işaretleyin.</p>
+        <div class="prayer-tabs" role="tablist" aria-label="Tesbihat vakitleri">
+          <button class="prayer-tab is-active" role="tab" aria-selected="true" data-prayer="sabah">Sabah</button>
+          <button class="prayer-tab" role="tab" aria-selected="false" data-prayer="ogle">Öğle</button>
+          <button class="prayer-tab" role="tab" aria-selected="false" data-prayer="ikindi">İkindi</button>
+          <button class="prayer-tab" role="tab" aria-selected="false" data-prayer="aksam">Akşam</button>
+          <button class="prayer-tab" role="tab" aria-selected="false" data-prayer="yatsi">Yatsı</button>
+          <button class="prayer-tab" role="tab" aria-selected="false" data-prayer="dualar">Dualar</button>
+        </div>
+      </header>
+      <main class="main">
+        <section id="content" class="content" aria-live="polite">
+          <div class="loading">İçerik yükleniyor…</div>
+        </section>
+      </main>
+    </div>
+    <div class="settings-overlay" data-settings hidden>
+      <div class="settings-sheet card" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <header class="settings-sheet__header">
+          <h2 id="settings-title">Ayarlar</h2>
+          <button type="button" class="settings-close" data-close-settings aria-label="Ayarları kapat">✕</button>
+        </header>
+        <p class="settings-sheet__intro">Uygulamanın görünümünü ve dua takibini buradan yönetebilirsiniz.</p>
+        <div class="settings-sheet__content">
+          <section class="settings-section">
+            <header class="settings-section__header">
+              <span class="settings-section__icon" aria-hidden="true">🎨</span>
+              <h3>Görünüm</h3>
+            </header>
+            <div class="settings-group">
+              <button type="button" class="settings-accordion" data-theme-accordion>
+                <span>Tema seç</span>
+                <span class="settings-accordion__icon" aria-hidden="true">⌄</span>
+              </button>
+              <div class="settings-accordion__panel" data-theme-options hidden></div>
+            </div>
+            <div class="settings-group">
+              <span class="settings-label">Tesbihat Dili</span>
+              <div class="language-toggle" role="group" aria-label="Tesbihat dili">
+                <button type="button" class="language-toggle__option" data-language="tr">Türkçe</button>
+                <button type="button" class="language-toggle__option" data-language="ar">Arapça</button>
+              </div>
+            </div>
+          </section>
+          <section class="settings-section">
+            <header class="settings-section__header">
+              <span class="settings-section__icon" aria-hidden="true">🤲🏼</span>
+              <h3>Dua Yönetimi</h3>
+            </header>
+            <div class="settings-group">
+              <label class="settings-label" for="dua-source">Dua kaynağı</label>
+              <select id="dua-source" name="dua-source"></select>
+            </div>
+            <div class="settings-group">
+              <span class="settings-label">Arapça metinler</span>
+              <button type="button" class="button-pill secondary" data-toggle-dua-arabic aria-pressed="true">
+                Arapça metinleri gizle
+              </button>
+              <small class="settings-hint">Hadis ve Kur'an dualarındaki Arapça metinleri dilediğinizde gizleyebilirsiniz.</small>
+            </div>
+            <div class="settings-actions">
+              <button type="button" class="settings-action-button" data-reset-dua>
+                Dua ilerlemesini sıfırla
+              </button>
+              <small class="settings-hint">Bu işlem mevcut okuma takibini sıfırlar.</small>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  <!-- service worker register: staging/prod ayrımı için relative + dar scope -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      // sayfa yüklendikten sonra kaydet (ikon/manifest vs. hazır olur)
+      window.addEventListener('load', () => {
+        navigator.serviceWorker
+          .register('./service-worker.js', { scope: './' })
+          .then(reg => console.log('SW scope:', reg.scope))
+          .catch(err => console.error('SW register failed:', err));
+      });
+    }
+  </script>
+</body>
+</html>
