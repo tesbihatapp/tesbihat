@@ -4,6 +4,7 @@ const DUA_STORAGE_VERSION = 2;
 const THEME_STORAGE_KEY = 'tesbihat:theme';
 const DUA_SOURCE_STORAGE_KEY = 'tesbihat:dua-source';
 const LANGUAGE_STORAGE_KEY = 'tesbihat:language';
+const DUA_ARABIC_STORAGE_KEY = 'tesbihat:dua-arabic';
 const FONT_SCALE_STORAGE_KEY = 'tesbihat:font-scale';
 const FONT_SCALE_MIN = 0.85;
 const FONT_SCALE_MAX = 1.3;
@@ -12,6 +13,7 @@ const IMPORTANCE_SOURCE_PATH = 'TesbihatinOnemi.txt';
 const INSTALL_PROMPT_STORAGE_KEY = 'tesbihat:install-dismissed';
 const INSTALL_PROMPT_DELAY = 24 * 60 * 60 * 1000;
 const DEFAULT_LANGUAGE = 'tr';
+const DEFAULT_SHOW_ARABIC_DUAS = true;
 const LANGUAGE_OPTIONS = ['tr', 'ar'];
 let duaRepository = null;
 const FEATURES_SOURCE_PATH = 'HomeFeatures.md';
@@ -975,6 +977,7 @@ const state = {
   duas: [],
   duaSourceSelect: null,
   duaResetButton: null,
+  showArabicDuas: loadDuaArabicPreference(),
   language: loadLanguageSelection(),
   fontScale: loadFontScale(),
   names: null,
@@ -1013,6 +1016,7 @@ document.addEventListener('DOMContentLoaded', () => {
   attachHomeNavigation(appRoot);
   initPrayerTabs(appRoot);
   initDuaSourceSelector();
+  initDuaArabicToggle();
   attachFontScaleControls(appRoot);
   attachSettingsActions();
   registerInstallPromptHandlers();
@@ -1782,6 +1786,7 @@ function setupDuaSection(container, duas, sourceId) {
   if (!card) {
     card = document.createElement('article');
     card.className = 'card dua-card';
+    card.dataset.showArabic = state.showArabicDuas ? 'true' : 'false';
 
     const header = document.createElement('div');
     header.className = 'dua-header';
@@ -1824,6 +1829,7 @@ function setupDuaSection(container, duas, sourceId) {
     okButton.addEventListener('click', handleDuaOkClick);
     resetButton.addEventListener('click', handleDuaResetClick);
   } else {
+    card.dataset.showArabic = state.showArabicDuas ? 'true' : 'false';
     title = state.duaUI.title;
     subtitle = state.duaUI.subtitle;
     body = state.duaUI.body;
@@ -1922,6 +1928,7 @@ function refreshDuaUI() {
 
   ui.title.textContent = label;
   ui.card.dataset.duaSource = sourceId;
+  updateDuaArabicVisibility();
 
   if (!state.duaState || state.duaState.sourceId !== sourceId) {
     ui.subtitle.textContent = 'Dualar yükleniyor…';
@@ -2044,7 +2051,82 @@ function sanitiseDuas(raw) {
     .split(/-split-/i)
     .map((entry) => entry.trim())
     .map((entry) => entry.replace(/^\d+\.\s*/, ''))
+    .map(enrichDuaEntryWithArabic)
     .filter((entry) => entry.length > 0);
+}
+
+function enrichDuaEntryWithArabic(entry) {
+  if (!entry || entry.indexOf('AR:') === -1) {
+    return entry;
+  }
+
+  const lines = entry.split(/\r?\n/);
+  const turkishLines = [];
+  const arabicLines = [];
+  let parsingArabic = false;
+
+  lines.forEach((originalLine) => {
+    const line = originalLine;
+    if (/^\s*AR\s*:/i.test(line)) {
+      parsingArabic = true;
+      const remainder = line.replace(/^\s*AR\s*:\s*/, '').trim();
+      if (remainder) {
+        arabicLines.push(remainder);
+      }
+      return;
+    }
+
+    if (parsingArabic) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        arabicLines.push('');
+        return;
+      }
+
+      if (ARABIC_SCRIPT_REGEX.test(line) || /^[\u200c\u200f\u061C•*.,;:!?()\-\s]+$/.test(trimmed)) {
+        arabicLines.push(trimmed);
+        return;
+      }
+
+      parsingArabic = false;
+    }
+
+    turkishLines.push(originalLine);
+  });
+
+  const trimmedArabicLines = [...arabicLines];
+  while (trimmedArabicLines.length > 0 && !trimmedArabicLines[trimmedArabicLines.length - 1]) {
+    trimmedArabicLines.pop();
+  }
+
+  const hasArabic = trimmedArabicLines.some((line) => line && line.trim().length > 0);
+  if (!hasArabic) {
+    return turkishLines.join('\n').trim();
+  }
+
+  const turkish = turkishLines.join('\n').trim();
+  const arabicHtml = trimmedArabicLines
+    .map((line) => escapeHtml(line.trim()))
+    .join('<br>');
+
+  const parts = [];
+  if (arabicHtml) {
+    parts.push(`<div class="dua-arabic-block arabic-text" dir="rtl" data-dua-arabic>${arabicHtml}</div>`);
+  }
+  if (turkish) {
+    parts.push(turkish);
+  }
+
+  return parts.join('\n\n').trim();
+}
+
+function escapeHtml(text) {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function ensureDuaState(total, sourceId) {
@@ -3241,6 +3323,69 @@ function initDuaSourceSelector() {
   updateSettingsDuaControls();
 }
 
+function initDuaArabicToggle() {
+  const toggle = document.querySelector('[data-toggle-dua-arabic]');
+  if (!toggle) {
+    return;
+  }
+
+  toggle.addEventListener('click', () => {
+    setShowArabicDuas(!state.showArabicDuas);
+  });
+
+  updateDuaArabicToggleUI(toggle);
+}
+
+function updateDuaArabicToggleUI(element) {
+  const toggle = element || document.querySelector('[data-toggle-dua-arabic]');
+  if (!toggle) {
+    return;
+  }
+
+  const show = Boolean(state.showArabicDuas);
+  toggle.textContent = show ? 'Arapça metinleri gizle' : 'Arapça metinleri göster';
+  toggle.setAttribute('aria-pressed', show ? 'true' : 'false');
+
+  if (show) {
+    toggle.classList.remove('secondary');
+  } else if (!toggle.classList.contains('secondary')) {
+    toggle.classList.add('secondary');
+  }
+  toggle.classList.toggle('is-active', show);
+}
+
+function setShowArabicDuas(nextValue, { persist = true, refresh = true } = {}) {
+  const show = Boolean(nextValue);
+  if (show === state.showArabicDuas) {
+    return;
+  }
+
+  state.showArabicDuas = show;
+
+  if (persist) {
+    try {
+      localStorage.setItem(DUA_ARABIC_STORAGE_KEY, show ? '1' : '0');
+    } catch (error) {
+      console.warn('Arapça dua tercihi kaydedilemedi.', error);
+    }
+  }
+
+  updateDuaArabicToggleUI();
+  updateDuaArabicVisibility();
+
+  if (refresh) {
+    refreshDuaUI();
+  }
+}
+
+function updateDuaArabicVisibility() {
+  const card = state.duaUI?.card;
+  if (!card) {
+    return;
+  }
+  card.dataset.showArabic = state.showArabicDuas ? 'true' : 'false';
+}
+
 async function changeDuaSource(nextSource, { persist = true, refresh = true } = {}) {
   const resolved = resolveDuaSourceId(nextSource);
   if (persist) {
@@ -3347,6 +3492,17 @@ function attachSettingsActions() {
 function loadSelectedDuaSource() {
   const stored = localStorage.getItem(DUA_SOURCE_STORAGE_KEY);
   return resolveDuaSourceId(stored);
+}
+
+function loadDuaArabicPreference() {
+  const stored = localStorage.getItem(DUA_ARABIC_STORAGE_KEY);
+  if (stored === '0' || stored === 'false') {
+    return false;
+  }
+  if (stored === '1' || stored === 'true') {
+    return true;
+  }
+  return DEFAULT_SHOW_ARABIC_DUAS;
 }
 
 function loadLanguageSelection() {
