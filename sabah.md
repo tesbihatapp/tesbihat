@@ -78,7 +78,7 @@ Allâhumme ecirnâ min şerri’l-munafikîn
 
 Allâhumme ecirnâ min fitneti’l-fasikîn.
 
-Allahumme ecirnâ ve ecir Üstâzenâ ve Hocaefendi ve vâlidînâ ve rufekâenâ ve ecdâdenâ ve ceddâtinâ ve e’mâmenâ ve ‘ammâtina ve ahvâlenâ ve hâlâtinâ ve ihvânenâ ve ahavâtinâ ve ekribâenâ ve esdikâenâ ve sadâikanâ ve ahbâbenâ ve ehibbâena’l-mu’minîne ve’l-mu’minât ve’l-muslimîne ve’l-muslimât fî hidmetinâ fî kulli enhâi’l-‘âlem ve fî kulli nevâhi’l-hayât(h) ve cemî’a tullâbi’n-nûri mine’n-nâr ve min kulli nâr.
+Allahumme ecirnâ ve ecir Üstâzenâ ve Hocaefendi ve vâlidînâ ve rufekâenâ ve ecdâdenâ ve ceddâtinâ ve e’mâmenâ ve ‘ammâtina ve ahvâlenâ ve <u>h</u>âlâtinâ ve ihvânenâ ve ahavâtinâ ve ekribâenâ ve esdikâenâ ve sadâikanâ ve ahbâbenâ ve ehibbâena’l-mu’minîne ve’l-mu’minât ve’l-muslimîne ve’l-muslimât fî hidmetinâ fî kulli enhâi’l-‘âlem ve fî kulli nevâhi’l-hayât(h) ve cemî’a tullâbi’n-nûri mine’n-nâr ve min kulli nâr.
 
 **Avuç içleri yukarı çevirilerek istiâzeye devam edilir:**
 

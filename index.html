@@ -109,5 +109,17 @@
         </div>
       </div>
     </div>
-  </body>
+  <!-- service worker register: staging/prod ayrımı için relative + dar scope -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      // sayfa yüklendikten sonra kaydet (ikon/manifest vs. hazır olur)
+      window.addEventListener('load', () => {
+        navigator.serviceWorker
+          .register('./service-worker.js', { scope: './' })
+          .then(reg => console.log('SW scope:', reg.scope))
+          .catch(err => console.error('SW register failed:', err));
+      });
+    }
+  </script>
+</body>
 </html>
