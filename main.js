@@ -1020,8 +1020,7 @@ document.addEventListener('DOMContentLoaded', () => {
   attachFontScaleControls(appRoot);
   attachSettingsActions();
   registerInstallPromptHandlers();
-  registerServiceWorker();
-
+  
   setActivePrayer(state.currentPrayer);
 });
 
@@ -3527,16 +3526,6 @@ function resolveDuaSourceId(candidate) {
   }
   const firstKey = Object.keys(DUA_SOURCES)[0];
   return firstKey || 'birkirikdilekce';
-}
-
-function registerServiceWorker() {
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker
-      .register('./service-worker.js')
-      .catch((error) => {
-        console.warn('Servis çalışanı kaydedilemedi.', error);
-      });
-  }
 }
 
 function loadFontScale() {
