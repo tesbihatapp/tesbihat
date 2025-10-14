@@ -2618,6 +2618,7 @@ function handleDuaNewClick() {
   state.duaState.current = picked;
   saveDuaState();
   refreshDuaUI();
+  focusDuaCardTop();
 }
 
 function handleDuaOkClick() {
@@ -2640,12 +2641,14 @@ function handleDuaOkClick() {
     state.duaState.current = null;
     saveDuaState();
     refreshDuaUI();
+    focusDuaCardTop();
     return;
   }
 
   state.duaState.current = pickRandomFrom(remaining);
   saveDuaState();
   refreshDuaUI();
+  focusDuaCardTop();
 }
 
 function handleDuaResetClick() {
@@ -2664,6 +2667,21 @@ function handleDuaResetClick() {
     saveDuaState();
   }
   refreshDuaUI();
+  focusDuaCardTop();
+}
+
+function focusDuaCardTop() {
+  const ui = state.duaUI;
+  if (!ui || !ui.card) {
+    return;
+  }
+  const header = ui.card.querySelector('.dua-header');
+  const target = header || ui.card;
+  if (typeof target.scrollIntoView === 'function') {
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } else if (typeof target.focus === 'function') {
+    target.focus();
+  }
 }
 
 function refreshDuaUI() {
