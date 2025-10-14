@@ -7,6 +7,9 @@ const LANGUAGE_STORAGE_KEY = 'tesbihat:language';
 const DUA_ARABIC_STORAGE_KEY = 'tesbihat:dua-arabic';
 const ZIKIR_STORAGE_KEY = 'tesbihat:zikirs';
 const ZIKIR_STORAGE_VERSION = 1;
+const COMPLETION_STORAGE_KEY = 'tesbihat:completions';
+const COMPLETION_STORAGE_VERSION = 1;
+const COMPLETION_RETENTION_DAYS = 365;
 const FONT_SCALE_STORAGE_KEY = 'tesbihat:font-scale';
 const FONT_SCALE_MIN = 0.85;
 const FONT_SCALE_MAX = 1.3;
@@ -17,6 +20,8 @@ const INSTALL_PROMPT_DELAY = 24 * 60 * 60 * 1000;
 const DEFAULT_LANGUAGE = 'tr';
 const DEFAULT_SHOW_ARABIC_DUAS = true;
 const DEFAULT_ZIKIR_VIEW = 'list';
+const TRACKED_PRAYERS = ['sabah', 'ogle', 'ikindi', 'aksam', 'yatsi'];
+const TRACKED_PRAYER_SET = new Set(TRACKED_PRAYERS);
 const LANGUAGE_OPTIONS = ['tr', 'ar'];
 let duaRepository = null;
 let zikirDefaultsPromise = null;
@@ -993,6 +998,9 @@ const state = {
   zikirs: [],
   zikirUI: null,
   zikirView: DEFAULT_ZIKIR_VIEW,
+  completionData: loadCompletionData(),
+  completionButtons: new Map(),
+  statsView: null,
   fontScale: loadFontScale(),
   names: null,
   tooltipElement: null,
@@ -1030,6 +1038,7 @@ document.addEventListener('DOMContentLoaded', () => {
   attachHomeNavigation(appRoot);
   initPrayerTabs(appRoot);
   initDuaSourceSelector();
+  initCompletionStatsView();
   initDuaArabicToggle();
   attachFontScaleControls(appRoot);
   attachSettingsActions();
@@ -1128,6 +1137,8 @@ async function loadPrayerContent(prayerId) {
       await changeDuaSource(state.duaSource, { persist: false, refresh: false });
       setupDuaSection(content, state.duas, state.duaSource);
     }
+
+    renderPrayerCompletionCard(content, prayerId);
   } catch (error) {
     console.error('İçerik yüklenirken hata oluştu.', error);
     content.innerHTML = `
@@ -2012,6 +2023,195 @@ function generateCustomZikirId(repository) {
   return `custom-${timestamp}-${counter}`;
 }
 
+function loadCompletionData() {
+  try {
+    const raw = localStorage.getItem(COMPLETION_STORAGE_KEY);
+    if (!raw) {
+      return createEmptyCompletionData();
+    }
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      const records = parsed.records && typeof parsed.records === 'object' ? parsed.records : parsed;
+      return sanitiseCompletionData(records);
+    }
+  } catch (error) {
+    console.warn('Tesbihat tamamlanma bilgileri okunamadı, sıfırlanacak.', error);
+  }
+  return createEmptyCompletionData();
+}
+
+function createEmptyCompletionData() {
+  return {
+    version: COMPLETION_STORAGE_VERSION,
+    records: {},
+  };
+}
+
+function sanitiseCompletionData(records) {
+  const repository = createEmptyCompletionData();
+  if (!records || typeof records !== 'object') {
+    return repository;
+  }
+
+  Object.entries(records).forEach(([prayerId, value]) => {
+    if (!value || typeof value !== 'object') {
+      return;
+    }
+    const record = {};
+    Object.keys(value).forEach((dateKey) => {
+      if (isValidDateKey(dateKey)) {
+        record[dateKey] = Number.isFinite(value[dateKey]) ? value[dateKey] : null;
+      }
+    });
+    pruneCompletionRecord(record);
+    repository.records[prayerId] = record;
+  });
+
+  return repository;
+}
+
+function ensureCompletionData() {
+  if (!state.completionData) {
+    state.completionData = loadCompletionData();
+  }
+  return state.completionData;
+}
+
+function persistCompletionData() {
+  try {
+    const repository = ensureCompletionData();
+    localStorage.setItem(COMPLETION_STORAGE_KEY, JSON.stringify({
+      version: COMPLETION_STORAGE_VERSION,
+      records: repository.records,
+    }));
+  } catch (error) {
+    console.warn('Tesbihat tamamlanma bilgileri kaydedilemedi.', error);
+  }
+}
+
+function markPrayerCompleted(prayerId) {
+  const repository = ensureCompletionData();
+  const today = getTodayKey();
+  if (!repository.records[prayerId]) {
+    repository.records[prayerId] = {};
+  }
+  const record = repository.records[prayerId];
+  if (record[today]) {
+    return false;
+  }
+  record[today] = Date.now();
+  pruneCompletionRecord(record);
+  persistCompletionData();
+  return true;
+}
+
+function isPrayerCompletedToday(prayerId) {
+  const repository = ensureCompletionData();
+  const record = repository.records[prayerId];
+  if (!record) {
+    return false;
+  }
+  return Boolean(record[getTodayKey()]);
+}
+
+function getPrayerCompletionDates(prayerId) {
+  const repository = ensureCompletionData();
+  const record = repository.records[prayerId] || {};
+  return Object.keys(record).filter(isValidDateKey);
+}
+
+function getLastCompletionDate(prayerId) {
+  const dates = getPrayerCompletionDates(prayerId);
+  if (!dates.length) {
+    return null;
+  }
+  dates.sort((a, b) => (a > b ? -1 : 1));
+  return dates[0];
+}
+
+function getCompletionCountForRange(prayerId, dayRange) {
+  const dates = getPrayerCompletionDates(prayerId);
+  if (!dates.length) {
+    return 0;
+  }
+  const today = new Date();
+  let count = 0;
+  dates.forEach((dateKey) => {
+    if (!isValidDateKey(dateKey)) {
+      return;
+    }
+    const date = parseDateKey(dateKey);
+    if (!Number.isFinite(date.getTime())) {
+      return;
+    }
+    const diff = calculateDayDifference(today, date);
+    if (diff <= dayRange - 1) {
+      count += 1;
+    }
+  });
+  return count;
+}
+
+function pruneCompletionRecord(record, retentionDays = COMPLETION_RETENTION_DAYS) {
+  if (!record || typeof record !== 'object') {
+    return;
+  }
+  const cutoff = new Date();
+  cutoff.setHours(0, 0, 0, 0);
+  cutoff.setDate(cutoff.getDate() - retentionDays);
+  Object.keys(record).forEach((dateKey) => {
+    if (!isValidDateKey(dateKey)) {
+      delete record[dateKey];
+      return;
+    }
+    const entryDate = parseDateKey(dateKey);
+    if (entryDate < cutoff) {
+      delete record[dateKey];
+    }
+  });
+}
+
+function getTodayKey() {
+  return formatDateKey(new Date());
+}
+
+function formatDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function parseDateKey(key) {
+  if (!isValidDateKey(key)) {
+    return new Date(NaN);
+  }
+  const [year, month, day] = key.split('-').map((part) => Number.parseInt(part, 10));
+  return new Date(year, month - 1, day);
+}
+
+function calculateDayDifference(dateA, dateB) {
+  const start = new Date(dateA.getFullYear(), dateA.getMonth(), dateA.getDate());
+  const end = new Date(dateB.getFullYear(), dateB.getMonth(), dateB.getDate());
+  const diff = start.getTime() - end.getTime();
+  return Math.round(diff / (24 * 60 * 60 * 1000));
+}
+
+function isValidDateKey(key) {
+  return typeof key === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(key);
+}
+
+function formatDateForDisplay(dateKey) {
+  if (!isValidDateKey(dateKey)) {
+    return '';
+  }
+  const date = parseDateKey(dateKey);
+  if (!Number.isFinite(date.getTime())) {
+    return '';
+  }
+  return new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }).format(date);
+}
+
 async function createHomeHighlightCard() {
   try {
     const messages = await ensureImportanceMessages();
@@ -2608,6 +2808,197 @@ function setupDuaSection(container, duas, sourceId) {
   };
 
   refreshDuaUI();
+}
+
+function renderPrayerCompletionCard(container, prayerId) {
+  if (!container || !TRACKED_PRAYER_SET.has(prayerId)) {
+    return;
+  }
+
+  const existing = container.querySelector('[data-completion-card]');
+  if (existing) {
+    existing.remove();
+  }
+
+  const card = document.createElement('article');
+  card.className = 'card completion-card';
+  card.dataset.completionCard = 'true';
+
+  const body = document.createElement('div');
+  body.className = 'completion-card__body';
+
+  const textBlock = document.createElement('div');
+  textBlock.className = 'completion-card__text';
+
+  const title = document.createElement('h2');
+  title.className = 'completion-card__title';
+  title.textContent = 'Tesbihatı tamamladım';
+
+  const description = document.createElement('p');
+  description.className = 'completion-card__description';
+  description.textContent = 'Bugünkü okumanızı tamamladığınızda kaydedin; günlük takibiniz güncel kalsın.';
+
+  textBlock.append(title, description);
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'button-pill completion-card__button';
+  button.dataset.completionButton = prayerId;
+  button.addEventListener('click', () => handleCompletionButtonClick(prayerId));
+
+  body.append(textBlock, button);
+
+  const status = document.createElement('p');
+  status.className = 'completion-card__status';
+
+  card.append(body, status);
+  container.append(card);
+
+  state.completionButtons.set(prayerId, { button, status, card });
+  updateCompletionButtonUI(prayerId);
+}
+
+function updateCompletionButtonUI(prayerId) {
+  const entry = state.completionButtons.get(prayerId);
+  if (!entry) {
+    return;
+  }
+
+  const completedToday = isPrayerCompletedToday(prayerId);
+  const lastDate = getLastCompletionDate(prayerId);
+
+  if (entry.button) {
+    entry.button.disabled = completedToday;
+    entry.button.textContent = completedToday ? 'Bugün tamamlandı' : 'Tesbihatı tamamladım';
+    entry.button.setAttribute('aria-pressed', completedToday ? 'true' : 'false');
+  }
+
+  if (entry.status) {
+    entry.status.textContent = formatCompletionStatus(completedToday, lastDate);
+  }
+}
+
+function handleCompletionButtonClick(prayerId) {
+  const completed = markPrayerCompleted(prayerId);
+  if (!completed) {
+    updateCompletionButtonUI(prayerId);
+    return;
+  }
+  updateCompletionButtonUI(prayerId);
+  updateCompletionStatsView();
+}
+
+function formatCompletionStatus(completedToday, lastDate) {
+  if (completedToday) {
+    return 'Bugünkü tamamlanma kaydedildi.';
+  }
+  if (lastDate) {
+    const formatted = formatDateForDisplay(lastDate);
+    return `Son tamamlanma: ${formatted}`;
+  }
+  return 'Henüz kayıtlı tamamlanma bulunmuyor.';
+}
+
+function buildCompletionSummary() {
+  const items = TRACKED_PRAYERS.map((prayerId) => {
+    const label = PRAYER_CONFIG[prayerId]?.label || prayerId;
+    const today = isPrayerCompletedToday(prayerId) ? 1 : 0;
+    const last7 = getCompletionCountForRange(prayerId, 7);
+    const last30 = getCompletionCountForRange(prayerId, 30);
+    return { prayerId, label, today, last7, last30 };
+  });
+
+  const totals = items.reduce((accumulator, item) => {
+    accumulator.today += item.today;
+    accumulator.last7 += item.last7;
+    accumulator.last30 += item.last30;
+    return accumulator;
+  }, { today: 0, last7: 0, last30: 0 });
+
+  return { items, totals };
+}
+
+function renderCompletionStats(container) {
+  if (!container) {
+    return;
+  }
+
+  const { items, totals } = buildCompletionSummary();
+  container.innerHTML = '';
+
+  const hasData = items.some((item) => item.today > 0 || item.last7 > 0 || item.last30 > 0);
+  if (!hasData) {
+    const empty = document.createElement('p');
+    empty.className = 'stats-empty';
+    empty.textContent = 'Henüz tamamlanma kaydı bulunmuyor. Bugünkü tesbihatları işaretlediğinizde burada görünecek.';
+    container.append(empty);
+  }
+
+  const table = document.createElement('table');
+  table.className = 'stats-table';
+
+  const thead = document.createElement('thead');
+  thead.innerHTML = '<tr><th>Vakit</th><th>Bugün</th><th>Son 7 gün</th><th>Son 30 gün</th></tr>';
+  table.append(thead);
+
+  const tbody = document.createElement('tbody');
+  items.forEach((item) => {
+    const row = document.createElement('tr');
+    const todayCell = document.createElement('td');
+    todayCell.className = 'stats-status';
+    todayCell.innerHTML = renderCompletionStatusIcon(Boolean(item.today));
+
+    row.innerHTML = `
+      <th scope="row">${item.label}</th>
+      <td class="stats-status-placeholder"></td>
+      <td>${formatNumber(item.last7)}</td>
+      <td>${formatNumber(item.last30)}</td>
+    `;
+    row.querySelector('.stats-status-placeholder').replaceWith(todayCell);
+    tbody.append(row);
+  });
+  table.append(tbody);
+
+  const tfoot = document.createElement('tfoot');
+  const totalRow = document.createElement('tr');
+  const totalsComplete = totals.today >= TRACKED_PRAYERS.length;
+  const totalTodayCell = document.createElement('td');
+  totalTodayCell.className = 'stats-status';
+  const totalLabel = `${formatNumber(totals.today)}/${TRACKED_PRAYERS.length}`;
+  totalTodayCell.innerHTML = `<span class="stats-status__text">${totalLabel}</span>`;
+
+  totalRow.innerHTML = `
+    <th scope="row">Toplam</th>
+    <td class="stats-status-placeholder"></td>
+    <td>${formatNumber(totals.last7)}</td>
+    <td>${formatNumber(totals.last30)}</td>
+  `;
+  totalRow.querySelector('.stats-status-placeholder').replaceWith(totalTodayCell);
+  tfoot.append(totalRow);
+  table.append(tfoot);
+
+  container.append(table);
+
+  const hint = document.createElement('p');
+  hint.className = 'stats-hint';
+  hint.textContent = 'Tamamlanmalar yerel saate göre kaydedilir ve son 365 günlük geçmiş saklanır.';
+  container.append(hint);
+}
+
+function renderCompletionStatusIcon(isComplete, fallbackText = '') {
+  const textPart = fallbackText ? `<span class="stats-status__text">${fallbackText}</span>` : '';
+  if (isComplete) {
+    return `<span class="stats-status__icon stats-status__icon--ok" aria-label="Tamamlandı">✔</span>${textPart}`;
+  }
+  return `<span class="stats-status__icon stats-status__icon--miss" aria-label="Eksik">✕</span>${textPart}`;
+}
+
+function updateCompletionStatsView() {
+  const statsView = state.statsView;
+  if (!statsView || !statsView.isOpen || !statsView.content) {
+    return;
+  }
+  renderCompletionStats(statsView.content);
 }
 
 function handleDuaNewClick() {
@@ -3326,15 +3717,19 @@ function attachThemeToggle(appRoot) {
 function attachSettingsToggle(appRoot) {
   const toggleButton = appRoot.querySelector('.settings-toggle');
   const overlay = document.querySelector('[data-settings]');
-  const closeButton = overlay?.querySelector('[data-close-settings]');
-  const sheet = overlay?.querySelector('.settings-sheet');
+  const closeButtons = overlay ? overlay.querySelectorAll('[data-close-settings]') : null;
+  const mainSheet = overlay?.querySelector('[data-settings-main]');
+  const statsSheet = overlay?.querySelector('[data-stats-sheet]');
 
-  if (!toggleButton || !overlay || !sheet) {
+  if (!toggleButton || !overlay || !mainSheet) {
     return;
   }
 
-  if (!sheet.hasAttribute('tabindex')) {
-    sheet.setAttribute('tabindex', '-1');
+  if (!mainSheet.hasAttribute('tabindex')) {
+    mainSheet.setAttribute('tabindex', '-1');
+  }
+  if (statsSheet && !statsSheet.hasAttribute('tabindex')) {
+    statsSheet.setAttribute('tabindex', '-1');
   }
 
   const handleKeydown = (event) => {
@@ -3345,16 +3740,19 @@ function attachSettingsToggle(appRoot) {
   };
 
   const openSettings = () => {
+    resetStatsSheet();
     overlay.removeAttribute('hidden');
     document.body.classList.add('settings-open');
     document.addEventListener('keydown', handleKeydown);
-    const focusTarget = closeButton || sheet;
+    const focusTarget = closeButtons && closeButtons.length > 0 ? closeButtons[0] : mainSheet;
     window.requestAnimationFrame(() => {
       focusTarget?.focus?.();
     });
   };
 
   const closeSettings = () => {
+    closeStatsView({ restoreFocus: false });
+    resetStatsSheet();
     overlay.setAttribute('hidden', '');
     document.body.classList.remove('settings-open');
     document.removeEventListener('keydown', handleKeydown);
@@ -3371,11 +3769,11 @@ function attachSettingsToggle(appRoot) {
     }
   });
 
-  if (closeButton) {
-    closeButton.addEventListener('click', () => {
+  closeButtons?.forEach((button) => {
+    button.addEventListener('click', () => {
       closeSettings();
     });
-  }
+  });
 
   overlay.addEventListener('click', (event) => {
     if (event.target === overlay) {
@@ -4093,6 +4491,95 @@ function initDuaSourceSelector() {
 
   state.duaSourceSelect = select;
   updateSettingsDuaControls();
+}
+
+function initCompletionStatsView() {
+  const overlay = document.querySelector('[data-settings]');
+  if (!overlay) {
+    return;
+  }
+  const openButton = overlay.querySelector('[data-open-stats]');
+  const statsSheet = overlay.querySelector('[data-stats-sheet]');
+  const mainSheet = overlay.querySelector('[data-settings-main]');
+  const statsContent = statsSheet?.querySelector('[data-stats-content]');
+  const closeButton = statsSheet?.querySelector('[data-close-stats]');
+
+  if (!openButton || !statsSheet || !statsContent || !mainSheet) {
+    return;
+  }
+
+  if (!statsSheet.hasAttribute('tabindex')) {
+    statsSheet.setAttribute('tabindex', '-1');
+  }
+
+  state.statsView = {
+    openButton,
+    sheet: statsSheet,
+    content: statsContent,
+    closeButton,
+    isOpen: false,
+    mainSheet,
+  };
+
+  openButton.addEventListener('click', () => {
+    openStatsView();
+  });
+
+  closeButton?.addEventListener('click', () => {
+    closeStatsView();
+  });
+}
+
+function openStatsView() {
+  const overlay = document.querySelector('[data-settings]');
+  if (!overlay || !state.statsView) {
+    return;
+  }
+  const { sheet, mainSheet } = state.statsView;
+  if (!sheet || !mainSheet) {
+    return;
+  }
+  mainSheet.setAttribute('hidden', '');
+  sheet.removeAttribute('hidden');
+  state.statsView.isOpen = true;
+  renderCompletionStats(state.statsView.content);
+  window.requestAnimationFrame(() => {
+    sheet.focus();
+  });
+}
+
+function closeStatsView({ restoreFocus = true } = {}) {
+  const overlay = document.querySelector('[data-settings]');
+  if (!overlay || !state.statsView) {
+    return;
+  }
+  const { sheet, mainSheet, openButton } = state.statsView;
+  if (!sheet || !mainSheet) {
+    return;
+  }
+  sheet.setAttribute('hidden', '');
+  mainSheet.removeAttribute('hidden');
+  state.statsView.isOpen = false;
+  if (restoreFocus) {
+    window.requestAnimationFrame(() => {
+      openButton?.focus?.();
+    });
+  }
+}
+
+function resetStatsSheet() {
+  const overlay = document.querySelector('[data-settings]');
+  if (!overlay || !state.statsView) {
+    return;
+  }
+  const { sheet, mainSheet } = state.statsView;
+  if (sheet && !sheet.hasAttribute('hidden')) {
+    sheet.setAttribute('hidden', '');
+  }
+  if (mainSheet) {
+    mainSheet.removeAttribute('hidden');
+  }
+  state.statsView.isOpen = false;
 }
 
 function initDuaArabicToggle() {
