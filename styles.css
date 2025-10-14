@@ -1102,6 +1102,112 @@ button {
   flex-wrap: wrap;
   gap: 0.75rem;
 }
+.completion-card {
+  margin-top: 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.completion-card__title {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.completion-card__description {
+  margin: 0.4rem 0 0;
+  color: var(--muted-text);
+}
+
+.completion-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.completion-card__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.completion-card__button[disabled] {
+  background: var(--accent-soft-bg);
+  color: var(--muted-text);
+  box-shadow: none;
+  cursor: default;
+}
+
+.completion-card__status {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted-text);
+}
+
+.stats-sheet {
+  width: min(100%, 720px);
+  max-height: min(90vh, 760px);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  position: relative;
+}
+
+.stats-content {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface-color);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: var(--shadow-soft);
+}
+
+.stats-table th,
+.stats-table td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.stats-table thead th {
+  font-size: 0.9rem;
+  font-weight: 600;
+  background: var(--surface-muted);
+}
+
+.stats-table tbody tr:nth-child(odd) {
+  background: var(--surface-overlay);
+}
+
+.stats-table tfoot th,
+.stats-table tfoot td {
+  font-weight: 600;
+  background: var(--accent-soft-bg);
+}
+
+.stats-empty {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  background: var(--surface-overlay);
+  color: var(--muted-text);
+  font-style: italic;
+}
+
+.stats-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted-text);
+}
+
 
 .zikir-shell {
   display: flex;
@@ -1411,6 +1517,16 @@ button {
     font-size: 3rem;
   }
 
+  .completion-card__body {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .completion-card__text {
+    max-width: 420px;
+  }
+
   .zikir-item {
     flex-direction: row;
     justify-content: space-between;
@@ -1433,4 +1549,25 @@ button {
   .zikir-card--list {
     max-width: 520px;
   }
+}
+
+.settings-back {
+  flex: 0 0 auto;
+  padding: 0.55rem 1rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-muted);
+  color: var(--text-color);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), transform var(--transition-fast);
+}
+
+.settings-back:hover {
+  background: var(--surface-overlay);
+  transform: translateY(-1px);
+}
+
+.stats-sheet__header {
+  gap: 0.75rem;
 }
