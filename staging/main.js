@@ -2944,24 +2944,36 @@ function renderCompletionStats(container) {
   const tbody = document.createElement('tbody');
   items.forEach((item) => {
     const row = document.createElement('tr');
+    const todayCell = document.createElement('td');
+    todayCell.className = 'stats-status';
+    todayCell.innerHTML = renderCompletionStatusIcon(Boolean(item.today));
+
     row.innerHTML = `
       <th scope="row">${item.label}</th>
-      <td>${formatNumber(item.today)}</td>
+      <td class="stats-status-placeholder"></td>
       <td>${formatNumber(item.last7)}</td>
       <td>${formatNumber(item.last30)}</td>
     `;
+    row.querySelector('.stats-status-placeholder').replaceWith(todayCell);
     tbody.append(row);
   });
   table.append(tbody);
 
   const tfoot = document.createElement('tfoot');
   const totalRow = document.createElement('tr');
+  const totalsComplete = totals.today >= TRACKED_PRAYERS.length;
+  const totalTodayCell = document.createElement('td');
+  totalTodayCell.className = 'stats-status';
+  const totalLabel = `${formatNumber(totals.today)}/${TRACKED_PRAYERS.length}`;
+  totalTodayCell.innerHTML = `<span class="stats-status__text">${totalLabel}</span>`;
+
   totalRow.innerHTML = `
     <th scope="row">Toplam</th>
-    <td>${formatNumber(totals.today)}</td>
+    <td class="stats-status-placeholder"></td>
     <td>${formatNumber(totals.last7)}</td>
     <td>${formatNumber(totals.last30)}</td>
   `;
+  totalRow.querySelector('.stats-status-placeholder').replaceWith(totalTodayCell);
   tfoot.append(totalRow);
   table.append(tfoot);
 
@@ -2971,6 +2983,14 @@ function renderCompletionStats(container) {
   hint.className = 'stats-hint';
   hint.textContent = 'Tamamlanmalar yerel saate göre kaydedilir ve son 365 günlük geçmiş saklanır.';
   container.append(hint);
+}
+
+function renderCompletionStatusIcon(isComplete, fallbackText = '') {
+  const textPart = fallbackText ? `<span class="stats-status__text">${fallbackText}</span>` : '';
+  if (isComplete) {
+    return `<span class="stats-status__icon stats-status__icon--ok" aria-label="Tamamlandı">✔</span>${textPart}`;
+  }
+  return `<span class="stats-status__icon stats-status__icon--miss" aria-label="Eksik">✕</span>${textPart}`;
 }
 
 function updateCompletionStatsView() {
