@@ -1642,7 +1642,7 @@ function parseCevsenMarkdown(input) {
     const [arabic = '', transliteration = '', ...rest] = cleaned;
     const meaning = rest.join(' ');
     currentSection.items.push({
-      arabic,
+      arabic: normaliseCevsenArabic(arabic),
       transliteration,
       meaning,
     });
@@ -1682,6 +1682,13 @@ function parseCevsenMarkdown(input) {
   }
 
   return { intro, sections };
+}
+
+function normaliseCevsenArabic(text) {
+  if (typeof text !== 'string' || !text) {
+    return text;
+  }
+  return text.replace(/\u06EA/g, '\u0656');
 }
 
 function buildCevsenBabCard(section, index) {
@@ -3171,7 +3178,9 @@ function updateHomeInstallBanner() {
 
 function renderTesbihat(container, markdownText) {
   hideNameTooltip();
-  const prepared = markdownText.replace(/\r\n/g, '\n');
+  const prepared = markdownText
+    .replace(/\r\n/g, '\n')
+    .replace(/\u06EA/g, '\u0656');
   const withAutoCounters = injectAutoCounters(prepared);
   const normalised = withAutoCounters
     .replace(/\*\*\(counter:(\d+)\)\*\*/g, '(counter:$1)')
