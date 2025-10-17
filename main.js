@@ -16,6 +16,7 @@ const FONT_SCALE_MAX = 1.3;
 const FONT_SCALE_STEP = 0.05;
 const CEVSEN_FONT_SCALE_STORAGE_KEY = 'tesbihat:cevsen-font-scale';
 const CEVSEN_VISIBILITY_STORAGE_KEY = 'tesbihat:cevsen-visibility';
+const HOME_STATS_COLLAPSED_STORAGE_KEY = 'tesbihat:home-stats-collapsed';
 const CEVSEN_FONT_SCALE_MIN = 0.75;
 const CEVSEN_FONT_SCALE_MAX = 1.6;
 const CEVSEN_FONT_SCALE_STEP = 0.05;
@@ -731,6 +732,27 @@ const CEVSEN_PARTS = [
 
 const CEVSEN_PART_MAP = new Map(CEVSEN_PARTS.map((part) => [part.id, part]));
 
+const HOME_QUICK_LINKS = [
+  {
+    id: 'cevsen',
+    label: 'Cevşen',
+    description: 'Bablar ve dua metni',
+    icon: '📜',
+  },
+  {
+    id: 'zikirler',
+    label: 'Zikirler',
+    description: 'Günlük zikirlere erişim',
+    icon: '📿',
+  },
+  {
+    id: 'dualar',
+    label: 'Dualar',
+    description: 'Dua arşivine göz at',
+    icon: '🤲🏼',
+  },
+];
+
 const DUA_SOURCES = {
   birkirikdilekce: { label: 'Bir Kırık Dilekçe', path: 'BirKirikDilekce.txt' },
   kurandualari: { label: 'Kur\'an-ı Kerimden Dualar', path: 'KuranDualari.txt' },
@@ -1035,7 +1057,6 @@ const state = {
   zikirView: DEFAULT_ZIKIR_VIEW,
   completionData: loadCompletionData(),
   completionButtons: new Map(),
-  statsView: null,
   fontScale: loadFontScale(),
   names: null,
   tooltipElement: null,
@@ -1064,6 +1085,12 @@ const state = {
     viewContainer: null,
     toolbar: null,
     settings: null,
+  },
+  homeStats: {
+    card: null,
+    container: null,
+    toggle: null,
+    collapsed: loadHomeStatsCollapsed(),
   },
 };
 
@@ -2258,6 +2285,9 @@ async function renderHomePage(container) {
     const layout = document.createElement('div');
     layout.className = 'home-screen';
 
+    layout.append(buildHomeQuickLinks());
+    layout.append(buildHomeStatsCard());
+
     const highlight = await createHomeHighlightCard();
     if (highlight) {
       layout.append(highlight);
@@ -2279,6 +2309,7 @@ async function renderHomePage(container) {
 
     container.innerHTML = '';
     container.append(layout);
+    updateHomeStatsView();
     updateHomeInstallBanner();
   } catch (error) {
     console.error('Anasayfa hazırlanırken hata oluştu.', error);
@@ -3070,6 +3101,15 @@ function persistCompletionData() {
   }
 }
 
+function resetCompletionData() {
+  state.completionData = createEmptyCompletionData();
+  persistCompletionData();
+  state.completionButtons.forEach((_entry, prayerId) => {
+    updateCompletionButtonUI(prayerId);
+  });
+  updateCompletionStatsView();
+}
+
 function markPrayerCompleted(prayerId) {
   const repository = ensureCompletionData();
   const today = getTodayKey();
@@ -3236,6 +3276,148 @@ function buildHomeFallbackCard() {
     <p>Günün tesbihatlarına yukarıdaki sekmelerden ulaşabilirsiniz.</p>
   `;
   return card;
+}
+
+function buildHomeQuickLinks() {
+  const card = document.createElement('article');
+  card.className = 'card home-quick-links';
+  card.dataset.disableTooltips = 'true';
+
+  const header = document.createElement('div');
+  header.className = 'home-quick-links__header';
+
+  const title = document.createElement('h2');
+  title.className = 'home-quick-links__title';
+  title.textContent = 'Hızlı gezin';
+
+  header.append(title);
+  card.append(header);
+
+  const list = document.createElement('div');
+  list.className = 'home-quick-links__grid';
+
+  HOME_QUICK_LINKS.forEach((link) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'home-quick-link';
+    button.dataset.quickLink = link.id;
+    button.addEventListener('click', () => handleHomeQuickLinkClick(link.id));
+
+    const icon = document.createElement('span');
+    icon.className = 'home-quick-link__icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = link.icon;
+
+    const text = document.createElement('span');
+    text.className = 'home-quick-link__text';
+    text.innerHTML = `<strong>${link.label}</strong><span>${link.description}</span>`;
+
+    button.append(icon, text);
+    list.append(button);
+  });
+
+  card.append(list);
+  return card;
+}
+
+function handleHomeQuickLinkClick(prayerId) {
+  if (!prayerId) {
+    return;
+  }
+  setActivePrayer(prayerId);
+  if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+}
+
+function buildHomeStatsCard() {
+  const card = document.createElement('article');
+  card.className = 'card home-stats';
+  card.dataset.disableTooltips = 'true';
+
+  const header = document.createElement('header');
+  header.className = 'home-stats__header';
+
+  const heading = document.createElement('div');
+  heading.className = 'home-stats__heading';
+
+  const title = document.createElement('h2');
+  title.className = 'home-stats__title';
+  title.textContent = 'Tesbihat istatistikleri';
+
+  const description = document.createElement('p');
+  description.className = 'home-stats__description';
+  description.textContent = 'Günlük tamamlanma durumunuzu buradan takip edebilirsiniz.';
+
+  heading.append(title, description);
+
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'home-stats__toggle';
+  toggle.innerHTML = `
+    <span class="home-stats__toggle-icon" aria-hidden="true">⌄</span>
+    <span class="home-stats__toggle-label">Gizle</span>
+  `;
+
+  header.append(heading, toggle);
+  card.append(header);
+
+  const content = document.createElement('div');
+  const contentId = `home-stats-${Date.now().toString(36)}`;
+  content.className = 'home-stats__content';
+  content.dataset.homeStatsContent = 'true';
+  content.id = contentId;
+  toggle.setAttribute('aria-controls', contentId);
+  card.append(content);
+
+  state.homeStats.card = card;
+  state.homeStats.container = content;
+  state.homeStats.toggle = toggle;
+
+  toggle.addEventListener('click', () => {
+    toggleHomeStatsCollapse();
+  });
+
+  updateHomeStatsCollapseUI();
+  return card;
+}
+
+function updateHomeStatsCollapseUI() {
+  const statsState = state.homeStats;
+  if (!statsState || !statsState.card || !statsState.toggle) {
+    return;
+  }
+  const { card, toggle, container, collapsed } = statsState;
+  card.classList.toggle('is-collapsed', Boolean(collapsed));
+  if (container) {
+    container.hidden = Boolean(collapsed);
+  }
+  const label = toggle.querySelector('.home-stats__toggle-label');
+  if (label) {
+    label.textContent = collapsed ? 'Göster' : 'Gizle';
+  }
+  toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+}
+
+function toggleHomeStatsCollapse() {
+  if (!state.homeStats) {
+    return;
+  }
+  const next = !state.homeStats.collapsed;
+  state.homeStats.collapsed = next;
+  saveHomeStatsCollapsed(next);
+  updateHomeStatsCollapseUI();
+  if (!next) {
+    updateHomeStatsView();
+  }
+}
+
+function updateHomeStatsView() {
+  const statsState = state.homeStats;
+  if (!statsState || !statsState.container) {
+    return;
+  }
+  renderCompletionStats(statsState.container);
 }
 
 function buildInstallBanner() {
@@ -3977,11 +4159,7 @@ function renderCompletionStatusIcon(isComplete, fallbackText = '') {
 }
 
 function updateCompletionStatsView() {
-  const statsView = state.statsView;
-  if (!statsView || !statsView.isOpen || !statsView.content) {
-    return;
-  }
-  renderCompletionStats(statsView.content);
+  updateHomeStatsView();
 }
 
 function handleDuaNewClick() {
@@ -4702,7 +4880,6 @@ function attachSettingsToggle(appRoot) {
   const overlay = document.querySelector('[data-settings]');
   const closeButtons = overlay ? overlay.querySelectorAll('[data-close-settings]') : null;
   const mainSheet = overlay?.querySelector('[data-settings-main]');
-  const statsSheet = overlay?.querySelector('[data-stats-sheet]');
 
   if (!toggleButton || !overlay || !mainSheet) {
     return;
@@ -4710,9 +4887,6 @@ function attachSettingsToggle(appRoot) {
 
   if (!mainSheet.hasAttribute('tabindex')) {
     mainSheet.setAttribute('tabindex', '-1');
-  }
-  if (statsSheet && !statsSheet.hasAttribute('tabindex')) {
-    statsSheet.setAttribute('tabindex', '-1');
   }
 
   const handleKeydown = (event) => {
@@ -4723,7 +4897,6 @@ function attachSettingsToggle(appRoot) {
   };
 
   const openSettings = () => {
-    resetStatsSheet();
     overlay.removeAttribute('hidden');
     document.body.classList.add('settings-open');
     document.addEventListener('keydown', handleKeydown);
@@ -4734,8 +4907,6 @@ function attachSettingsToggle(appRoot) {
   };
 
   const closeSettings = () => {
-    closeStatsView({ restoreFocus: false });
-    resetStatsSheet();
     overlay.setAttribute('hidden', '');
     document.body.classList.remove('settings-open');
     document.removeEventListener('keydown', handleKeydown);
@@ -5477,92 +5648,18 @@ function initDuaSourceSelector() {
 }
 
 function initCompletionStatsView() {
-  const overlay = document.querySelector('[data-settings]');
-  if (!overlay) {
+  const resetButton = document.querySelector('[data-reset-stats]');
+  if (!resetButton) {
     return;
   }
-  const openButton = overlay.querySelector('[data-open-stats]');
-  const statsSheet = overlay.querySelector('[data-stats-sheet]');
-  const mainSheet = overlay.querySelector('[data-settings-main]');
-  const statsContent = statsSheet?.querySelector('[data-stats-content]');
-  const closeButton = statsSheet?.querySelector('[data-close-stats]');
-
-  if (!openButton || !statsSheet || !statsContent || !mainSheet) {
-    return;
-  }
-
-  if (!statsSheet.hasAttribute('tabindex')) {
-    statsSheet.setAttribute('tabindex', '-1');
-  }
-
-  state.statsView = {
-    openButton,
-    sheet: statsSheet,
-    content: statsContent,
-    closeButton,
-    isOpen: false,
-    mainSheet,
-  };
-
-  openButton.addEventListener('click', () => {
-    openStatsView();
+  resetButton.addEventListener('click', () => {
+    const confirmed = window.confirm('Tüm tesbihat istatistiklerini sıfırlamak istediğinize emin misiniz?');
+    if (!confirmed) {
+      return;
+    }
+    resetCompletionData();
+    window.alert('Tesbihat istatistikleri sıfırlandı.');
   });
-
-  closeButton?.addEventListener('click', () => {
-    closeStatsView();
-  });
-}
-
-function openStatsView() {
-  const overlay = document.querySelector('[data-settings]');
-  if (!overlay || !state.statsView) {
-    return;
-  }
-  const { sheet, mainSheet } = state.statsView;
-  if (!sheet || !mainSheet) {
-    return;
-  }
-  mainSheet.setAttribute('hidden', '');
-  sheet.removeAttribute('hidden');
-  state.statsView.isOpen = true;
-  renderCompletionStats(state.statsView.content);
-  window.requestAnimationFrame(() => {
-    sheet.focus();
-  });
-}
-
-function closeStatsView({ restoreFocus = true } = {}) {
-  const overlay = document.querySelector('[data-settings]');
-  if (!overlay || !state.statsView) {
-    return;
-  }
-  const { sheet, mainSheet, openButton } = state.statsView;
-  if (!sheet || !mainSheet) {
-    return;
-  }
-  sheet.setAttribute('hidden', '');
-  mainSheet.removeAttribute('hidden');
-  state.statsView.isOpen = false;
-  if (restoreFocus) {
-    window.requestAnimationFrame(() => {
-      openButton?.focus?.();
-    });
-  }
-}
-
-function resetStatsSheet() {
-  const overlay = document.querySelector('[data-settings]');
-  if (!overlay || !state.statsView) {
-    return;
-  }
-  const { sheet, mainSheet } = state.statsView;
-  if (sheet && !sheet.hasAttribute('hidden')) {
-    sheet.setAttribute('hidden', '');
-  }
-  if (mainSheet) {
-    mainSheet.removeAttribute('hidden');
-  }
-  state.statsView.isOpen = false;
 }
 
 function initDuaArabicToggle() {
@@ -5791,6 +5888,29 @@ function saveCevsenVisibility(visibility) {
     localStorage.setItem(CEVSEN_VISIBILITY_STORAGE_KEY, JSON.stringify(normalised));
   } catch (error) {
     console.warn('Cevşen görünürlük tercihleri kaydedilemedi.', error);
+  }
+}
+
+function loadHomeStatsCollapsed() {
+  try {
+    const stored = localStorage.getItem(HOME_STATS_COLLAPSED_STORAGE_KEY);
+    if (stored === '1') {
+      return true;
+    }
+    if (stored === '0') {
+      return false;
+    }
+  } catch (error) {
+    console.warn('Anasayfa istatistik tercihleri okunamadı.', error);
+  }
+  return false;
+}
+
+function saveHomeStatsCollapsed(collapsed) {
+  try {
+    localStorage.setItem(HOME_STATS_COLLAPSED_STORAGE_KEY, collapsed ? '1' : '0');
+  } catch (error) {
+    console.warn('Anasayfa istatistik tercihleri kaydedilemedi.', error);
   }
 }
 
