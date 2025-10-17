@@ -14,6 +14,21 @@ const FONT_SCALE_STORAGE_KEY = 'tesbihat:font-scale';
 const FONT_SCALE_MIN = 0.85;
 const FONT_SCALE_MAX = 1.3;
 const FONT_SCALE_STEP = 0.05;
+const CEVSEN_FONT_SCALE_STORAGE_KEY = 'tesbihat:cevsen-font-scale';
+const CEVSEN_VISIBILITY_STORAGE_KEY = 'tesbihat:cevsen-visibility';
+const CEVSEN_FONT_SCALE_MIN = 0.75;
+const CEVSEN_FONT_SCALE_MAX = 1.6;
+const CEVSEN_FONT_SCALE_STEP = 0.05;
+const CEVSEN_FONT_SCALE_DEFAULT = {
+  arabic: 1,
+  transliteration: 1,
+  meaning: 1,
+};
+const CEVSEN_VISIBILITY_DEFAULT = {
+  arabic: true,
+  transliteration: true,
+  meaning: true,
+};
 const IMPORTANCE_SOURCE_PATH = 'TesbihatinOnemi.txt';
 const INSTALL_PROMPT_STORAGE_KEY = 'tesbihat:install-dismissed';
 const INSTALL_PROMPT_DELAY = 24 * 60 * 60 * 1000;
@@ -672,6 +687,10 @@ const PRAYER_CONFIG = {
     markdown: { tr: 'YatsiTesbihat.md', ar: 'yatsiCleanAR.md' },
     supportsDua: true,
   },
+  cevsen: {
+    label: 'Cevşen-i Kebîr',
+    cevsen: true,
+  },
   zikirler: {
     label: 'Zikirler',
     zikirManager: true,
@@ -695,6 +714,22 @@ const PRAYER_CONFIG = {
     ],
   },
 };
+
+const CEVSEN_PARTS = [
+  { id: 'part-1-10', label: '1-10', range: '1-10', path: 'cevsen/cevsen1-10.md' },
+  { id: 'part-11-20', label: '11-20', range: '11-20', path: 'cevsen/cevsen11-20.md' },
+  { id: 'part-21-30', label: '21-30', range: '21-30', path: 'cevsen/cevsen21-30.md' },
+  { id: 'part-31-40', label: '31-40', range: '31-40', path: 'cevsen/cevsen31-40.md' },
+  { id: 'part-41-50', label: '41-50', range: '41-50', path: 'cevsen/cevsen41-50.md' },
+  { id: 'part-51-60', label: '51-60', range: '51-60', path: 'cevsen/cevsen51-60.md' },
+  { id: 'part-61-70', label: '61-70', range: '61-70', path: 'cevsen/cevsen61-70.md' },
+  { id: 'part-71-80', label: '71-80', range: '71-80', path: 'cevsen/cevsen71-80.md' },
+  { id: 'part-81-90', label: '81-90', range: '81-90', path: 'cevsen/cevsen81-90.md' },
+  { id: 'part-91-100', label: '91-100', range: '91-100', path: 'cevsen/cevsen91-100.md' },
+  { id: 'part-prayer', label: 'Dua', isPrayer: true, path: 'cevsen/cevsen-prayer.md' },
+];
+
+const CEVSEN_PART_MAP = new Map(CEVSEN_PARTS.map((part) => [part.id, part]));
 
 const DUA_SOURCES = {
   birkirikdilekce: { label: 'Bir Kırık Dilekçe', path: 'BirKirikDilekce.txt' },
@@ -1019,6 +1054,17 @@ const state = {
   duaUI: null,
   homeFeaturesHtml: null,
   languageToggleButtons: new Map(),
+  cevsen: {
+    activePartId: null,
+    lastPartId: null,
+    fontScale: loadCevsenFontScale(),
+    visibility: loadCevsenVisibility(),
+    partCache: new Map(),
+    root: null,
+    viewContainer: null,
+    toolbar: null,
+    settings: null,
+  },
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1090,6 +1136,14 @@ async function loadPrayerContent(prayerId) {
   }
 
   const config = PRAYER_CONFIG[prayerId];
+  if (!config || !config.cevsen) {
+    closeCevsenSettings({ immediate: true });
+    if (state.cevsen) {
+      state.cevsen.root = null;
+      state.cevsen.viewContainer = null;
+      state.cevsen.toolbar = null;
+    }
+  }
 
   if (!config) {
     content.innerHTML = `<div class="card">Seçtiğiniz vakit bulunamadı.</div>`;
@@ -1098,6 +1152,11 @@ async function loadPrayerContent(prayerId) {
 
   if (config.homepage) {
     await renderHomePage(content);
+    return;
+  }
+
+  if (config.cevsen) {
+    await renderCevsen(content, config);
     return;
   }
 
@@ -1267,6 +1326,764 @@ async function renderPrayerCollectionItem(container, prayerId, config, item) {
       <p>İçerik yüklenirken bir hata oluştu. Lütfen daha sonra tekrar deneyin.</p>
     `;
   }
+}
+
+async function renderCevsen(container, config) {
+  hideNameTooltip();
+  closeCevsenSettings({ immediate: true });
+
+  const viewState = state.cevsen;
+  if (!viewState) {
+    return;
+  }
+
+  container.innerHTML = '';
+
+  const root = document.createElement('div');
+  root.className = 'cevsen-screen';
+  root.innerHTML = `
+    <header class="card cevsen-toolbar">
+      <div class="cevsen-toolbar__left">
+        <button type="button" class="button-pill secondary cevsen-toolbar__back" data-cevsen-back hidden>Bölümlere dön</button>
+        <div class="cevsen-toolbar__titles">
+          <h2 class="cevsen-toolbar__title"></h2>
+          <p class="cevsen-toolbar__subtitle"></p>
+        </div>
+      </div>
+      <button type="button" class="button-pill cevsen-toolbar__settings" data-cevsen-settings aria-label="Cevşen metin ayarlarını aç" hidden>
+        <span class="cevsen-toolbar__settings-icon" aria-hidden="true">⚙️</span>
+        <span class="cevsen-toolbar__settings-label">Ayarlar</span>
+      </button>
+    </header>
+    <div class="cevsen-view" data-cevsen-view></div>
+  `;
+
+  container.append(root);
+
+  viewState.root = root;
+  viewState.viewContainer = root.querySelector('[data-cevsen-view]');
+  viewState.toolbar = {
+    root: root.querySelector('.cevsen-toolbar'),
+    title: root.querySelector('.cevsen-toolbar__title'),
+    subtitle: root.querySelector('.cevsen-toolbar__subtitle'),
+    backButton: root.querySelector('[data-cevsen-back]'),
+    settingsButton: root.querySelector('[data-cevsen-settings]'),
+  };
+
+  applyCevsenFontScale(root);
+  applyCevsenVisibility(root);
+
+  const backButton = viewState.toolbar.backButton;
+  if (backButton) {
+    backButton.addEventListener('click', () => {
+      viewState.activePartId = null;
+      updateCevsenView();
+    });
+  }
+
+  const settingsButton = viewState.toolbar.settingsButton;
+  if (settingsButton) {
+    settingsButton.addEventListener('click', () => {
+      const settings = ensureCevsenSettings();
+      viewState.settings = settings;
+      settings.show();
+    });
+  }
+
+  if (!viewState.settings || !viewState.settings.overlay || !viewState.settings.overlay.isConnected) {
+    viewState.settings = ensureCevsenSettings();
+  }
+
+  return updateCevsenView();
+}
+
+async function updateCevsenView() {
+  const viewState = state.cevsen;
+  if (!viewState || !viewState.root || !viewState.viewContainer || !viewState.toolbar) {
+    return;
+  }
+
+  const { backButton, settingsButton, title, subtitle } = viewState.toolbar;
+
+  if (!viewState.activePartId) {
+    if (backButton) {
+      backButton.hidden = true;
+    }
+    if (settingsButton) {
+      settingsButton.hidden = true;
+    }
+    if (title) {
+      title.textContent = 'Cevşen-i Kebîr';
+    }
+    if (subtitle) {
+      subtitle.textContent = 'Okumak istediğiniz bab aralığını seçin.';
+    }
+    renderCevsenSelection(viewState.viewContainer);
+    applyCevsenVisibility();
+    return;
+  }
+
+  const part = CEVSEN_PART_MAP.get(viewState.activePartId);
+  if (!part) {
+    viewState.activePartId = null;
+    await updateCevsenView();
+    return;
+  }
+
+  if (backButton) {
+    backButton.hidden = false;
+  }
+  if (settingsButton) {
+    settingsButton.hidden = false;
+    settingsButton.disabled = false;
+  }
+  if (title) {
+    title.textContent = getCevsenPartTitle(part);
+  }
+  if (subtitle) {
+    subtitle.textContent = getCevsenPartSubtitle(part);
+  }
+
+  await renderCevsenPartView(viewState.viewContainer, part);
+}
+
+function renderCevsenSelection(target) {
+  const viewState = state.cevsen;
+  if (!target) {
+    return;
+  }
+
+  closeCevsenSettings();
+
+  target.innerHTML = '';
+
+  const info = document.createElement('p');
+  info.className = 'cevsen-selection__info';
+  info.textContent = 'Babları okumak için aralıklardan birini seçin.';
+  target.append(info);
+
+  const list = document.createElement('div');
+  list.className = 'cevsen-part-list';
+
+  const lastPartId = viewState ? viewState.lastPartId : null;
+
+  CEVSEN_PARTS.forEach((part) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'cevsen-part-button';
+    button.dataset.partId = part.id;
+
+    const label = document.createElement('span');
+    label.className = 'cevsen-part-button__label';
+    label.textContent = part.label;
+
+    const hint = document.createElement('span');
+    hint.className = 'cevsen-part-button__hint';
+    hint.textContent = part.isPrayer ? 'Kapanış duaları' : `Bab ${part.range || part.label}`;
+
+    button.append(label, hint);
+
+    if (lastPartId === part.id) {
+      button.classList.add('is-active');
+    }
+
+    button.addEventListener('click', () => {
+      if (viewState) {
+        viewState.activePartId = part.id;
+      }
+      updateCevsenView();
+      if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    });
+
+    list.append(button);
+  });
+
+  target.append(list);
+  applyCevsenVisibility();
+}
+
+async function renderCevsenPartView(target, part) {
+  const viewState = state.cevsen;
+  if (!target || !part) {
+    return;
+  }
+
+  if (viewState) {
+    viewState.lastPartId = part.id;
+  }
+
+  const loadingCard = document.createElement('article');
+  loadingCard.className = 'card cevsen-loading';
+  loadingCard.innerHTML = '<p class="cevsen-loading__text">İçerik yükleniyor…</p>';
+
+  target.innerHTML = '';
+  target.append(loadingCard);
+
+  try {
+    const data = await loadCevsenPartData(part);
+    target.innerHTML = '';
+
+    if (!Array.isArray(data.sections) || data.sections.length === 0) {
+      const emptyCard = document.createElement('article');
+      emptyCard.className = 'card cevsen-empty';
+      emptyCard.innerHTML = `
+        <h3>İçerik henüz hazır değil</h3>
+        <p>Bu bölüme ait metin eklendiğinde burada görüntülenecek.</p>
+      `;
+      target.append(emptyCard);
+      applyCevsenFontScale(viewState ? viewState.root : null);
+      applyCevsenVisibility(viewState ? viewState.root : null);
+      return;
+    }
+
+    data.sections.forEach((section, index) => {
+      const card = buildCevsenBabCard(section, index);
+      target.append(card);
+    });
+
+    applyCevsenFontScale(viewState ? viewState.root : null);
+    applyCevsenVisibility(viewState ? viewState.root : null);
+
+    if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
+      window.scrollTo({ top: 0 });
+    }
+  } catch (error) {
+    console.error('Cevşen içeriği yüklenemedi.', error);
+    target.innerHTML = '';
+    const errorCard = document.createElement('article');
+    errorCard.className = 'card cevsen-error';
+    errorCard.innerHTML = `
+      <h3>İçerik yüklenemedi</h3>
+      <p>İlgili dosya henüz eklenmemiş olabilir. Lütfen daha sonra tekrar deneyin.</p>
+    `;
+    target.append(errorCard);
+    applyCevsenFontScale(viewState ? viewState.root : null);
+    applyCevsenVisibility(viewState ? viewState.root : null);
+  }
+}
+
+function getCevsenPartTitle(part) {
+  if (!part) {
+    return 'Cevşen-i Kebîr';
+  }
+  if (part.isPrayer) {
+    return 'Kapanış Duaları';
+  }
+  if (part.range) {
+    return `Bab ${part.range}`;
+  }
+  if (part.label) {
+    return part.label;
+  }
+  return 'Cevşen-i Kebîr';
+}
+
+function getCevsenPartSubtitle(part) {
+  if (!part) {
+    return 'Babları okumak için aralık seçin.';
+  }
+  if (part.isPrayer) {
+    return 'Cevşen-i Kebîr duasının Arapça metni, transkripsiyonu ve mealini birlikte okuyun.';
+  }
+  return 'Aralık içindeki babların Arapça metni, okunuşu ve mealini aşağıdan takip edebilirsiniz.';
+}
+
+async function loadCevsenPartData(part) {
+  const viewState = state.cevsen;
+  if (!viewState) {
+    return { intro: [], sections: [] };
+  }
+
+  const cache = viewState.partCache;
+  if (cache && cache.has(part.id)) {
+    return cache.get(part.id);
+  }
+
+  if (!part.path) {
+    const empty = { intro: [], sections: [] };
+    if (cache) {
+      cache.set(part.id, empty);
+    }
+    return empty;
+  }
+
+  const raw = await fetchText(part.path);
+  const parsed = parseCevsenMarkdown(raw);
+  if (cache) {
+    cache.set(part.id, parsed);
+  }
+  return parsed;
+}
+
+function parseCevsenMarkdown(input) {
+  if (typeof input !== 'string' || !input.trim()) {
+    return { intro: [], sections: [] };
+  }
+
+  const normalised = input.replace(/\r\n/g, '\n');
+  const lines = normalised.split('\n').map((line) => line.trim());
+  const intro = [];
+  const sections = [];
+  let currentSection = null;
+  let buffer = [];
+
+  const flushEntry = () => {
+    if (!currentSection) {
+      buffer = [];
+      return;
+    }
+    const cleaned = buffer.map((line) => line.trim()).filter(Boolean);
+    if (!cleaned.length) {
+      buffer = [];
+      return;
+    }
+    const [arabic = '', transliteration = '', ...rest] = cleaned;
+    const meaning = rest.join(' ');
+    currentSection.items.push({
+      arabic,
+      transliteration,
+      meaning,
+    });
+    buffer = [];
+  };
+
+  lines.forEach((line) => {
+    if (!line) {
+      return;
+    }
+
+    if (line.includes('⸻') || /^[\-\u2012-\u2015_\u2500-\u2501]+$/u.test(line)) {
+      flushEntry();
+      return;
+    }
+
+    if (/^\d{1,3}\.\s*Bab/i.test(line)) {
+      flushEntry();
+      if (currentSection) {
+        sections.push(currentSection);
+      }
+      currentSection = { title: line, items: [] };
+      return;
+    }
+
+    if (!currentSection) {
+      intro.push(line);
+      return;
+    }
+
+    buffer.push(line);
+  });
+
+  flushEntry();
+  if (currentSection) {
+    sections.push(currentSection);
+  }
+
+  return { intro, sections };
+}
+
+function buildCevsenBabCard(section, index) {
+  const card = document.createElement('article');
+  card.className = 'card cevsen-bab';
+  card.dataset.index = String(index + 1);
+
+  const header = document.createElement('header');
+  header.className = 'cevsen-bab__header';
+  const badge = document.createElement('span');
+  badge.className = 'cevsen-bab__badge';
+  badge.textContent = section && section.title ? section.title : `${index + 1}. Bab`;
+  header.append(badge);
+  card.append(header);
+
+  const body = document.createElement('div');
+  body.className = 'cevsen-bab__body';
+
+  const items = Array.isArray(section && section.items) ? section.items : [];
+  if (!items.length) {
+    const empty = document.createElement('p');
+    empty.className = 'cevsen-bab__empty';
+    empty.textContent = 'Bu baba ait satırlar henüz eklenmedi.';
+    body.append(empty);
+  } else {
+    items.forEach((item) => {
+      const entry = document.createElement('div');
+      entry.className = 'cevsen-entry';
+
+      if (item.arabic) {
+        const arabic = document.createElement('p');
+        arabic.className = 'cevsen-entry__arabic';
+        arabic.textContent = item.arabic;
+        arabic.setAttribute('dir', 'rtl');
+        arabic.setAttribute('lang', 'ar');
+        entry.append(arabic);
+      }
+
+      if (item.transliteration) {
+        const transliteration = document.createElement('p');
+        transliteration.className = 'cevsen-entry__transliteration';
+        transliteration.textContent = item.transliteration;
+        entry.append(transliteration);
+      }
+
+      if (item.meaning) {
+        const meaning = document.createElement('p');
+        meaning.className = 'cevsen-entry__meaning';
+        meaning.textContent = item.meaning;
+        meaning.setAttribute('lang', 'tr');
+        entry.append(meaning);
+      }
+
+      body.append(entry);
+    });
+  }
+
+  card.append(body);
+  return card;
+}
+
+function normaliseCevsenFontScale(scale) {
+  const result = {
+    arabic: CEVSEN_FONT_SCALE_DEFAULT.arabic,
+    transliteration: CEVSEN_FONT_SCALE_DEFAULT.transliteration,
+    meaning: CEVSEN_FONT_SCALE_DEFAULT.meaning,
+  };
+
+  if (!scale || typeof scale !== 'object') {
+    return result;
+  }
+
+  Object.keys(result).forEach((key) => {
+    const value = Number.parseFloat(scale[key]);
+    if (Number.isFinite(value)) {
+      result[key] = clamp(value, CEVSEN_FONT_SCALE_MIN, CEVSEN_FONT_SCALE_MAX);
+    }
+  });
+
+  return result;
+}
+
+function applyCevsenFontScale(root = state.cevsen && state.cevsen.root) {
+  if (!state.cevsen) {
+    return;
+  }
+  const target = root || state.cevsen.root;
+  if (!target) {
+    return;
+  }
+
+  const scale = normaliseCevsenFontScale(state.cevsen.fontScale);
+  state.cevsen.fontScale = scale;
+
+  target.style.setProperty('--cevsen-arabic-scale', String(scale.arabic));
+  target.style.setProperty('--cevsen-transliteration-scale', String(scale.transliteration));
+  target.style.setProperty('--cevsen-meaning-scale', String(scale.meaning));
+}
+
+function adjustCevsenFontScale(type, delta) {
+  if (!type || typeof delta !== 'number') {
+    return false;
+  }
+  const viewState = state.cevsen;
+  if (!viewState) {
+    return false;
+  }
+
+  const current = normaliseCevsenFontScale(viewState.fontScale);
+  const currentValue = Number.isFinite(current[type]) ? current[type] : CEVSEN_FONT_SCALE_DEFAULT[type] || 1;
+  const nextValue = clamp(Number.parseFloat((currentValue + delta).toFixed(3)), CEVSEN_FONT_SCALE_MIN, CEVSEN_FONT_SCALE_MAX);
+
+  if (Math.abs(nextValue - currentValue) < 0.001) {
+    viewState.fontScale = current;
+    return false;
+  }
+
+  const updated = { ...current, [type]: Number.parseFloat(nextValue.toFixed(2)) };
+  viewState.fontScale = updated;
+  saveCevsenFontScale(updated);
+  applyCevsenFontScale();
+  return true;
+}
+
+function resetCevsenFontScale() {
+  const viewState = state.cevsen;
+  if (!viewState) {
+    return;
+  }
+  const baseline = normaliseCevsenFontScale(CEVSEN_FONT_SCALE_DEFAULT);
+  viewState.fontScale = baseline;
+  saveCevsenFontScale(baseline);
+  applyCevsenFontScale();
+}
+
+function toggleCevsenVisibility(type) {
+  if (!type || !(type in CEVSEN_VISIBILITY_DEFAULT)) {
+    return;
+  }
+  const viewState = state.cevsen;
+  if (!viewState) {
+    return;
+  }
+
+  const current = normaliseCevsenVisibility(viewState.visibility);
+  const next = { ...current, [type]: !current[type] };
+  viewState.visibility = next;
+  saveCevsenVisibility(next);
+  applyCevsenVisibility();
+}
+
+function applyCevsenVisibility(root = state.cevsen && state.cevsen.root) {
+  const viewState = state.cevsen;
+  if (!viewState) {
+    return;
+  }
+
+  const target = root || viewState.root;
+  if (!target) {
+    return;
+  }
+
+  const visibility = normaliseCevsenVisibility(viewState.visibility);
+  viewState.visibility = visibility;
+
+  target.classList.toggle('cevsen-hide-arabic', !visibility.arabic);
+  target.classList.toggle('cevsen-hide-transliteration', !visibility.transliteration);
+  target.classList.toggle('cevsen-hide-meaning', !visibility.meaning);
+
+  const entries = target.querySelectorAll('.cevsen-entry');
+  entries.forEach((entry) => {
+    const hasArabic = visibility.arabic && entry.querySelector('.cevsen-entry__arabic');
+    const hasTransliteration = visibility.transliteration && entry.querySelector('.cevsen-entry__transliteration');
+    const hasMeaning = visibility.meaning && entry.querySelector('.cevsen-entry__meaning');
+    entry.hidden = !hasArabic && !hasTransliteration && !hasMeaning;
+  });
+}
+
+function normaliseCevsenVisibility(value) {
+  const result = {
+    arabic: Boolean(CEVSEN_VISIBILITY_DEFAULT.arabic),
+    transliteration: Boolean(CEVSEN_VISIBILITY_DEFAULT.transliteration),
+    meaning: Boolean(CEVSEN_VISIBILITY_DEFAULT.meaning),
+  };
+
+  if (!value || typeof value !== 'object') {
+    return result;
+  }
+
+  Object.keys(result).forEach((key) => {
+    if (key in value) {
+      result[key] = value[key] !== false;
+    }
+  });
+
+  return result;
+}
+
+function ensureCevsenSettings() {
+  const viewState = state.cevsen;
+  if (viewState && viewState.settings && viewState.settings.overlay && viewState.settings.overlay.isConnected) {
+    return viewState.settings;
+  }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'cevsen-settings-overlay';
+  overlay.hidden = true;
+  overlay.innerHTML = `
+    <div class="cevsen-settings" role="dialog" aria-modal="true" aria-labelledby="cevsen-settings-title">
+      <header class="cevsen-settings__header">
+        <h2 id="cevsen-settings-title">Metin ayarları</h2>
+        <button type="button" class="cevsen-settings__close" aria-label="Cevşen metin ayarlarını kapat">✕</button>
+      </header>
+      <div class="cevsen-settings__content">
+        <div class="cevsen-font-row" data-font-type="arabic">
+          <div class="cevsen-font-row__info">
+            <span class="cevsen-font-row__label">Arapça</span>
+          </div>
+          <div class="cevsen-font-row__controls">
+            <button type="button" class="cevsen-visibility-button" data-visibility-toggle aria-pressed="true">Gizle</button>
+            <div class="cevsen-size-buttons">
+              <button type="button" class="cevsen-font-button" data-font-action="decrease" aria-label="Arapça metni küçült">−</button>
+              <button type="button" class="cevsen-font-button" data-font-action="increase" aria-label="Arapça metni büyüt">+</button>
+            </div>
+          </div>
+        </div>
+        <div class="cevsen-font-row" data-font-type="transliteration">
+          <div class="cevsen-font-row__info">
+            <span class="cevsen-font-row__label">Transkripsiyon</span>
+          </div>
+          <div class="cevsen-font-row__controls">
+            <button type="button" class="cevsen-visibility-button" data-visibility-toggle aria-pressed="true">Gizle</button>
+            <div class="cevsen-size-buttons">
+              <button type="button" class="cevsen-font-button" data-font-action="decrease" aria-label="Transkripsiyon metnini küçült">−</button>
+              <button type="button" class="cevsen-font-button" data-font-action="increase" aria-label="Transkripsiyon metnini büyüt">+</button>
+            </div>
+          </div>
+        </div>
+        <div class="cevsen-font-row" data-font-type="meaning">
+          <div class="cevsen-font-row__info">
+            <span class="cevsen-font-row__label">Türkçe</span>
+          </div>
+          <div class="cevsen-font-row__controls">
+            <button type="button" class="cevsen-visibility-button" data-visibility-toggle aria-pressed="true">Gizle</button>
+            <div class="cevsen-size-buttons">
+              <button type="button" class="cevsen-font-button" data-font-action="decrease" aria-label="Türkçe metni küçült">−</button>
+              <button type="button" class="cevsen-font-button" data-font-action="increase" aria-label="Türkçe metni büyüt">+</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <footer class="cevsen-settings__footer">
+        <button type="button" class="button-pill secondary" data-cevsen-reset>Varsayılana dön</button>
+      </footer>
+    </div>
+  `;
+
+  document.body.append(overlay);
+
+  const panel = overlay.querySelector('.cevsen-settings');
+  const closeButton = overlay.querySelector('.cevsen-settings__close');
+  const resetButton = overlay.querySelector('[data-cevsen-reset]');
+
+  const updateControls = () => {
+    const scale = normaliseCevsenFontScale(state.cevsen ? state.cevsen.fontScale : null);
+    if (state.cevsen) {
+      state.cevsen.fontScale = scale;
+    }
+    const visibility = normaliseCevsenVisibility(state.cevsen ? state.cevsen.visibility : null);
+    if (state.cevsen) {
+      state.cevsen.visibility = visibility;
+    }
+
+    const rows = panel.querySelectorAll('[data-font-type]');
+    rows.forEach((row) => {
+      const type = row.dataset.fontType;
+      const value = scale[type] || 1;
+      const increase = row.querySelector('[data-font-action="increase"]');
+      const decrease = row.querySelector('[data-font-action="decrease"]');
+      if (increase) {
+        increase.disabled = value >= CEVSEN_FONT_SCALE_MAX - 0.001;
+      }
+      if (decrease) {
+        decrease.disabled = value <= CEVSEN_FONT_SCALE_MIN + 0.001;
+      }
+      const visibilityButton = row.querySelector('[data-visibility-toggle]');
+      if (visibilityButton) {
+        const isVisible = visibility[type] !== false;
+        visibilityButton.textContent = isVisible ? 'Gizle' : 'Göster';
+        visibilityButton.setAttribute('aria-pressed', String(isVisible));
+        visibilityButton.classList.toggle('is-active', isVisible);
+      }
+    });
+  };
+
+  const handleKeydown = (event) => {
+    if (event.key === 'Escape') {
+      hide();
+    }
+  };
+
+  const show = () => {
+    if (!overlay.hidden) {
+      updateControls();
+      return;
+    }
+    overlay.hidden = false;
+    requestAnimationFrame(() => overlay.classList.add('is-visible'));
+    document.body.classList.add('cevsen-settings-open');
+    document.addEventListener('keydown', handleKeydown);
+    updateControls();
+  };
+
+  const hide = (immediate = false) => {
+    if (overlay.hidden) {
+      return;
+    }
+    overlay.classList.remove('is-visible');
+    const finalize = () => {
+      overlay.hidden = true;
+      document.body.classList.remove('cevsen-settings-open');
+      document.removeEventListener('keydown', handleKeydown);
+    };
+    if (immediate) {
+      finalize();
+    } else {
+      setTimeout(finalize, 200);
+    }
+  };
+
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) {
+      hide();
+    }
+  });
+
+  if (panel) {
+    panel.addEventListener('click', (event) => {
+      const visibilityButton = event.target.closest('[data-visibility-toggle]');
+      if (visibilityButton) {
+        const row = visibilityButton.closest('[data-font-type]');
+        if (row) {
+          const type = row.dataset.fontType;
+          toggleCevsenVisibility(type);
+          updateControls();
+        }
+        event.preventDefault();
+        return;
+      }
+
+      const actionButton = event.target.closest('[data-font-action]');
+      if (!actionButton) {
+        return;
+      }
+      const row = actionButton.closest('[data-font-type]');
+      if (!row) {
+        return;
+      }
+      const type = row.dataset.fontType;
+      if (actionButton.dataset.fontAction === 'increase') {
+        adjustCevsenFontScale(type, CEVSEN_FONT_SCALE_STEP);
+      } else if (actionButton.dataset.fontAction === 'decrease') {
+        adjustCevsenFontScale(type, -CEVSEN_FONT_SCALE_STEP);
+      }
+      updateControls();
+      event.preventDefault();
+    });
+  }
+
+  if (closeButton) {
+    closeButton.addEventListener('click', () => hide());
+  }
+
+  if (resetButton) {
+    resetButton.addEventListener('click', () => {
+      resetCevsenFontScale();
+      updateControls();
+    });
+  }
+
+  const settings = {
+    overlay,
+    panel,
+    show,
+    hide,
+    update: updateControls,
+  };
+
+  if (state.cevsen) {
+    state.cevsen.settings = settings;
+  }
+
+  return settings;
+}
+
+function closeCevsenSettings(options = {}) {
+  const settings = state.cevsen && state.cevsen.settings;
+  if (!settings || typeof settings.hide !== 'function') {
+    return;
+  }
+  const immediate = options && typeof options.immediate === 'boolean' ? options.immediate : false;
+  settings.hide(immediate);
 }
 
 async function renderHomePage(container) {
@@ -4786,6 +5603,52 @@ function resolveDuaSourceId(candidate) {
   }
   const firstKey = Object.keys(DUA_SOURCES)[0];
   return firstKey || 'birkirikdilekce';
+}
+
+function loadCevsenVisibility() {
+  try {
+    const stored = localStorage.getItem(CEVSEN_VISIBILITY_STORAGE_KEY);
+    if (!stored) {
+      return normaliseCevsenVisibility(CEVSEN_VISIBILITY_DEFAULT);
+    }
+    const parsed = JSON.parse(stored);
+    return normaliseCevsenVisibility(parsed);
+  } catch (error) {
+    console.warn('Cevşen görünürlük tercihleri yüklenemedi, varsayılana dönüldü.', error);
+    return normaliseCevsenVisibility(CEVSEN_VISIBILITY_DEFAULT);
+  }
+}
+
+function saveCevsenVisibility(visibility) {
+  try {
+    const normalised = normaliseCevsenVisibility(visibility);
+    localStorage.setItem(CEVSEN_VISIBILITY_STORAGE_KEY, JSON.stringify(normalised));
+  } catch (error) {
+    console.warn('Cevşen görünürlük tercihleri kaydedilemedi.', error);
+  }
+}
+
+function loadCevsenFontScale() {
+  try {
+    const stored = localStorage.getItem(CEVSEN_FONT_SCALE_STORAGE_KEY);
+    if (!stored) {
+      return normaliseCevsenFontScale(CEVSEN_FONT_SCALE_DEFAULT);
+    }
+    const parsed = JSON.parse(stored);
+    return normaliseCevsenFontScale(parsed);
+  } catch (error) {
+    console.warn('Cevşen yazı boyutu tercihleri yüklenemedi, varsayılana dönüldü.', error);
+    return normaliseCevsenFontScale(CEVSEN_FONT_SCALE_DEFAULT);
+  }
+}
+
+function saveCevsenFontScale(scale) {
+  try {
+    const normalised = normaliseCevsenFontScale(scale);
+    localStorage.setItem(CEVSEN_FONT_SCALE_STORAGE_KEY, JSON.stringify(normalised));
+  } catch (error) {
+    console.warn('Cevşen yazı boyutu tercihleri kaydedilemedi.', error);
+  }
 }
 
 function loadFontScale() {

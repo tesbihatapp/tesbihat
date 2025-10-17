@@ -7,7 +7,7 @@
    =================================================================== */
 
 /* Versiyon numarasını her “önemli” değişimde artır ki eski cache temizlensin. */
-const CACHE_VERSION = 'v21';
+const CACHE_VERSION = 'v22';
 
 /* Scope → /tesbihat/  veya  /tesbihat/staging/  tespiti */
 const SCOPE_URL = self.registration && self.registration.scope ? new URL(self.registration.scope) : new URL('/', self.location.origin);
@@ -61,11 +61,29 @@ const ASSETS = RAW_ASSETS.map(p => BASE_PATH + p);
 
 /* ---------------------------------------------------- Install (precache) */
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(ASSETS))
-      .then(() => self.skipWaiting())
-  );
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    const results = await Promise.allSettled(
+      ASSETS.map((assetPath) =>
+        cache.add(assetPath).catch((error) => {
+          console.warn('[SW] Precache atlandı:', assetPath, error);
+          throw error;
+        })
+      )
+    );
+
+    const failedAssets = [];
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        failedAssets.push(ASSETS[index]);
+      }
+    });
+    if (failedAssets.length > 0) {
+      console.warn('[SW] Önbelleğe alınamayan dosyalar:', failedAssets);
+    }
+
+    await self.skipWaiting();
+  })());
 });
 
 /* --------------------------------------- Activate (eski cache’leri sil) */
