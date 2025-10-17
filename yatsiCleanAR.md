@@ -1,4 +1,4 @@
-# Öğle Namazı Tesbihatı
+# Yatsi Namazı Tesbihatı
 
 **Yatsi namazının farzı kılınıp selâm verildikten sonra:**
 
