@@ -1522,6 +1522,29 @@ async function renderCevsenPartView(target, part) {
   target.append(loadingCard);
 
   try {
+    if (part.isPrayer) {
+      const prayer = await loadCevsenPrayerData(part);
+      target.innerHTML = '';
+      if (!prayer) {
+        const empty = document.createElement('article');
+        empty.className = 'card cevsen-empty';
+        empty.innerHTML = `
+          <h3>Dua metni henüz hazır değil</h3>
+          <p>Bu bölüme ait içerik eklendiğinde burada görüntülenecek.</p>
+        `;
+        target.append(empty);
+      } else {
+        const card = buildCevsenPrayerCard(prayer);
+        target.append(card);
+      }
+      applyCevsenFontScale(viewState ? viewState.root : null);
+      applyCevsenVisibility(viewState ? viewState.root : null);
+      if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
+        window.scrollTo({ top: 0 });
+      }
+      return;
+    }
+
     const data = await loadCevsenPartData(part);
     target.innerHTML = '';
 
@@ -1615,6 +1638,87 @@ async function loadCevsenPartData(part) {
     cache.set(part.id, parsed);
   }
   return parsed;
+}
+
+async function loadCevsenPrayerData(part) {
+  const viewState = state.cevsen;
+  if (!viewState) {
+    return null;
+  }
+
+  const cache = viewState.partCache;
+  if (cache && cache.has(part.id)) {
+    return cache.get(part.id);
+  }
+
+  if (!part.path) {
+    if (cache) {
+      cache.set(part.id, null);
+    }
+    return null;
+  }
+
+  const raw = await fetchText(part.path);
+  const normalised = raw.replace(/\r\n/g, '\n').trim();
+  if (!normalised) {
+    if (cache) {
+      cache.set(part.id, null);
+    }
+    return null;
+  }
+
+  const segments = normalised
+    .split(/\n{2,}/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+
+  let subtitle = null;
+  let title = null;
+  let arabic = null;
+  const remainder = [];
+
+  while (segments.length && (!subtitle || !title || !arabic)) {
+    const current = segments.shift();
+    if (!subtitle) {
+      subtitle = current;
+    } else if (!title) {
+      title = current;
+    } else if (!arabic) {
+      arabic = current;
+    }
+  }
+
+  remainder.push(...segments);
+
+  let transliterationSegments = [];
+  let meaningSegments = [];
+  if (remainder.length) {
+    const meaningStartIndex = remainder.findIndex((segment) => /^Ey\s/i.test(segment));
+    if (meaningStartIndex === -1) {
+      transliterationSegments = remainder.slice(0, 1);
+      meaningSegments = remainder.slice(1);
+    } else {
+      transliterationSegments = remainder.slice(0, meaningStartIndex);
+      meaningSegments = remainder.slice(meaningStartIndex);
+    }
+  }
+
+  const transliteration = transliterationSegments.join('\n\n').trim();
+  const meaning = meaningSegments.join('\n\n').trim();
+
+  const result = {
+    title: title || 'Cevşen Duası',
+    subtitle: subtitle || 'Cevşen-i Kebîr',
+    arabic: normaliseCevsenArabic(arabic || ''),
+    transliteration,
+    meaning,
+  };
+
+  if (cache) {
+    cache.set(part.id, result);
+  }
+
+  return result;
 }
 
 function parseCevsenMarkdown(input) {
@@ -1747,6 +1851,59 @@ function buildCevsenBabCard(section, index) {
   }
 
   card.append(body);
+  return card;
+}
+
+function buildCevsenPrayerCard(prayer) {
+  const card = document.createElement('article');
+  card.className = 'card cevsen-prayer';
+
+  if (prayer.subtitle || prayer.title) {
+    const header = document.createElement('header');
+    header.className = 'cevsen-prayer__header';
+    if (prayer.subtitle) {
+      const subtitle = document.createElement('span');
+      subtitle.className = 'cevsen-prayer__eyebrow';
+      subtitle.textContent = prayer.subtitle;
+      header.append(subtitle);
+    }
+    if (prayer.title) {
+      const title = document.createElement('h3');
+      title.className = 'cevsen-prayer__title';
+      title.textContent = prayer.title;
+      header.append(title);
+    }
+    card.append(header);
+  }
+
+  const entry = document.createElement('div');
+  entry.className = 'cevsen-entry';
+
+  if (prayer.arabic) {
+    const arabic = document.createElement('p');
+    arabic.className = 'cevsen-entry__arabic';
+    arabic.setAttribute('dir', 'rtl');
+    arabic.setAttribute('lang', 'ar');
+    arabic.textContent = normaliseCevsenArabic(prayer.arabic);
+    entry.append(arabic);
+  }
+
+  if (prayer.transliteration) {
+    const transliteration = document.createElement('p');
+    transliteration.className = 'cevsen-entry__transliteration';
+    transliteration.textContent = prayer.transliteration;
+    entry.append(transliteration);
+  }
+
+  if (prayer.meaning) {
+    const meaning = document.createElement('p');
+    meaning.className = 'cevsen-entry__meaning';
+    meaning.textContent = prayer.meaning;
+    meaning.setAttribute('lang', 'tr');
+    entry.append(meaning);
+  }
+
+  card.append(entry);
   return card;
 }
 

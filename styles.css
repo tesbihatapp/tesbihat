@@ -1658,6 +1658,36 @@ button {
   padding: 1.4rem 1.6rem;
 }
 
+.cevsen-prayer {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+  padding: 1.6rem 1.8rem;
+}
+
+.cevsen-prayer__header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  align-items: flex-start;
+}
+
+.cevsen-prayer__eyebrow {
+  font-size: 0.82rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--accent-color);
+  background: var(--accent-soft-bg);
+  padding: 0.25rem 0.8rem;
+  border-radius: 999px;
+}
+
+.cevsen-prayer__title {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
 .cevsen-bab__header {
   display: flex;
   align-items: center;
