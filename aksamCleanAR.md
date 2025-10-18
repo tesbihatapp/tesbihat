@@ -92,7 +92,7 @@
 
 **Akabinde namaz duâsı yapılır.**
 
-**duâdan sonra 1 defa فَاعْلَمْ أَنَّهُ ve 33 defa [لَا إِلٰهَ إِلَّا اللّٰه] denilir.**
+**duâdan sonra 1 defa فَاعْلَمْ أَنَّهُ ve (33) defa [لَا إِلٰهَ إِلَّا اللّٰه] denilir.**
 
 **Otuzüçüncüsünde "مُحَمَّدٌ رَسُولُ اللّٰهِ صَلَّى اللّٰهُ تَعَالَى عَلَيْهِ وَسَلَّمَ" ilave edildikten sonra:**
 

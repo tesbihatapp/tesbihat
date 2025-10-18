@@ -192,7 +192,7 @@
 
 ---
 
-**duâdan sonra 1 defa فَاعْلَمْ أَنَّهُ ve 33 defa [لَا إِلٰهَ إِلَّا اللّٰه] denilir.**
+**duâdan sonra 1 defa فَاعْلَمْ أَنَّهُ ve (33) defa [لَا إِلٰهَ إِلَّا اللّٰه] denilir.**
 
 ---
 
