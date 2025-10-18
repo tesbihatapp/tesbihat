@@ -1103,6 +1103,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   state.appRoot = appRoot;
   document.documentElement.setAttribute('lang', state.language === 'ar' ? 'ar' : 'tr');
+  appRoot.dataset.appLanguage = state.language;
   applyTheme(appRoot, state.themeSelection);
   applyFontScale(state.fontScale);
   attachThemeToggle(appRoot);
@@ -2478,9 +2479,11 @@ function buildZikirManagePanel() {
   listContainer.addEventListener('click', handleZikirListAction);
   form.addEventListener('submit', handleZikirFormSubmit);
   form.addEventListener('reset', () => {
-    formMessage.hidden = true;
-    formMessage.textContent = '';
-    formMessage.removeAttribute('data-status');
+    if (formMessage) {
+      formMessage.hidden = true;
+      formMessage.textContent = '';
+      formMessage.removeAttribute('data-status');
+    }
   });
 
   return {
@@ -2712,32 +2715,37 @@ function handleZikirListAction(event) {
 
 function handleZikirFormSubmit(event) {
   event.preventDefault();
-  const ui = state.zikirUI;
-  if (!ui) {
+  const form = event.currentTarget instanceof HTMLFormElement ? event.currentTarget : null;
+  if (!form) {
     return;
   }
 
-  const title = ui.titleInput?.value.trim() || '';
-  const content = ui.contentInput?.value.trim() || '';
-  const countValue = ui.countInput?.value.trim() || '';
+  const titleInput = form.querySelector('input[name="title"]');
+  const contentInput = form.querySelector('textarea[name="content"]');
+  const countInput = form.querySelector('input[name="count"]');
+  const messageElement = form.querySelector('[data-zikir-form-message]');
+
+  const title = titleInput?.value.trim() || '';
+  const content = contentInput?.value.trim() || '';
+  const countValue = countInput?.value.trim() || '';
   const hasCount = countValue.length > 0;
   const repeatCount = hasCount ? Number.parseInt(countValue, 10) : null;
 
   if (!title) {
-    updateZikirFormMessage('error', 'Başlık alanı boş bırakılamaz.');
-    ui.titleInput?.focus();
+    updateZikirFormMessage(messageElement, 'error', 'Başlık alanı boş bırakılamaz.');
+    titleInput?.focus();
     return;
   }
 
   if (!content) {
-    updateZikirFormMessage('error', 'İçerik alanı boş bırakılamaz.');
-    ui.contentInput?.focus();
+    updateZikirFormMessage(messageElement, 'error', 'İçerik alanı boş bırakılamaz.');
+    contentInput?.focus();
     return;
   }
 
   if (hasCount && (!Number.isFinite(repeatCount) || repeatCount <= 0)) {
-    updateZikirFormMessage('error', 'Tekrar sayısı için geçerli bir sayı girin.');
-    ui.countInput?.focus();
+    updateZikirFormMessage(messageElement, 'error', 'Tekrar sayısı için geçerli bir sayı girin.');
+    countInput?.focus();
     return;
   }
 
@@ -2747,22 +2755,21 @@ function handleZikirFormSubmit(event) {
       content,
       repeatCount: hasCount ? repeatCount : null,
     });
-    ui.form.reset();
-    updateZikirFormMessage('success', `"${title}" zikri listeye eklendi.`);
+    form.reset();
+    updateZikirFormMessage(messageElement, 'success', `"${title}" zikri listeye eklendi.`);
   } catch (error) {
     console.error('Zikir eklenirken hata oluştu.', error);
-    updateZikirFormMessage('error', error.message || 'Zikir eklenemedi. Lütfen tekrar deneyin.');
+    updateZikirFormMessage(messageElement, 'error', error.message || 'Zikir eklenemedi. Lütfen tekrar deneyin.');
   }
 }
 
-function updateZikirFormMessage(status, message) {
-  const ui = state.zikirUI;
-  if (!ui || !ui.formMessage) {
+function updateZikirFormMessage(element, status, message) {
+  if (!element) {
     return;
   }
-  ui.formMessage.hidden = false;
-  ui.formMessage.textContent = message;
-  ui.formMessage.dataset.status = status;
+  element.hidden = false;
+  element.textContent = message;
+  element.dataset.status = status;
 }
 
 async function ensureZikirRepositoryReady() {
@@ -3551,7 +3558,7 @@ function injectAutoCounters(markdown) {
       continue;
     }
 
-    const match = line.match(/\(\s*(\d+)\s*(?:defa)?\)([^0-9]*)$/i);
+    const match = line.match(/\(\s*(\d+)\s*(?:defa)?\)\D*$/i);
     if (!match) {
       continue;
     }
@@ -4824,6 +4831,8 @@ function applyTheme(appRoot, selection) {
     counterCompleteBg: 'counter-complete-bg',
     counterCompleteText: 'counter-complete-text',
     themeColor: 'meta-theme-color',
+    scrollTopBg: 'scroll-top-bg',
+    scrollTopColor: 'scroll-top-color',
   };
 
   Object.entries(overrideMap).forEach(([configKey, cssVar]) => {
@@ -5875,6 +5884,9 @@ async function changeLanguage(nextLanguage, { persist = true } = {}) {
   }
 
   updateLanguageToggleUI(resolved);
+  if (state.appRoot) {
+    state.appRoot.dataset.appLanguage = resolved;
+  }
   document.documentElement.setAttribute('lang', resolved === 'ar' ? 'ar' : 'tr');
 
   if (state.currentPrayer) {
