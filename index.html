@@ -100,6 +100,26 @@
               </button>
               <small class="settings-hint">Hadis ve Kur'an dualarındaki Arapça metinleri dilediğinizde gizleyebilirsiniz.</small>
             </div>
+            <div class="settings-group" data-personal-dua-settings>
+              <span class="settings-label">Kişisel dua</span>
+              <div class="settings-inline-actions">
+                <button type="button" class="button-pill secondary" data-toggle-personal-dua aria-pressed="false">
+                  Kişisel duayı göster
+                </button>
+                <button type="button" class="button-pill secondary" data-edit-personal-dua hidden>
+                  Dua metnini düzenle
+                </button>
+              </div>
+              <div class="personal-dua-settings__editor" data-personal-dua-editor hidden>
+                <label class="settings-label" for="personal-dua-text">Kişisel dua metni</label>
+                <textarea id="personal-dua-text" rows="6" data-personal-dua-text></textarea>
+                <div class="settings-actions">
+                  <button type="button" class="settings-action-button" data-save-personal-dua>Kaydet</button>
+                  <button type="button" class="settings-action-button secondary" data-cancel-personal-dua>Vazgeç</button>
+                </div>
+              </div>
+              <small class="settings-hint">Bu metin yalnızca cihazınızda saklanır ve dua kartındaki "Kişisel dua" sekmesinde gösterilir.</small>
+            </div>
             <div class="settings-actions">
               <button type="button" class="settings-action-button" data-reset-dua>
                 Dua ilerlemesini sıfırla

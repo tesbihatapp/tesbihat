@@ -365,6 +365,33 @@ button {
   gap: 0.35rem;
 }
 
+.settings-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.personal-dua-settings__editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.4rem;
+}
+
+.personal-dua-settings__editor textarea {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-elevated);
+  color: inherit;
+  padding: 0.75rem;
+  font: inherit;
+  line-height: 1.6;
+  resize: vertical;
+  min-height: 160px;
+}
+
 .settings-label {
   font-weight: 600;
   color: var(--muted-text);
@@ -1232,6 +1259,38 @@ button {
   gap: 0.8rem;
 }
 
+.dua-mode-toggle {
+  display: flex;
+  gap: 0.55rem;
+  background: var(--surface-overlay);
+  padding: 0.35rem;
+  border-radius: 999px;
+  width: fit-content;
+}
+
+.dua-mode-toggle__option {
+  border-radius: 999px;
+  padding: 0.4rem 0.9rem;
+  font-weight: 600;
+  color: var(--muted-text);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+}
+
+.dua-mode-toggle__option:hover {
+  transform: translateY(-1px);
+}
+
+.dua-mode-toggle__option.is-active {
+  background: var(--accent-color);
+  color: var(--accent-contrast);
+}
+
+.dua-mode-toggle__option[hidden] {
+  display: none !important;
+}
+
 .dua-header {
   display: flex;
   flex-direction: column;
@@ -1262,6 +1321,53 @@ button {
 }
 
 .dua-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.personal-dua {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.personal-dua__content {
+  line-height: 1.8;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.personal-dua__content p {
+  margin: 0;
+}
+
+.personal-dua__empty {
+  margin: 0;
+  color: var(--muted-text);
+  font-style: italic;
+}
+
+.personal-dua__hint {
+  margin: 0;
+  color: var(--muted-text);
+  font-size: 0.9rem;
+}
+
+.personal-dua__textarea {
+  width: 100%;
+  min-height: 180px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-elevated);
+  padding: 0.75rem;
+  font: inherit;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.personal-dua__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
