@@ -11,6 +11,8 @@ const COMPLETION_STORAGE_KEY = 'tesbihat:completions';
 const COMPLETION_STORAGE_VERSION = 1;
 const COMPLETION_RETENTION_DAYS = 365;
 const FONT_SCALE_STORAGE_KEY = 'tesbihat:font-scale';
+const PERSONAL_DUA_ENABLED_STORAGE_KEY = 'tesbihat:personal-dua-enabled';
+const PERSONAL_DUA_TEXT_STORAGE_KEY = 'tesbihat:personal-dua-text';
 const FONT_SCALE_MIN = 0.85;
 const FONT_SCALE_MAX = 1.3;
 const FONT_SCALE_STEP = 0.05;
@@ -1073,6 +1075,10 @@ const state = {
   manifestBlobUrl: null,
   manifestPromise: null,
   duaUI: null,
+  personalDuaEnabled: loadPersonalDuaEnabled(),
+  personalDuaText: loadPersonalDuaText(),
+  personalDuaEditing: false,
+  duaMode: 'predefined',
   homeFeaturesHtml: null,
   languageToggleButtons: new Map(),
   cevsen: {
@@ -1095,6 +1101,10 @@ const state = {
   scrollTopButton: null,
 };
 
+if (state.personalDuaEnabled) {
+  state.duaMode = 'personal';
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const appRoot = document.querySelector('.app');
   if (!appRoot) {
@@ -1115,6 +1125,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initDuaSourceSelector();
   initCompletionStatsView();
   initDuaArabicToggle();
+  initPersonalDuaSettings();
   attachFontScaleControls(appRoot);
   attachSettingsActions();
   registerInstallPromptHandlers();
@@ -3919,17 +3930,37 @@ function setupDuaSection(container, duas, sourceId) {
 
   const existingCard = state.duaUI?.card && state.duaUI.card.isConnected ? state.duaUI.card : null;
   let card = existingCard;
+  let modeToggle;
+  let modeButtons;
   let title;
   let subtitle;
   let body;
   let newButton;
   let okButton;
   let resetButton;
+  let actions;
 
   if (!card) {
     card = document.createElement('article');
     card.className = 'card dua-card';
     card.dataset.showArabic = state.showArabicDuas ? 'true' : 'false';
+
+    modeToggle = document.createElement('div');
+    modeToggle.className = 'dua-mode-toggle';
+
+    const predefinedButton = document.createElement('button');
+    predefinedButton.type = 'button';
+    predefinedButton.className = 'dua-mode-toggle__option';
+    predefinedButton.dataset.mode = 'predefined';
+    predefinedButton.textContent = 'Hazır dualar';
+
+    const personalButton = document.createElement('button');
+    personalButton.type = 'button';
+    personalButton.className = 'dua-mode-toggle__option';
+    personalButton.dataset.mode = 'personal';
+    personalButton.textContent = 'Kişisel dua';
+
+    modeToggle.append(predefinedButton, personalButton);
 
     const header = document.createElement('div');
     header.className = 'dua-header';
@@ -3946,7 +3977,7 @@ function setupDuaSection(container, duas, sourceId) {
     body.className = 'dua-body';
     body.setAttribute('aria-live', 'polite');
 
-    const actions = document.createElement('div');
+    actions = document.createElement('div');
     actions.className = 'dua-actions';
 
     newButton = document.createElement('button');
@@ -3966,19 +3997,47 @@ function setupDuaSection(container, duas, sourceId) {
     resetButton.hidden = true;
 
     actions.append(newButton, okButton, resetButton);
-    card.append(header, body, actions);
+    card.append(modeToggle, header, body, actions);
 
     newButton.addEventListener('click', handleDuaNewClick);
     okButton.addEventListener('click', handleDuaOkClick);
     resetButton.addEventListener('click', handleDuaResetClick);
+
+    predefinedButton.addEventListener('click', () => {
+      if (state.duaMode !== 'predefined') {
+        state.duaMode = 'predefined';
+        state.personalDuaEditing = false;
+        refreshDuaUI();
+      }
+    });
+
+    personalButton.addEventListener('click', () => {
+      if (!state.personalDuaEnabled) {
+        window.alert('Kişisel dua özelliğini ayarlardan etkinleştirebilirsiniz.');
+        return;
+      }
+      if (state.duaMode !== 'personal') {
+        state.duaMode = 'personal';
+        state.personalDuaEditing = false;
+        refreshDuaUI();
+      }
+    });
+
+    modeButtons = {
+      predefined: predefinedButton,
+      personal: personalButton,
+    };
   } else {
     card.dataset.showArabic = state.showArabicDuas ? 'true' : 'false';
+    modeToggle = state.duaUI.modeToggle;
+    modeButtons = state.duaUI.modeButtons;
     title = state.duaUI.title;
     subtitle = state.duaUI.subtitle;
     body = state.duaUI.body;
     newButton = state.duaUI.newButton;
     okButton = state.duaUI.okButton;
     resetButton = state.duaUI.resetButton;
+    actions = state.duaUI.actions;
   }
 
   card.dataset.duaSource = sourceId;
@@ -3986,12 +4045,15 @@ function setupDuaSection(container, duas, sourceId) {
 
   state.duaUI = {
     card,
+    modeToggle,
+    modeButtons,
     title,
     subtitle,
     body,
     newButton,
     okButton,
     resetButton,
+    actions,
     anchor,
     container,
   };
@@ -4343,11 +4405,33 @@ function refreshDuaUI() {
   }
 
   const sourceId = state.duaSource;
-  const label = DUA_SOURCES[sourceId]?.label || 'Dualar';
+  if (!state.personalDuaEnabled && state.duaMode !== 'predefined') {
+    state.duaMode = 'predefined';
+    state.personalDuaEditing = false;
+  }
+
+  updateDuaModeToggleUI();
+
+  const isPersonalMode = state.personalDuaEnabled && state.duaMode === 'personal';
+  const label = isPersonalMode ? 'Kişisel Dua' : (DUA_SOURCES[sourceId]?.label || 'Dualar');
 
   ui.title.textContent = label;
-  ui.card.dataset.duaSource = sourceId;
+  ui.card.dataset.duaSource = isPersonalMode ? 'personal' : sourceId;
   updateDuaArabicVisibility();
+
+  if (isPersonalMode) {
+    if (ui.actions) {
+      ui.actions.hidden = true;
+    }
+    ui.subtitle.textContent = 'Kişisel duanız';
+    renderPersonalDua(ui.body);
+    return;
+  }
+
+  if (ui.actions) {
+    ui.actions.hidden = false;
+  }
+  state.personalDuaEditing = false;
 
   if (!state.duaState || state.duaState.sourceId !== sourceId) {
     ui.subtitle.textContent = 'Dualar yükleniyor…';
@@ -4365,7 +4449,16 @@ function refreshDuaUI() {
 }
 
 function updateDuaSubtitle(subtitle) {
-  if (!subtitle || !state.duaState) {
+  if (!subtitle) {
+    return;
+  }
+
+  if (state.personalDuaEnabled && state.duaMode === 'personal') {
+    subtitle.textContent = 'Kişisel duanız';
+    return;
+  }
+
+  if (!state.duaState) {
     return;
   }
 
@@ -4384,7 +4477,16 @@ function updateDuaSubtitle(subtitle) {
 }
 
 function updateDuaBody(body) {
-  if (!body || !state.duaState) {
+  if (!body) {
+    return;
+  }
+
+  if (state.personalDuaEnabled && state.duaMode === 'personal') {
+    renderPersonalDua(body);
+    return;
+  }
+
+  if (!state.duaState) {
     return;
   }
 
@@ -4416,6 +4518,111 @@ function updateDuaButtons(newButton, okButton, resetButton) {
   okButton.disabled = isComplete || state.duaState.current === null;
   resetButton.hidden = !isComplete;
   resetButton.disabled = !isComplete;
+}
+
+function updateDuaModeToggleUI() {
+  const ui = state.duaUI;
+  if (!ui || !ui.modeToggle || !ui.modeButtons) {
+    return;
+  }
+
+  const enabled = Boolean(state.personalDuaEnabled);
+  ui.modeToggle.hidden = !enabled;
+
+  const personalButton = ui.modeButtons.personal;
+  if (personalButton) {
+    personalButton.hidden = !enabled;
+    personalButton.disabled = !enabled;
+  }
+
+  Object.entries(ui.modeButtons).forEach(([mode, button]) => {
+    if (!button || button.hidden) {
+      return;
+    }
+    const isActive = state.duaMode === mode;
+    button.classList.toggle('is-active', isActive);
+    button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  });
+}
+
+function renderPersonalDua(body) {
+  if (!body) {
+    return;
+  }
+
+  const contentText = (state.personalDuaText || '').trim();
+  body.innerHTML = '';
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'personal-dua';
+
+  if (state.personalDuaEditing) {
+    const textarea = document.createElement('textarea');
+    textarea.className = 'personal-dua__textarea';
+    textarea.rows = 6;
+    textarea.value = state.personalDuaText;
+    wrapper.append(textarea);
+
+    const actions = document.createElement('div');
+    actions.className = 'personal-dua__actions';
+
+    const saveButton = document.createElement('button');
+    saveButton.type = 'button';
+    saveButton.className = 'button-pill';
+    saveButton.textContent = 'Kaydet';
+
+    const cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.className = 'button-pill secondary';
+    cancelButton.textContent = 'Vazgeç';
+
+    actions.append(saveButton, cancelButton);
+    wrapper.append(actions);
+
+    saveButton.addEventListener('click', () => {
+      savePersonalDuaText(textarea.value);
+      state.personalDuaEditing = false;
+      refreshDuaUI();
+    });
+
+    cancelButton.addEventListener('click', () => {
+      state.personalDuaEditing = false;
+      refreshDuaUI();
+    });
+
+    body.append(wrapper);
+    textarea.focus();
+    return;
+  }
+
+  if (contentText) {
+    const content = document.createElement('div');
+    content.className = 'personal-dua__content';
+    content.innerHTML = DOMPurify.sanitize(marked.parse(contentText, { mangle: false, headerIds: false }));
+    wrapper.append(content);
+  } else {
+    const empty = document.createElement('p');
+    empty.className = 'personal-dua__empty';
+    empty.textContent = 'Henüz kişisel dua eklenmedi.';
+    wrapper.append(empty);
+  }
+
+  const hint = document.createElement('p');
+  hint.className = 'personal-dua__hint';
+  hint.textContent = 'Bu dua yalnızca cihazınızda saklanır.';
+  wrapper.append(hint);
+
+  const editButton = document.createElement('button');
+  editButton.type = 'button';
+  editButton.className = 'button-pill';
+  editButton.textContent = contentText ? 'Dua metnini düzenle' : 'Dua ekle';
+  editButton.addEventListener('click', () => {
+    state.personalDuaEditing = true;
+    refreshDuaUI();
+  });
+  wrapper.append(editButton);
+
+  body.append(wrapper);
 }
 
 function findAnchorParagraph(container, text) {
@@ -5841,6 +6048,118 @@ function updateDuaArabicVisibility() {
   card.dataset.showArabic = state.showArabicDuas ? 'true' : 'false';
 }
 
+function initPersonalDuaSettings() {
+  const toggleButton = document.querySelector('[data-toggle-personal-dua]');
+  const editButton = document.querySelector('[data-edit-personal-dua]');
+  const editor = document.querySelector('[data-personal-dua-editor]');
+  const textarea = document.querySelector('[data-personal-dua-text]');
+  const saveButton = document.querySelector('[data-save-personal-dua]');
+  const cancelButton = document.querySelector('[data-cancel-personal-dua]');
+
+  if (!toggleButton || !textarea || !saveButton || !cancelButton || !editButton || !editor) {
+    return;
+  }
+
+  toggleButton.addEventListener('click', () => {
+    setPersonalDuaEnabled(!state.personalDuaEnabled);
+  });
+
+  editButton.addEventListener('click', () => {
+    if (!state.personalDuaEnabled) {
+      window.alert('Önce kişisel duayı etkinleştirin.');
+      return;
+    }
+    editor.hidden = false;
+    textarea.value = state.personalDuaText;
+    textarea.focus();
+  });
+
+  saveButton.addEventListener('click', () => {
+    savePersonalDuaText(textarea.value);
+    editor.hidden = true;
+    state.personalDuaEditing = false;
+    refreshDuaUI();
+  });
+
+  cancelButton.addEventListener('click', () => {
+    editor.hidden = true;
+    textarea.value = state.personalDuaText;
+  });
+
+  updatePersonalDuaSettingsUI();
+}
+
+function updatePersonalDuaSettingsUI() {
+  const toggleButton = document.querySelector('[data-toggle-personal-dua]');
+  const editButton = document.querySelector('[data-edit-personal-dua]');
+  const editor = document.querySelector('[data-personal-dua-editor]');
+  const textarea = document.querySelector('[data-personal-dua-text]');
+
+  if (!toggleButton || !editButton || !editor || !textarea) {
+    return;
+  }
+
+  const enabled = Boolean(state.personalDuaEnabled);
+  toggleButton.textContent = enabled ? 'Kişisel duayı gizle' : 'Kişisel duayı göster';
+  toggleButton.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+  toggleButton.classList.toggle('is-active', enabled);
+  toggleButton.classList.toggle('secondary', !enabled);
+
+  editButton.hidden = !enabled;
+  if (!enabled) {
+    editor.hidden = true;
+  }
+
+  if (!editor.hidden) {
+    textarea.value = state.personalDuaText;
+  }
+}
+
+function setPersonalDuaEnabled(nextValue, { persist = true, refresh = true } = {}) {
+  const enabled = Boolean(nextValue);
+  if (enabled === state.personalDuaEnabled) {
+    return;
+  }
+
+  state.personalDuaEnabled = enabled;
+  if (enabled) {
+    state.duaMode = 'personal';
+  } else {
+    state.duaMode = 'predefined';
+  }
+  state.personalDuaEditing = false;
+
+  if (persist) {
+    try {
+      localStorage.setItem(PERSONAL_DUA_ENABLED_STORAGE_KEY, enabled ? '1' : '0');
+    } catch (error) {
+      console.warn('Kişisel dua tercihi kaydedilemedi.', error);
+    }
+  }
+
+  updatePersonalDuaSettingsUI();
+  updateDuaModeToggleUI();
+
+  if (refresh) {
+    refreshDuaUI();
+  }
+}
+
+function savePersonalDuaText(text, { persist = true } = {}) {
+  const normalised = typeof text === 'string' ? text.replace(/\r\n/g, '\n') : '';
+  state.personalDuaText = normalised;
+
+  if (persist) {
+    try {
+      localStorage.setItem(PERSONAL_DUA_TEXT_STORAGE_KEY, normalised);
+    } catch (error) {
+      console.warn('Kişisel dua metni kaydedilemedi.', error);
+    }
+  }
+
+  updatePersonalDuaSettingsUI();
+}
+
 async function changeDuaSource(nextSource, { persist = true, refresh = true } = {}) {
   const resolved = resolveDuaSourceId(nextSource);
   if (persist) {
@@ -6031,6 +6350,33 @@ function saveHomeStatsCollapsed(collapsed) {
   } catch (error) {
     console.warn('Anasayfa istatistik tercihleri kaydedilemedi.', error);
   }
+}
+
+function loadPersonalDuaEnabled() {
+  try {
+    const stored = localStorage.getItem(PERSONAL_DUA_ENABLED_STORAGE_KEY);
+    if (stored === '1' || stored === 'true') {
+      return true;
+    }
+    if (stored === '0' || stored === 'false') {
+      return false;
+    }
+  } catch (error) {
+    console.warn('Kişisel dua tercihi okunamadı.', error);
+  }
+  return false;
+}
+
+function loadPersonalDuaText() {
+  try {
+    const stored = localStorage.getItem(PERSONAL_DUA_TEXT_STORAGE_KEY);
+    if (typeof stored === 'string') {
+      return stored;
+    }
+  } catch (error) {
+    console.warn('Kişisel dua metni okunamadı.', error);
+  }
+  return '';
 }
 
 function loadCevsenFontScale() {
