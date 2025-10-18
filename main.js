@@ -1092,6 +1092,7 @@ const state = {
     toggle: null,
     collapsed: loadHomeStatsCollapsed(),
   },
+  scrollTopButton: null,
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1116,6 +1117,7 @@ document.addEventListener('DOMContentLoaded', () => {
   attachFontScaleControls(appRoot);
   attachSettingsActions();
   registerInstallPromptHandlers();
+  initScrollTopButton();
   
   setActivePrayer(state.currentPrayer);
 });
@@ -3776,11 +3778,19 @@ function setupCounters(container, prayerId) {
       if (target > 0 && currentValue >= target) {
         return;
       }
-      applyValue(currentValue + 1);
+      const nextValue = currentValue + 1;
+      applyValue(nextValue);
+      const hapticType = target > 0 && nextValue >= target ? 'complete' : 'increment';
+      triggerCounterHaptic(hapticType);
     };
 
     const reset = () => {
+      if (currentValue === 0) {
+        triggerCounterHaptic('soft');
+        return;
+      }
       applyValue(0);
+      triggerCounterHaptic('reset');
     };
 
     const bindTapInteraction = (element, action) => {
@@ -4160,6 +4170,77 @@ function renderCompletionStatusIcon(isComplete, fallbackText = '') {
 
 function updateCompletionStatsView() {
   updateHomeStatsView();
+}
+
+const COUNTER_HAPTIC_PATTERNS = {
+  increment: 12,
+  complete: [0, 18, 40, 18],
+  reset: [0, 16, 36, 16],
+  soft: 8,
+};
+
+function triggerCounterHaptic(type = 'soft') {
+  try {
+    if (typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') {
+      return;
+    }
+    const pattern = COUNTER_HAPTIC_PATTERNS[type] ?? COUNTER_HAPTIC_PATTERNS.soft;
+    if (pattern) {
+    navigator.vibrate(pattern);
+    }
+  } catch (error) {
+    console.warn('Haptic tetiklenemedi.', error);
+  }
+}
+
+function initScrollTopButton() {
+  if (state.scrollTopButton) {
+    return;
+  }
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'scroll-top-button';
+  button.setAttribute('aria-label', 'En üste dön');
+  button.innerHTML = '<span aria-hidden="true">↑</span>';
+
+  button.addEventListener('click', () => {
+    triggerCounterHaptic('soft');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  const host = state.appRoot || document.body;
+  host.append(button);
+  state.scrollTopButton = button;
+
+  let lastKnownScroll = window.scrollY || 0;
+  let ticking = false;
+
+  const handleScroll = () => {
+    lastKnownScroll = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+    if (!ticking) {
+      window.requestAnimationFrame(() => {
+        updateScrollTopVisibility(lastKnownScroll);
+        ticking = false;
+      });
+      ticking = true;
+    }
+  };
+
+  window.addEventListener('scroll', handleScroll, { passive: true });
+  handleScroll();
+}
+
+function updateScrollTopVisibility(scrollPosition) {
+  const button = state.scrollTopButton;
+  if (!button) {
+    return;
+  }
+
+  const threshold = Math.max(window.innerHeight * 0.8, 480);
+  const shouldShow = scrollPosition > threshold;
+  button.classList.toggle('is-visible', shouldShow);
+  button.setAttribute('aria-hidden', shouldShow ? 'false' : 'true');
 }
 
 function handleDuaNewClick() {
@@ -4766,6 +4847,25 @@ function applyTheme(appRoot, selection) {
   tokens['install-background'] = modeConfig.installBackground || deriveAlphaColor(tokens['accent-color'], normalized.mode === 'dark' ? 0.18 : 0.12, tokens['install-background']);
   tokens['action-button-bg'] = modeConfig.actionButtonBg || deriveAlphaColor(tokens['accent-color'], normalized.mode === 'dark' ? 0.24 : 0.18, tokens['action-button-bg']);
   tokens['action-button-hover'] = modeConfig.actionButtonHover || deriveAlphaColor(tokens['accent-color'], normalized.mode === 'dark' ? 0.32 : 0.26, tokens['action-button-hover']);
+
+  if (!modeConfig.scrollTopBg) {
+    if (isValidHex(tokens['accent-color'])) {
+      const mixTarget = normalized.mode === 'dark' ? '#ffffff' : '#000000';
+      const mixRatio = normalized.mode === 'dark' ? 0.28 : 0.18;
+      const mixed = mixColors(tokens['accent-color'], mixTarget, mixRatio);
+      tokens['scroll-top-bg'] = isValidHex(mixed) ? mixed : tokens['accent-color'];
+    } else {
+      tokens['scroll-top-bg'] = tokens['accent-color'];
+    }
+  } else {
+    tokens['scroll-top-bg'] = modeConfig.scrollTopBg;
+  }
+
+  if (!modeConfig.scrollTopColor) {
+    tokens['scroll-top-color'] = normalized.mode === 'dark' ? '#0d1116' : '#ffffff';
+  } else {
+    tokens['scroll-top-color'] = modeConfig.scrollTopColor;
+  }
 
   if (!modeConfig.highlightOverlay) {
     const generatedHighlight = createHighlightGradient(tokens['accent-color'], normalized.mode, tokens['highlight-overlay']);
