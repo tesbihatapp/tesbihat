@@ -2404,6 +2404,13 @@ function buildZikirShell() {
     },
     previewContainer: listPanel.querySelector('[data-zikir-preview]'),
     manage: managePanel,
+    listContainer: managePanel.listContainer,
+    listEmpty: managePanel.listEmpty,
+    form: managePanel.form,
+    formMessage: managePanel.formMessage,
+    titleInput: managePanel.titleInput,
+    contentInput: managePanel.contentInput,
+    countInput: managePanel.countInput,
   };
 }
 
@@ -2710,27 +2717,27 @@ function handleZikirFormSubmit(event) {
     return;
   }
 
-  const title = ui.titleInput.value.trim();
-  const content = ui.contentInput.value.trim();
-  const countValue = ui.countInput.value.trim();
+  const title = ui.titleInput?.value.trim() || '';
+  const content = ui.contentInput?.value.trim() || '';
+  const countValue = ui.countInput?.value.trim() || '';
   const hasCount = countValue.length > 0;
   const repeatCount = hasCount ? Number.parseInt(countValue, 10) : null;
 
   if (!title) {
     updateZikirFormMessage('error', 'Başlık alanı boş bırakılamaz.');
-    ui.titleInput.focus();
+    ui.titleInput?.focus();
     return;
   }
 
   if (!content) {
     updateZikirFormMessage('error', 'İçerik alanı boş bırakılamaz.');
-    ui.contentInput.focus();
+    ui.contentInput?.focus();
     return;
   }
 
   if (hasCount && (!Number.isFinite(repeatCount) || repeatCount <= 0)) {
     updateZikirFormMessage('error', 'Tekrar sayısı için geçerli bir sayı girin.');
-    ui.countInput.focus();
+    ui.countInput?.focus();
     return;
   }
 
