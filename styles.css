@@ -47,6 +47,8 @@
   --tooltip-shadow: 0 18px 40px rgba(24, 50, 115, 0.25);
   --action-button-bg: rgba(95, 123, 255, 0.16);
   --action-button-hover: rgba(95, 123, 255, 0.26);
+  --scroll-top-bg: var(--accent-color);
+  --scroll-top-color: var(--accent-contrast);
 }
 
 *,
@@ -87,6 +89,11 @@ body.settings-open {
 .arabic-text strong,
 .arabic-text b {
   font-weight: 700;
+}
+
+.app[data-app-language="ar"] .arabic-text {
+  font-size: calc(1.45rem * var(--font-scale));
+  line-height: 2.15;
 }
 
 button {
