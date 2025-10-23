@@ -1130,6 +1130,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initThemeSelector();
   initLanguageToggle();
   attachHomeNavigation(appRoot);
+  attachHomeButton(appRoot);
   initPrayerTabs(appRoot);
   initDuaSourceSelector();
   initCompletionStatsView();
@@ -4026,6 +4027,7 @@ function setupCounters(container, prayerId) {
     const wrapper = document.createElement('article');
     wrapper.className = 'card counter-card';
     wrapper.dataset.counterId = counterKey;
+    wrapper.dataset.counterTarget = Number.isFinite(target) ? String(target) : '';
 
     const headerRow = document.createElement('div');
     headerRow.className = 'counter-header';
@@ -4182,6 +4184,40 @@ function updateCounterUI(wrapper, value, target) {
   if (resetButton) {
     resetButton.disabled = value === 0;
   }
+}
+
+function resetPrayerCounters(prayerId, options = {}) {
+  if (!prayerId) {
+    return;
+  }
+
+  const prefix = `${prayerId}-`;
+  let changed = false;
+
+  Object.keys(state.counters).forEach((key) => {
+    if (!key.startsWith(prefix)) {
+      return;
+    }
+    if (state.counters[key] !== 0) {
+      state.counters[key] = 0;
+      changed = true;
+    }
+  });
+
+  if (changed) {
+    saveCounters();
+  }
+
+  const root = options.container || document.getElementById('content');
+  if (!root) {
+    return;
+  }
+
+  const nodes = root.querySelectorAll(`[data-counter-id^="${prefix}"]`);
+  nodes.forEach((wrapper) => {
+    const targetValue = Number.parseInt(wrapper.dataset.counterTarget || '0', 10);
+    updateCounterUI(wrapper, 0, Number.isFinite(targetValue) ? targetValue : 0);
+  });
 }
 
 function setupDuaSection(container, duas, sourceId) {
@@ -4409,6 +4445,7 @@ function handleCompletionButtonClick(prayerId) {
     updateCompletionButtonUI(prayerId);
     return;
   }
+  resetPrayerCounters(prayerId);
   updateCompletionButtonUI(prayerId);
   updateCompletionStatsView();
 }
@@ -5773,6 +5810,20 @@ function attachHomeNavigation(appRoot) {
       navigateHome();
     }
   });
+}
+
+function attachHomeButton(appRoot) {
+  const button = appRoot.querySelector('.home-button');
+  if (!button) {
+    return;
+  }
+
+  const navigateHome = () => {
+    hideNameTooltip();
+    setActivePrayer('home');
+  };
+
+  button.addEventListener('click', navigateHome);
 }
 
 function attachFontScaleControls(appRoot) {
