@@ -1,5 +1,3 @@
-# Akşam Namazı Tesbihatı
-
 **Akşam namazının farzı kılınıp selâm verildikten sonra:**
 
 أَسْتَغْفِرُ اللّٰهَ (3)

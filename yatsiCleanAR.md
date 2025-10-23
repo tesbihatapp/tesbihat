@@ -1,5 +1,3 @@
-# Yatsi Namazı Tesbihatı
-
 **Yatsi namazının farzı kılınıp selâm verildikten sonra:**
 
 أَسْتَغْفِرُ اللّٰهَ (3)
