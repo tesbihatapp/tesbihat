@@ -9,6 +9,7 @@ const ZIKIR_STORAGE_KEY = 'tesbihat:zikirs';
 const ZIKIR_STORAGE_VERSION = 1;
 const COMPLETION_STORAGE_KEY = 'tesbihat:completions';
 const COMPLETION_STORAGE_VERSION = 1;
+const TRANSLATION_VISIBILITY_STORAGE_KEY = 'tesbihat:translations-visible';
 const COMPLETION_RETENTION_DAYS = 365;
 const FONT_SCALE_STORAGE_KEY = 'tesbihat:font-scale';
 const PERSONAL_DUA_ENABLED_STORAGE_KEY = 'tesbihat:personal-dua-enabled';
@@ -37,6 +38,7 @@ const INSTALL_PROMPT_STORAGE_KEY = 'tesbihat:install-dismissed';
 const INSTALL_PROMPT_DELAY = 24 * 60 * 60 * 1000;
 const DEFAULT_LANGUAGE = 'tr';
 const DEFAULT_SHOW_ARABIC_DUAS = true;
+const DEFAULT_SHOW_TRANSLATIONS = false;
 const DEFAULT_ZIKIR_VIEW = 'list';
 const TRACKED_PRAYERS = ['sabah', 'ogle', 'ikindi', 'aksam', 'yatsi'];
 const TRACKED_PRAYER_SET = new Set(TRACKED_PRAYERS);
@@ -1051,6 +1053,7 @@ const state = {
   duaSourceSelect: null,
   duaResetButton: null,
   showArabicDuas: loadDuaArabicPreference(),
+  showTranslations: loadTranslationVisibility(),
   language: loadLanguageSelection(),
   zikirRepository: null,
   zikirDefaults: null,
@@ -1099,6 +1102,7 @@ const state = {
     collapsed: loadHomeStatsCollapsed(),
   },
   scrollTopButton: null,
+  translationToggle: null,
 };
 
 if (state.personalDuaEnabled) {
@@ -1114,6 +1118,7 @@ document.addEventListener('DOMContentLoaded', () => {
   state.appRoot = appRoot;
   document.documentElement.setAttribute('lang', state.language === 'ar' ? 'ar' : 'tr');
   appRoot.dataset.appLanguage = state.language;
+  appRoot.dataset.showTranslations = state.showTranslations ? 'true' : 'false';
   applyTheme(appRoot, state.themeSelection);
   applyFontScale(state.fontScale);
   attachThemeToggle(appRoot);
@@ -3547,14 +3552,45 @@ function renderTesbihat(container, markdownText) {
   const prepared = markdownText
     .replace(/\r\n/g, '\n')
     .replace(/\u06EA/g, '\u0656');
-  const withAutoCounters = injectAutoCounters(prepared);
+  const withTranslatedMarkers = normaliseTranslationMarkers(prepared);
+  const withAutoCounters = injectAutoCounters(withTranslatedMarkers);
   const normalised = withAutoCounters
     .replace(/\*\*\(counter:(\d+)\)\*\*/g, '(counter:$1)')
     .replace(/\(counter:(\d+)\)/g, (_match, count) => `<span class="counter-placeholder" data-counter-target="${count}"></span>`);
 
   const html = DOMPurify.sanitize(marked.parse(normalised, { mangle: false, headerIds: false }));
-  container.innerHTML = html;
+  const temp = document.createElement('div');
+  temp.innerHTML = html;
+
+  processTranslationBlocks(temp);
+
+  const hasTranslations = Boolean(temp.querySelector('[data-translation-block]'));
+  container.innerHTML = '';
+
+  if (hasTranslations) {
+    const toggle = createTranslationToggleElement();
+    container.append(toggle);
+  } else {
+    state.translationToggle = null;
+  }
+
+  while (temp.firstChild) {
+    container.append(temp.firstChild);
+  }
+
   enhanceArabicText(container);
+  applyTranslationVisibility(container);
+}
+
+function normaliseTranslationMarkers(markdown) {
+  if (typeof markdown !== 'string') {
+    return '';
+  }
+
+  let result = markdown.replace(/\s*\|tercume\|\s*/g, '\n\n|tercume|\n\n');
+  result = result.replace(/\s*\|\/tercume\|\s*/g, '\n\n|/tercume|\n\n');
+  result = result.replace(/\n{3,}/g, '\n\n');
+  return result;
 }
 
 function injectAutoCounters(markdown) {
@@ -3610,6 +3646,181 @@ function injectAutoCounters(markdown) {
   }
 
   return result.join('\n');
+}
+
+function processTranslationBlocks(root) {
+  if (!root) {
+    return;
+  }
+
+  let startMarker = findTranslationStartMarker(root);
+  while (startMarker) {
+    convertTranslationBlock(startMarker);
+    startMarker = findTranslationStartMarker(root);
+  }
+}
+
+function findTranslationStartMarker(root) {
+  const candidates = root.querySelectorAll('p, div, blockquote, li');
+  for (let index = 0; index < candidates.length; index += 1) {
+    const node = candidates[index];
+    if (isTranslationMarker(node, '|tercume|')) {
+      return node;
+    }
+  }
+  return null;
+}
+
+function isTranslationMarker(node, markerText) {
+  if (!node) {
+    return false;
+  }
+  if (node.nodeType === Node.TEXT_NODE) {
+    return node.nodeValue && node.nodeValue.trim() === markerText;
+  }
+  if (node.nodeType === Node.ELEMENT_NODE) {
+    const text = node.textContent || '';
+    return text.trim() === markerText;
+  }
+  return false;
+}
+
+function convertTranslationBlock(startMarker) {
+  if (!startMarker || !startMarker.parentNode) {
+    return;
+  }
+
+  const nodesToWrap = [];
+  let hasContent = false;
+  let endMarker = null;
+  let current = startMarker.nextSibling;
+
+  while (current) {
+    if (isTranslationMarker(current, '|tercume|')) {
+      break;
+    }
+    if (isTranslationMarker(current, '|/tercume|')) {
+      endMarker = current;
+      break;
+    }
+    if (current.nodeType === Node.TEXT_NODE) {
+      nodesToWrap.push(current);
+      if (current.nodeValue && current.nodeValue.trim()) {
+        hasContent = true;
+      }
+    } else {
+      nodesToWrap.push(current);
+      hasContent = true;
+    }
+    current = current.nextSibling;
+  }
+
+  if (!endMarker) {
+    startMarker.remove();
+    return;
+  }
+
+  if (!hasContent) {
+    startMarker.remove();
+    endMarker.remove();
+    return;
+  }
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'translation-block';
+  wrapper.dataset.translationBlock = 'true';
+  wrapper.dataset.translationLabel = 'Tercüme';
+  wrapper.setAttribute('role', 'group');
+  wrapper.setAttribute('aria-label', 'Tercüme');
+
+  nodesToWrap.forEach((node) => {
+    wrapper.append(node);
+  });
+
+  startMarker.replaceWith(wrapper);
+  endMarker.remove();
+}
+
+function createTranslationToggleElement() {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'translation-toggle';
+  wrapper.dataset.translationToggle = 'true';
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'button-pill secondary translation-toggle__button';
+  button.addEventListener('click', handleTranslationToggleClick);
+
+  const icon = document.createElement('span');
+  icon.className = 'translation-toggle__icon';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = '🛈';
+
+  const label = document.createElement('span');
+  label.className = 'translation-toggle__label';
+
+  button.append(icon, label);
+  wrapper.append(button);
+
+  state.translationToggle = { wrapper, button, label, icon };
+  updateTranslationToggleUI();
+
+  return wrapper;
+}
+
+function applyTranslationVisibility(root = document.getElementById('content')) {
+  if (state.appRoot) {
+    state.appRoot.dataset.showTranslations = state.showTranslations ? 'true' : 'false';
+  }
+
+  const toggle = state.translationToggle;
+  if (toggle && (!toggle.wrapper || !toggle.wrapper.isConnected)) {
+    state.translationToggle = null;
+  }
+
+  if (!root) {
+    updateTranslationToggleUI();
+    return;
+  }
+
+  const blocks = root.querySelectorAll('[data-translation-block]');
+  blocks.forEach((block) => {
+    block.hidden = !state.showTranslations;
+    block.setAttribute('aria-hidden', state.showTranslations ? 'false' : 'true');
+    block.classList.toggle('translation-block--visible', state.showTranslations);
+    block.classList.toggle('translation-block--hidden', !state.showTranslations);
+  });
+
+  updateTranslationToggleUI();
+}
+
+function updateTranslationToggleUI() {
+  const toggle = state.translationToggle;
+  if (!toggle || !toggle.button || !toggle.label) {
+    return;
+  }
+  const show = !!state.showTranslations;
+  toggle.label.textContent = show ? 'Tercümeyi Gizle' : 'Tercümeyi Göster';
+  toggle.button.setAttribute('aria-pressed', show ? 'true' : 'false');
+  toggle.button.setAttribute('aria-label', show ? 'Tercümeyi Gizle' : 'Tercümeyi Göster');
+  toggle.button.classList.toggle('is-active', show);
+  if (show) {
+    toggle.button.classList.remove('secondary');
+  } else if (!toggle.button.classList.contains('secondary')) {
+    toggle.button.classList.add('secondary');
+  }
+  if (toggle.icon) {
+    toggle.icon.textContent = show ? '👁️' : '🛈';
+  }
+}
+
+function handleTranslationToggleClick(event) {
+  if (event) {
+    event.preventDefault();
+  }
+  state.showTranslations = !state.showTranslations;
+  saveTranslationVisibility(state.showTranslations);
+  applyTranslationVisibility(document.getElementById('content'));
 }
 
 function enhanceArabicText(root) {
@@ -6282,6 +6493,21 @@ function loadDuaArabicPreference() {
   return DEFAULT_SHOW_ARABIC_DUAS;
 }
 
+function loadTranslationVisibility() {
+  try {
+    const stored = localStorage.getItem(TRANSLATION_VISIBILITY_STORAGE_KEY);
+    if (stored === '1' || stored === 'true') {
+      return true;
+    }
+    if (stored === '0' || stored === 'false') {
+      return false;
+    }
+  } catch (error) {
+    console.warn('Tercüme görünürlüğü tercihleri okunamadı.', error);
+  }
+  return DEFAULT_SHOW_TRANSLATIONS;
+}
+
 function loadLanguageSelection() {
   const stored = localStorage.getItem(LANGUAGE_STORAGE_KEY);
   return resolveLanguage(stored);
@@ -6349,6 +6575,14 @@ function saveHomeStatsCollapsed(collapsed) {
     localStorage.setItem(HOME_STATS_COLLAPSED_STORAGE_KEY, collapsed ? '1' : '0');
   } catch (error) {
     console.warn('Anasayfa istatistik tercihleri kaydedilemedi.', error);
+  }
+}
+
+function saveTranslationVisibility(visible) {
+  try {
+    localStorage.setItem(TRANSLATION_VISIBILITY_STORAGE_KEY, visible ? '1' : '0');
+  } catch (error) {
+    console.warn('Tercüme görünürlüğü kaydedilemedi.', error);
   }
 }
 
