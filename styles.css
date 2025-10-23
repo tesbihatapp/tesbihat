@@ -654,6 +654,91 @@ button {
   box-shadow: var(--card-shadow-hover);
 }
 
+.translation-toggle {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin: 0.2rem 0 0.4rem;
+}
+
+.translation-toggle__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.55rem 1.15rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  box-shadow: none;
+  transition: background-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+}
+
+.translation-toggle__button:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-soft);
+}
+
+.translation-toggle__button.is-active {
+  color: var(--accent-contrast);
+  background: var(--accent-color);
+  box-shadow: var(--shadow-soft);
+}
+
+.translation-toggle__button.is-active:hover {
+  background: var(--accent-color);
+}
+
+.translation-toggle__icon {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.translation-block {
+  position: relative;
+  margin: 1.1rem 0;
+  padding: 1.35rem 1.3rem 1.25rem 1.4rem;
+  border-radius: 18px;
+  border: 1px solid var(--border-color);
+  border-left: 4px solid var(--accent-color);
+  background: linear-gradient(162deg, var(--surface-overlay) 0%, rgba(255, 255, 255, 0.04) 100%);
+  color: var(--text-color);
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+
+.app[data-mode="dark"] .translation-block {
+  background: linear-gradient(162deg, rgba(194, 203, 170, 0.12) 0%, rgba(194, 203, 170, 0.04) 100%);
+}
+
+.translation-block::before {
+  content: attr(data-translation-label);
+  position: absolute;
+  top: -0.7rem;
+  left: 1.6rem;
+  padding: 0.15rem 0.85rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: var(--surface-elevated);
+  color: var(--accent-color);
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  font-weight: 600;
+}
+
+.translation-block p {
+  margin: 0;
+}
+
+.translation-block p + p,
+.translation-block ul,
+.translation-block ol {
+  margin-top: 0.8rem;
+}
+
+.translation-block ul,
+.translation-block ol {
+  padding-left: 1.2rem;
+}
+
 .counter-card {
   display: flex;
   flex-direction: column;
