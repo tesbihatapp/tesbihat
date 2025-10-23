@@ -1,5 +1,3 @@
-# Öğle Namazı Tesbihatı
-
 **Öğle namazının farzı kılınıp selâm verildikten sonra:**
 
 أَسْتَغْفِرُ اللّٰهَ (3)

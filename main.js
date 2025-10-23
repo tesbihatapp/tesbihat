@@ -1103,6 +1103,10 @@ const state = {
   },
   scrollTopButton: null,
   translationToggle: null,
+  contentToolbar: {
+    root: null,
+    languageButtons: new Map(),
+  },
 };
 
 if (state.personalDuaEnabled) {
@@ -3567,11 +3571,9 @@ function renderTesbihat(container, markdownText) {
   const hasTranslations = Boolean(temp.querySelector('[data-translation-block]'));
   container.innerHTML = '';
 
-  if (hasTranslations) {
-    const toggle = createTranslationToggleElement();
-    container.append(toggle);
-  } else {
-    state.translationToggle = null;
+  const toolbar = createContentToolbar({ hasTranslations });
+  if (toolbar) {
+    container.append(toolbar);
   }
 
   while (temp.firstChild) {
@@ -3660,6 +3662,99 @@ function processTranslationBlocks(root) {
   }
 }
 
+function createContentToolbar({ hasTranslations } = {}) {
+  const toolbar = document.createElement('div');
+  toolbar.className = 'content-toolbar';
+  toolbar.dataset.contentToolbar = 'true';
+
+  const card = document.createElement('div');
+  card.className = 'content-toolbar__card';
+
+  const segmented = document.createElement('div');
+  segmented.className = 'content-toolbar__segmented';
+  segmented.setAttribute('role', 'group');
+  segmented.setAttribute('aria-label', 'Metin dili');
+
+  const trButton = createContentToolbarLanguageButton('tr', 'Türkçe');
+  const arButton = createContentToolbarLanguageButton('ar', 'Arapça');
+
+  segmented.append(trButton, arButton);
+  card.append(segmented);
+
+  state.contentToolbar = {
+    root: toolbar,
+    languageButtons: new Map([
+      ['tr', trButton],
+      ['ar', arButton],
+    ]),
+  };
+
+  trButton.addEventListener('click', () => changeLanguage('tr'));
+  arButton.addEventListener('click', () => changeLanguage('ar'));
+
+  updateContentToolbarLanguageUI();
+
+  if (hasTranslations) {
+    createTranslationAction(card);
+  } else {
+    state.translationToggle = null;
+  }
+
+  toolbar.append(card);
+  return toolbar;
+}
+
+function createContentToolbarLanguageButton(language, labelText) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'content-toolbar__chip';
+  button.dataset.toolbarLanguage = language;
+  button.textContent = labelText;
+  button.setAttribute('aria-pressed', 'false');
+  return button;
+}
+
+function createTranslationAction(parent) {
+  if (!parent) {
+    return;
+  }
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'content-toolbar__toggle';
+  button.dataset.translationToggle = 'true';
+  button.addEventListener('click', handleTranslationToggleClick);
+
+  const icon = document.createElement('span');
+  icon.className = 'content-toolbar__toggle-icon';
+  icon.setAttribute('aria-hidden', 'true');
+
+  const label = document.createElement('span');
+  label.className = 'content-toolbar__toggle-label';
+
+  button.append(icon, label);
+  parent.append(button);
+
+  state.translationToggle = { button, icon, label };
+  updateTranslationToggleUI();
+}
+
+function updateContentToolbarLanguageUI() {
+  const toolbar = state.contentToolbar;
+  if (!toolbar || !(toolbar.languageButtons instanceof Map)) {
+    return;
+  }
+
+  toolbar.languageButtons.forEach((button, language) => {
+    if (!button) {
+      return;
+    }
+    const isActive = language === state.language;
+    button.classList.toggle('is-active', isActive);
+    button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  });
+}
+
 function findTranslationStartMarker(root) {
   const candidates = root.querySelectorAll('p, div, blockquote, li');
   for (let index = 0; index < candidates.length; index += 1) {
@@ -3741,40 +3836,13 @@ function convertTranslationBlock(startMarker) {
   endMarker.remove();
 }
 
-function createTranslationToggleElement() {
-  const wrapper = document.createElement('div');
-  wrapper.className = 'translation-toggle';
-  wrapper.dataset.translationToggle = 'true';
-
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'button-pill secondary translation-toggle__button';
-  button.addEventListener('click', handleTranslationToggleClick);
-
-  const icon = document.createElement('span');
-  icon.className = 'translation-toggle__icon';
-  icon.setAttribute('aria-hidden', 'true');
-  icon.textContent = '🛈';
-
-  const label = document.createElement('span');
-  label.className = 'translation-toggle__label';
-
-  button.append(icon, label);
-  wrapper.append(button);
-
-  state.translationToggle = { wrapper, button, label, icon };
-  updateTranslationToggleUI();
-
-  return wrapper;
-}
-
 function applyTranslationVisibility(root = document.getElementById('content')) {
   if (state.appRoot) {
     state.appRoot.dataset.showTranslations = state.showTranslations ? 'true' : 'false';
   }
 
   const toggle = state.translationToggle;
-  if (toggle && (!toggle.wrapper || !toggle.wrapper.isConnected)) {
+  if (toggle && (!toggle.button || !toggle.button.isConnected)) {
     state.translationToggle = null;
   }
 
@@ -3804,13 +3872,8 @@ function updateTranslationToggleUI() {
   toggle.button.setAttribute('aria-pressed', show ? 'true' : 'false');
   toggle.button.setAttribute('aria-label', show ? 'Tercümeyi Gizle' : 'Tercümeyi Göster');
   toggle.button.classList.toggle('is-active', show);
-  if (show) {
-    toggle.button.classList.remove('secondary');
-  } else if (!toggle.button.classList.contains('secondary')) {
-    toggle.button.classList.add('secondary');
-  }
   if (toggle.icon) {
-    toggle.icon.textContent = show ? '👁️' : '🛈';
+    toggle.icon.textContent = show ? '📖' : '📜';
   }
 }
 
@@ -6414,6 +6477,7 @@ async function changeLanguage(nextLanguage, { persist = true } = {}) {
   }
 
   updateLanguageToggleUI(resolved);
+  updateContentToolbarLanguageUI();
   if (state.appRoot) {
     state.appRoot.dataset.appLanguage = resolved;
   }
