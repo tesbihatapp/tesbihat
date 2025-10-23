@@ -1,5 +1,3 @@
-# İkindi Namazı Tesbihatı
-
 **İkindi namazının farzı kılınıp selâm verildikten sonra:**
 
 أَسْتَغْفِرُ اللّٰهَ (3)

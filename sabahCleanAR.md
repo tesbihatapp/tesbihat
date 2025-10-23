@@ -1,7 +1,4 @@
-# Sabah Namazı Tesbihatı
-
 **Sabah namazının farzı kılınıp selâm verildikten sonra:**
-
 
 أَسْتَغْفِرُ اللّٰهَ (3)
 
@@ -155,7 +152,6 @@ Allah'dan başka hiçbir ilah yoktur. O, daima yaşayan, daima duran, bütün va
 
 سُبْحَانَ اللّٰهِ بُكْرَةً وَأَصِيلًا ﴿سُبْحَانَ اللّٰهِ (33)﴾
 |tercume|Allah'ın acâib-i sanatı akıllara hayret verir! O her türlü noksandan, kusurdan uzaktır.|/tercume|
-
 
 اَلْحَمْدُ لِلّٰهِ حَمْدًا كَثِيرًا ﴿اَلْحَمْدُ لِلّٰهِ (33)﴾
 |tercume|Allah'a hamd olsun.Hamd ancak Allah'a mahsustur.|/tercume|
