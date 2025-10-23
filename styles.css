@@ -199,6 +199,20 @@ button {
   transform: translateY(0);
 }
 
+.icon-button.home-button {
+  background: var(--accent-soft-bg);
+  color: var(--accent-color);
+  box-shadow: none;
+}
+
+.icon-button.home-button:hover {
+  background: var(--accent-soft-hover);
+}
+
+.home-button__icon {
+  font-size: 1.05rem;
+}
+
 .prayer-tabs {
   display: flex;
   gap: 0.5rem;
