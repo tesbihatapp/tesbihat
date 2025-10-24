@@ -133,12 +133,15 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+  min-width: 0;
 }
 
 .hero__title {
   margin: 0;
-  font-size: clamp(1.8rem, 5vw, 2.4rem);
+  font-size: clamp(1.6rem, 5.5vw, 2.4rem);
   font-weight: 700;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .hero__title--link {
@@ -160,15 +163,13 @@ button {
   border-radius: 8px;
 }
 
-.hero__subtitle {
-  margin: 0.8rem 0 1.2rem;
-  color: var(--hero-subtitle-color, rgba(255, 255, 255, 0.8));
-}
-
 .hero__actions {
   display: flex;
   align-items: center;
   gap: 0.6rem;
+  flex-shrink: 0;
+  min-width: max-content;
+  margin-left: 0.5rem;
 }
 
 .text-decrease span,
@@ -199,39 +200,102 @@ button {
   transform: translateY(0);
 }
 
-.icon-button.home-button {
-  background: var(--accent-soft-bg);
-  color: var(--accent-color);
-  box-shadow: none;
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
-.icon-button.home-button:hover {
-  background: var(--accent-soft-hover);
-}
-
-.home-button__icon {
-  font-size: 1.05rem;
-}
-
-.prayer-tabs {
+.hero__links {
+  margin-top: 0.95rem;
   display: flex;
-  gap: 0.5rem;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: flex-start;
+}
+
+.hero-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.95rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  font-weight: 600;
+  backdrop-filter: blur(6px);
+  transition: transform var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.hero-link:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.2);
+  box-shadow: var(--shadow-soft);
+}
+
+.hero-link.is-active {
+  background: rgba(255, 255, 255, 0.24);
+  border-color: rgba(255, 255, 255, 0.4);
+  box-shadow: var(--shadow-soft);
+}
+
+.hero-link__icon {
+  font-size: 1.1rem;
+}
+
+.hero-link__label {
+  font-size: 0.95rem;
+}
+
+.hero__tabs {
+  margin-top: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
   overflow-x: auto;
-  padding-bottom: 0.35rem;
-  margin: 0 -0.2rem;
+  padding-bottom: 0.4rem;
+  margin-bottom: 0.1rem;
+  scrollbar-width: none;
   scroll-snap-type: x proximity;
+}
+
+.hero__tabs::-webkit-scrollbar {
+  display: none;
+}
+
+@media (max-width: 360px) {
+  .hero__title {
+    font-size: 1.55rem;
+  }
+}
+
+@media (max-width: 320px) {
+  .hero__title {
+    font-size: 1.45rem;
+  }
 }
 
 .prayer-tab {
   flex: 0 0 auto;
-  padding: 0.6rem 1.1rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 1.1rem;
   border-radius: 14px;
   font-weight: 600;
   color: var(--tab-inactive-text);
   background: var(--tab-inactive-bg);
-  transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+  transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast), border-color var(--transition-fast);
   scroll-snap-align: center;
   white-space: nowrap;
+  border: 1px solid transparent;
 }
 
 .prayer-tab:hover {
@@ -242,10 +306,27 @@ button {
 .prayer-tab.is-active {
   background: var(--tab-active-bg);
   color: var(--tab-active-text);
+  border-color: var(--border-color);
 }
 
-.prayer-tabs::-webkit-scrollbar {
-  display: none;
+.prayer-tab__icon {
+  font-size: 1.1rem;
+}
+
+.prayer-tab__label {
+  font-size: 0.95rem;
+}
+
+.prayer-tab--home {
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.prayer-tab--home .prayer-tab__icon {
+  margin: 0;
 }
 
 /* Layout */
