@@ -1130,7 +1130,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initThemeSelector();
   initLanguageToggle();
   attachHomeNavigation(appRoot);
-  attachHomeButton(appRoot);
+  attachHeroQuickLinks(appRoot);
   initPrayerTabs(appRoot);
   initDuaSourceSelector();
   initCompletionStatsView();
@@ -1164,6 +1164,9 @@ function initPrayerTabs(appRoot) {
 function setActivePrayer(prayerId) {
   const config = PRAYER_CONFIG[prayerId];
   const appRoot = document.querySelector('.app');
+  if (!appRoot) {
+    return;
+  }
   const tabs = Array.from(appRoot.querySelectorAll('.prayer-tab'));
 
   tabs.forEach((tab) => {
@@ -1173,6 +1176,13 @@ function setActivePrayer(prayerId) {
     if (isActive && typeof tab.scrollIntoView === 'function') {
       tab.scrollIntoView({ block: 'nearest', inline: 'center' });
     }
+  });
+
+  const quickLinks = Array.from(appRoot.querySelectorAll('[data-hero-link]'));
+  quickLinks.forEach((link) => {
+    const isActive = link.dataset.prayer === prayerId;
+    link.classList.toggle('is-active', isActive);
+    link.setAttribute('aria-pressed', isActive ? 'true' : 'false');
   });
 
   state.currentPrayer = config ? prayerId : 'sabah';
@@ -5812,18 +5822,31 @@ function attachHomeNavigation(appRoot) {
   });
 }
 
-function attachHomeButton(appRoot) {
-  const button = appRoot.querySelector('.home-button');
-  if (!button) {
+function attachHeroQuickLinks(appRoot) {
+  const links = Array.from(appRoot.querySelectorAll('[data-hero-link]'));
+  if (!links.length) {
     return;
   }
 
-  const navigateHome = () => {
-    hideNameTooltip();
-    setActivePrayer('home');
-  };
+  links.forEach((link) => {
+    const targetPrayer = link.dataset.prayer;
+    if (!targetPrayer) {
+      return;
+    }
 
-  button.addEventListener('click', navigateHome);
+    if (!link.hasAttribute('type')) {
+      link.setAttribute('type', 'button');
+    }
+
+    link.setAttribute('aria-pressed', link.classList.contains('is-active') ? 'true' : 'false');
+
+    link.addEventListener('click', () => {
+      if (targetPrayer === state.currentPrayer) {
+        return;
+      }
+      setActivePrayer(targetPrayer);
+    });
+  });
 }
 
 function attachFontScaleControls(appRoot) {

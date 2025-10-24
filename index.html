@@ -24,9 +24,6 @@
         <div class="hero__top">
           <h1 class="hero__title">Tesbihat</h1>
           <div class="hero__actions">
-            <button class="icon-button home-button" aria-label="Anasayfaya dön" title="Anasayfaya dön">
-              <span class="home-button__icon" aria-hidden="true">🏠</span>
-            </button>
             <button class="icon-button text-decrease" aria-label="Yazı boyutunu küçült">
               <span aria-hidden="true">A−</span>
             </button>
@@ -41,16 +38,45 @@
             </button>
           </div>
         </div>
-        <p class="hero__subtitle">Seçmek istediğiniz vakti aşağıdan işaretleyin.</p>
-        <div class="prayer-tabs" role="tablist" aria-label="Tesbihat vakitleri">
-          <button class="prayer-tab is-active" role="tab" aria-selected="true" data-prayer="sabah">Sabah</button>
-          <button class="prayer-tab" role="tab" aria-selected="false" data-prayer="ogle">Öğle</button>
-          <button class="prayer-tab" role="tab" aria-selected="false" data-prayer="ikindi">İkindi</button>
-          <button class="prayer-tab" role="tab" aria-selected="false" data-prayer="aksam">Akşam</button>
-          <button class="prayer-tab" role="tab" aria-selected="false" data-prayer="yatsi">Yatsı</button>
-          <button class="prayer-tab" role="tab" aria-selected="false" data-prayer="cevsen">Cevşen</button>
-          <button class="prayer-tab" role="tab" aria-selected="false" data-prayer="zikirler">Zikirler</button>
-          <button class="prayer-tab" role="tab" aria-selected="false" data-prayer="dualar">Dualar</button>
+        <div class="hero__links" role="group" aria-label="Hızlı bağlantılar">
+          <button type="button" class="hero-link" data-hero-link="cevsen" data-prayer="cevsen">
+            <span class="hero-link__icon" aria-hidden="true">📜</span>
+            <span class="hero-link__label">Cevşen</span>
+          </button>
+          <button type="button" class="hero-link" data-hero-link="zikirler" data-prayer="zikirler">
+            <span class="hero-link__icon" aria-hidden="true">📿</span>
+            <span class="hero-link__label">Zikirler</span>
+          </button>
+          <button type="button" class="hero-link" data-hero-link="dualar" data-prayer="dualar">
+            <span class="hero-link__icon" aria-hidden="true">🤲🏼</span>
+            <span class="hero-link__label">Dualar</span>
+          </button>
+        </div>
+        <div class="hero__tabs" role="tablist" aria-label="Tesbihat vakitleri">
+          <button class="prayer-tab prayer-tab--home" type="button" role="tab" aria-selected="false" data-prayer="home" aria-label="Ana sayfa">
+            <span class="prayer-tab__icon" aria-hidden="true">🏠</span>
+            <span class="sr-only">Ana sayfa</span>
+          </button>
+          <button class="prayer-tab is-active" type="button" role="tab" aria-selected="true" data-prayer="sabah">
+            <span class="prayer-tab__icon" aria-hidden="true">🌅</span>
+            <span class="prayer-tab__label">Sabah</span>
+          </button>
+          <button class="prayer-tab" type="button" role="tab" aria-selected="false" data-prayer="ogle">
+            <span class="prayer-tab__icon" aria-hidden="true">☀️</span>
+            <span class="prayer-tab__label">Öğle</span>
+          </button>
+          <button class="prayer-tab" type="button" role="tab" aria-selected="false" data-prayer="ikindi">
+            <span class="prayer-tab__icon" aria-hidden="true">🌤️</span>
+            <span class="prayer-tab__label">İkindi</span>
+          </button>
+          <button class="prayer-tab" type="button" role="tab" aria-selected="false" data-prayer="aksam">
+            <span class="prayer-tab__icon" aria-hidden="true">🌇</span>
+            <span class="prayer-tab__label">Akşam</span>
+          </button>
+          <button class="prayer-tab" type="button" role="tab" aria-selected="false" data-prayer="yatsi">
+            <span class="prayer-tab__icon" aria-hidden="true">🌙</span>
+            <span class="prayer-tab__label">Yatsı</span>
+          </button>
         </div>
       </header>
       <main class="main">
