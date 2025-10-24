@@ -215,16 +215,23 @@ button {
 .hero__links {
   margin-top: 0.95rem;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.55rem;
+  flex-wrap: nowrap;
+  gap: 0.45rem;
   justify-content: flex-start;
+  overflow-x: auto;
+  padding-bottom: 0.3rem;
+  scrollbar-width: none;
+}
+
+.hero__links::-webkit-scrollbar {
+  display: none;
 }
 
 .hero-link {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.45rem 0.95rem;
+  padding: 0.4rem 0.85rem;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.24);
   background: rgba(255, 255, 255, 0.14);
@@ -247,18 +254,18 @@ button {
 }
 
 .hero-link__icon {
-  font-size: 1.1rem;
+  font-size: 0.95rem;
 }
 
 .hero-link__label {
-  font-size: 0.95rem;
+  font-size: 0.88rem;
 }
 
 .hero__tabs {
   margin-top: 0.9rem;
   display: flex;
   align-items: center;
-  gap: 0.55rem;
+  gap: 0.45rem;
   overflow-x: auto;
   padding-bottom: 0.4rem;
   margin-bottom: 0.1rem;
@@ -286,8 +293,8 @@ button {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  padding: 0.55rem 1.1rem;
+  gap: 0.35rem;
+  padding: 0.5rem 1rem;
   border-radius: 14px;
   font-weight: 600;
   color: var(--tab-inactive-text);
@@ -310,11 +317,11 @@ button {
 }
 
 .prayer-tab__icon {
-  font-size: 1.1rem;
+  font-size: 0.95rem;
 }
 
 .prayer-tab__label {
-  font-size: 0.95rem;
+  font-size: 0.88rem;
 }
 
 .prayer-tab--home {
