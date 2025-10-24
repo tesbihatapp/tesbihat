@@ -5,6 +5,8 @@ const THEME_STORAGE_KEY = 'tesbihat:theme';
 const DUA_SOURCE_STORAGE_KEY = 'tesbihat:dua-source';
 const LANGUAGE_STORAGE_KEY = 'tesbihat:language';
 const DUA_ARABIC_STORAGE_KEY = 'tesbihat:dua-arabic';
+const DUA_FAVORITES_STORAGE_KEY = 'tesbihat:dua-favorites';
+const DUA_FAVORITES_VERSION = 1;
 const ZIKIR_STORAGE_KEY = 'tesbihat:zikirs';
 const ZIKIR_STORAGE_VERSION = 1;
 const COMPLETION_STORAGE_KEY = 'tesbihat:completions';
@@ -1082,6 +1084,10 @@ const state = {
   personalDuaText: loadPersonalDuaText(),
   personalDuaEditing: false,
   duaMode: 'predefined',
+  duaFavorites: loadDuaFavorites(),
+  duaFavoritesLookup: new Set(),
+  duaFavoritesList: [],
+  duaFavoritesIndex: 0,
   homeFeaturesHtml: null,
   languageToggleButtons: new Map(),
   cevsen: {
@@ -1108,6 +1114,8 @@ const state = {
     languageButtons: new Map(),
   },
 };
+
+rebuildDuaFavoritesState();
 
 if (state.personalDuaEnabled) {
   state.duaMode = 'personal';
@@ -4259,6 +4267,7 @@ function setupDuaSection(container, duas, sourceId) {
   let okButton;
   let resetButton;
   let actions;
+  let favoriteButton;
 
   if (!card) {
     card = document.createElement('article');
@@ -4280,10 +4289,19 @@ function setupDuaSection(container, duas, sourceId) {
     personalButton.dataset.mode = 'personal';
     personalButton.textContent = 'Kişisel dua';
 
-    modeToggle.append(predefinedButton, personalButton);
+    const savedButton = document.createElement('button');
+    savedButton.type = 'button';
+    savedButton.className = 'dua-mode-toggle__option';
+    savedButton.dataset.mode = 'saved';
+    savedButton.textContent = 'Kaydedilenler';
+
+    modeToggle.append(predefinedButton, personalButton, savedButton);
 
     const header = document.createElement('div');
     header.className = 'dua-header';
+
+    const headerMain = document.createElement('div');
+    headerMain.className = 'dua-header__main';
 
     title = document.createElement('h2');
     title.className = 'dua-title';
@@ -4291,7 +4309,19 @@ function setupDuaSection(container, duas, sourceId) {
     subtitle = document.createElement('div');
     subtitle.className = 'dua-subtitle';
 
-    header.append(title, subtitle);
+    headerMain.append(title, subtitle);
+
+    const headerActions = document.createElement('div');
+    headerActions.className = 'dua-header__actions';
+
+    favoriteButton = document.createElement('button');
+    favoriteButton.type = 'button';
+    favoriteButton.className = 'dua-favorite-toggle';
+    favoriteButton.setAttribute('aria-label', 'Kaydedilenlere ekle');
+    favoriteButton.innerHTML = '<span class="dua-favorite-toggle__icon" aria-hidden="true">☆</span>';
+
+    headerActions.append(favoriteButton);
+    header.append(headerMain, headerActions);
 
     body = document.createElement('div');
     body.className = 'dua-body';
@@ -4343,9 +4373,23 @@ function setupDuaSection(container, duas, sourceId) {
       }
     });
 
+    savedButton.addEventListener('click', () => {
+      if (state.duaMode !== 'saved') {
+        state.duaMode = 'saved';
+        state.personalDuaEditing = false;
+        if (state.duaFavoritesList.length === 0) {
+          state.duaFavoritesIndex = 0;
+        }
+        refreshDuaUI();
+      }
+    });
+
+    favoriteButton.addEventListener('click', handleDuaFavoriteToggle);
+
     modeButtons = {
       predefined: predefinedButton,
       personal: personalButton,
+      saved: savedButton,
     };
   } else {
     card.dataset.showArabic = state.showArabicDuas ? 'true' : 'false';
@@ -4358,6 +4402,9 @@ function setupDuaSection(container, duas, sourceId) {
     okButton = state.duaUI.okButton;
     resetButton = state.duaUI.resetButton;
     actions = state.duaUI.actions;
+    favoriteButton = state.duaUI.favoriteButton;
+    favoriteButton?.removeEventListener('click', handleDuaFavoriteToggle);
+    favoriteButton?.addEventListener('click', handleDuaFavoriteToggle);
   }
 
   card.dataset.duaSource = sourceId;
@@ -4374,6 +4421,7 @@ function setupDuaSection(container, duas, sourceId) {
     okButton,
     resetButton,
     actions,
+    favoriteButton,
     anchor,
     container,
   };
@@ -4641,6 +4689,11 @@ function updateScrollTopVisibility(scrollPosition) {
 }
 
 function handleDuaNewClick() {
+  if (state.duaMode === 'saved') {
+    showNextFavorite(1);
+    return;
+  }
+
   if (!state.duaState || state.duaState.remaining.length === 0) {
     return;
   }
@@ -4652,6 +4705,21 @@ function handleDuaNewClick() {
 }
 
 function handleDuaOkClick() {
+  if (state.duaMode === 'saved') {
+    const entry = getCurrentFavoriteEntry();
+    if (!entry) {
+      return;
+    }
+    toggleDuaFavorite(entry.sourceId, entry.index);
+    updateDuaModeToggleUI();
+    if (state.duaFavoritesList.length === 0) {
+      state.duaMode = state.personalDuaEnabled ? 'personal' : 'predefined';
+    }
+    refreshDuaUI();
+    focusDuaCardTop();
+    return;
+  }
+
   if (!state.duaState) {
     return;
   }
@@ -4733,11 +4801,21 @@ function refreshDuaUI() {
 
   updateDuaModeToggleUI();
 
+  if (state.duaMode === 'saved' && state.duaFavoritesList.length === 0) {
+    state.duaMode = state.personalDuaEnabled ? 'personal' : 'predefined';
+    updateDuaModeToggleUI();
+  }
+
   const isPersonalMode = state.personalDuaEnabled && state.duaMode === 'personal';
-  const label = isPersonalMode ? 'Kişisel Dua' : (DUA_SOURCES[sourceId]?.label || 'Dualar');
+  const isSavedMode = state.duaMode === 'saved';
+  const label = isPersonalMode
+    ? 'Kişisel Dua'
+    : isSavedMode
+      ? 'Kaydedilen Dualar'
+      : (DUA_SOURCES[sourceId]?.label || 'Dualar');
 
   ui.title.textContent = label;
-  ui.card.dataset.duaSource = isPersonalMode ? 'personal' : sourceId;
+  ui.card.dataset.duaSource = isPersonalMode ? 'personal' : (isSavedMode ? 'saved' : sourceId);
   updateDuaArabicVisibility();
 
   if (isPersonalMode) {
@@ -4746,11 +4824,12 @@ function refreshDuaUI() {
     }
     ui.subtitle.textContent = 'Kişisel duanız';
     renderPersonalDua(ui.body);
+    updateFavoriteToggleUI();
     return;
   }
 
   if (ui.actions) {
-    ui.actions.hidden = false;
+    ui.actions.hidden = state.duaMode === 'saved' && state.duaFavoritesList.length === 0;
   }
   state.personalDuaEditing = false;
 
@@ -4767,6 +4846,7 @@ function refreshDuaUI() {
   updateDuaSubtitle(ui.subtitle);
   updateDuaBody(ui.body);
   updateDuaButtons(ui.newButton, ui.okButton, ui.resetButton);
+  updateFavoriteToggleUI();
 }
 
 function updateDuaSubtitle(subtitle) {
@@ -4776,6 +4856,21 @@ function updateDuaSubtitle(subtitle) {
 
   if (state.personalDuaEnabled && state.duaMode === 'personal') {
     subtitle.textContent = 'Kişisel duanız';
+    return;
+  }
+
+  if (state.duaMode === 'saved') {
+    const total = state.duaFavoritesList.length;
+    if (!total) {
+      subtitle.textContent = 'Henüz kaydedilen dua bulunmuyor.';
+      return;
+    }
+    const index = Math.min(Math.max(state.duaFavoritesIndex, 0), total - 1);
+    const entry = state.duaFavoritesList[index];
+    const sourceId = entry?.sourceId;
+    const label = DUA_SOURCES[sourceId]?.label || 'Hazır dualar';
+    const positionText = `${formatNumber(index + 1)} / ${formatNumber(total)}`;
+    subtitle.textContent = `${positionText} · Kaynak: ${label}`;
     return;
   }
 
@@ -4807,6 +4902,46 @@ function updateDuaBody(body) {
     return;
   }
 
+  if (state.duaMode === 'saved') {
+    const favorites = state.duaFavoritesList;
+    if (!favorites.length) {
+      body.innerHTML = '<p>Kaydedilen duanız bulunmuyor. Sevdiğiniz duaları kaydetmek için yıldız simgesine dokunabilirsiniz.</p>';
+      return;
+    }
+    const entry = getCurrentFavoriteEntry();
+    if (!entry) {
+      body.innerHTML = '<p>Kaydedilen dualar yüklenemedi.</p>';
+      return;
+    }
+
+    const sourceId = entry.sourceId;
+    const index = entry.index;
+    const sourceList = state.duaCache[sourceId];
+
+    if (!sourceList) {
+      body.innerHTML = '<p>Dualar yükleniyor…</p>';
+      loadDuaSourceData(sourceId)
+        .then(() => {
+          if (state.duaMode === 'saved') {
+            refreshDuaUI();
+          }
+        })
+        .catch((error) => {
+          console.error('Kaydedilen dua yüklenemedi.', error);
+        });
+      return;
+    }
+
+    const duaText = sourceList[index];
+    if (!duaText) {
+      body.innerHTML = '<p>Bu kayıt artık mevcut değil.</p>';
+      return;
+    }
+
+    body.innerHTML = DOMPurify.sanitize(marked.parse(duaText));
+    return;
+  }
+
   if (!state.duaState) {
     return;
   }
@@ -4828,9 +4963,32 @@ function updateDuaBody(body) {
 }
 
 function updateDuaButtons(newButton, okButton, resetButton) {
-  if (!state.duaState) {
+  if (!newButton || !okButton || !resetButton) {
     return;
   }
+
+  if (state.duaMode === 'saved') {
+    const total = state.duaFavoritesList.length;
+    newButton.textContent = 'Sonraki duayı göster';
+    newButton.disabled = total <= 1;
+    okButton.textContent = 'Kaydı kaldır';
+    okButton.disabled = total === 0;
+    resetButton.hidden = true;
+    resetButton.disabled = true;
+    return;
+  }
+
+  if (!state.duaState) {
+    newButton.disabled = true;
+    okButton.disabled = true;
+    resetButton.hidden = true;
+    resetButton.disabled = true;
+    return;
+  }
+
+  newButton.textContent = 'Yeni dua getir';
+  okButton.textContent = 'Okudum';
+  resetButton.textContent = 'Baştan başlat';
 
   const remaining = state.duaState.remaining.length;
   const isComplete = remaining === 0;
@@ -4841,19 +4999,128 @@ function updateDuaButtons(newButton, okButton, resetButton) {
   resetButton.disabled = !isComplete;
 }
 
+function getCurrentFavoriteEntry() {
+  if (!Array.isArray(state.duaFavoritesList) || state.duaFavoritesList.length === 0) {
+    return null;
+  }
+  const index = Math.min(Math.max(state.duaFavoritesIndex, 0), state.duaFavoritesList.length - 1);
+  return state.duaFavoritesList[index] || null;
+}
+
+function updateFavoriteToggleUI() {
+  const ui = state.duaUI;
+  if (!ui || !ui.favoriteButton) {
+    return;
+  }
+
+  const button = ui.favoriteButton;
+  const icon = button.querySelector('.dua-favorite-toggle__icon');
+
+  let targetSource = null;
+  let targetIndex = null;
+  let disabled = false;
+
+  if (state.duaMode === 'personal') {
+    disabled = true;
+  } else if (state.duaMode === 'saved') {
+    const entry = getCurrentFavoriteEntry();
+    if (entry) {
+      targetSource = entry.sourceId;
+      targetIndex = entry.index;
+    } else {
+      disabled = true;
+    }
+  } else if (state.duaState && state.duaState.current !== null) {
+    targetSource = state.duaState.sourceId;
+    targetIndex = state.duaState.current;
+  } else {
+    disabled = true;
+  }
+
+  const isFavorite = !disabled && isDuaFavorite(targetSource, targetIndex);
+
+  button.disabled = disabled;
+  button.classList.toggle('is-active', isFavorite);
+  button.setAttribute('aria-pressed', isFavorite ? 'true' : 'false');
+  button.setAttribute('aria-label', isFavorite ? 'Kaydedilenlerden çıkar' : 'Kaydedilenlere ekle');
+  button.title = isFavorite ? 'Kaydedilenlerden çıkar' : 'Kaydedilenlere ekle';
+  if (icon) {
+    icon.textContent = isFavorite ? '★' : '☆';
+  }
+
+  button.dataset.favoriteSource = targetSource || '';
+  button.dataset.favoriteIndex = Number.isInteger(targetIndex) ? String(targetIndex) : '';
+}
+
+function handleDuaFavoriteToggle() {
+  if (state.duaMode === 'personal') {
+    return;
+  }
+
+  let sourceId = null;
+  let index = null;
+
+  if (state.duaMode === 'saved') {
+    const entry = getCurrentFavoriteEntry();
+    if (!entry) {
+      return;
+    }
+    ({ sourceId, index } = entry);
+  } else if (state.duaState && state.duaState.current !== null) {
+    sourceId = state.duaState.sourceId;
+    index = state.duaState.current;
+  }
+
+  if (!sourceId || !Number.isInteger(index)) {
+    return;
+  }
+
+  toggleDuaFavorite(sourceId, index);
+  updateFavoriteToggleUI();
+  triggerCounterHaptic('soft');
+
+  if (state.duaMode === 'saved') {
+    if (state.duaFavoritesList.length === 0) {
+      state.duaMode = state.personalDuaEnabled ? 'personal' : 'predefined';
+    }
+    refreshDuaUI();
+  }
+}
+
+function showNextFavorite(step = 1) {
+  const list = state.duaFavoritesList;
+  if (!Array.isArray(list) || list.length <= 1) {
+    return;
+  }
+  const length = list.length;
+  state.duaFavoritesIndex = (state.duaFavoritesIndex + step + length) % length;
+  triggerCounterHaptic('soft');
+  refreshDuaUI();
+  focusDuaCardTop();
+}
+
 function updateDuaModeToggleUI() {
   const ui = state.duaUI;
   if (!ui || !ui.modeToggle || !ui.modeButtons) {
     return;
   }
 
-  const enabled = Boolean(state.personalDuaEnabled);
-  ui.modeToggle.hidden = !enabled;
+  const personalEnabled = Boolean(state.personalDuaEnabled);
+  ui.modeToggle.hidden = !personalEnabled && state.duaFavoritesList.length === 0;
 
   const personalButton = ui.modeButtons.personal;
   if (personalButton) {
-    personalButton.hidden = !enabled;
-    personalButton.disabled = !enabled;
+    personalButton.hidden = !personalEnabled;
+    personalButton.disabled = !personalEnabled;
+  }
+
+  const savedButton = ui.modeButtons.saved;
+  if (savedButton) {
+    const hasFavorites = state.duaFavoritesList.length > 0;
+    savedButton.disabled = !hasFavorites;
+    savedButton.classList.toggle('is-disabled', !hasFavorites);
+    savedButton.setAttribute('aria-disabled', hasFavorites ? 'false' : 'true');
+    savedButton.title = hasFavorites ? 'Kaydedilen duaları göster' : 'Kaydedilen dua yok';
   }
 
   Object.entries(ui.modeButtons).forEach(([mode, button]) => {
@@ -6577,6 +6844,7 @@ function updateSettingsDuaControls() {
 
 function attachSettingsActions() {
   const resetButton = document.querySelector('[data-reset-dua]');
+  const favoritesResetButton = document.querySelector('[data-reset-dua-favorites]');
   if (!resetButton) {
     return;
   }
@@ -6613,6 +6881,22 @@ function attachSettingsActions() {
       resetButton.disabled = false;
     }
   });
+
+  if (favoritesResetButton) {
+    favoritesResetButton.addEventListener('click', () => {
+      if (!state.duaFavoritesList.length) {
+        window.alert('Kaydedilen dua bulunmuyor.');
+        return;
+      }
+      const confirmed = window.confirm('Kaydedilen duaları temizlemek istediğinize emin misiniz?');
+      if (!confirmed) {
+        return;
+      }
+      clearDuaFavorites();
+      window.alert('Kaydedilen dualar temizlendi.');
+      refreshDuaUI();
+    });
+  }
 }
 
 function loadSelectedDuaSource() {
@@ -6629,6 +6913,195 @@ function loadDuaArabicPreference() {
     return true;
   }
   return DEFAULT_SHOW_ARABIC_DUAS;
+}
+
+function createEmptyDuaFavorites() {
+  return {
+    version: DUA_FAVORITES_VERSION,
+    items: {},
+    order: [],
+  };
+}
+
+function loadDuaFavorites() {
+  try {
+    const raw = localStorage.getItem(DUA_FAVORITES_STORAGE_KEY);
+    if (!raw) {
+      return createEmptyDuaFavorites();
+    }
+    const parsed = JSON.parse(raw);
+    return normaliseDuaFavorites(parsed);
+  } catch (error) {
+    console.warn('Kaydedilen dualar yüklenemedi, varsayılan değerler kullanılacak.', error);
+    return createEmptyDuaFavorites();
+  }
+}
+
+function normaliseDuaFavorites(candidate) {
+  const normalized = createEmptyDuaFavorites();
+  if (!candidate || typeof candidate !== 'object') {
+    return normalized;
+  }
+
+  const items = typeof candidate.items === 'object' && candidate.items !== null ? candidate.items : {};
+  const order = Array.isArray(candidate.order) ? candidate.order : [];
+
+  normalized.items = {};
+  Object.entries(items).forEach(([sourceId, list]) => {
+    if (!sourceId || !Array.isArray(list)) {
+      return;
+    }
+    const deduped = Array.from(new Set(list.filter((value) => Number.isInteger(value) && value >= 0))).sort((a, b) => a - b);
+    if (deduped.length > 0) {
+      normalized.items[sourceId] = deduped;
+    }
+  });
+
+  normalized.order = order
+    .filter((entry) => entry && typeof entry === 'object')
+    .map((entry) => ({ sourceId: entry.sourceId, index: entry.index }))
+    .filter((entry) => entry.sourceId && Number.isInteger(entry.index) && entry.index >= 0);
+
+  normalized.version = DUA_FAVORITES_VERSION;
+  return normalized;
+}
+
+function saveDuaFavorites() {
+  try {
+    localStorage.setItem(DUA_FAVORITES_STORAGE_KEY, JSON.stringify(state.duaFavorites));
+  } catch (error) {
+    console.warn('Kaydedilen dualar saklanamadı.', error);
+  }
+}
+
+function rebuildDuaFavoritesState() {
+  const previousEntry = state.duaFavoritesList && state.duaFavoritesList.length > 0
+    ? state.duaFavoritesList[Math.min(state.duaFavoritesIndex, state.duaFavoritesList.length - 1)]
+    : null;
+
+  if (!state.duaFavorites || typeof state.duaFavorites !== 'object') {
+    state.duaFavorites = createEmptyDuaFavorites();
+  }
+
+  state.duaFavorites = normaliseDuaFavorites(state.duaFavorites);
+
+  const lookup = new Set();
+  const list = [];
+
+  state.duaFavorites.order.forEach((entry) => {
+    if (!entry) {
+      return;
+    }
+    const { sourceId, index } = entry;
+    const key = buildDuaFavoriteKey(sourceId, index);
+    if (!lookup.has(key) && state.duaFavorites.items[sourceId] && state.duaFavorites.items[sourceId].includes(index)) {
+      lookup.add(key);
+      list.push({ sourceId, index });
+    }
+  });
+
+  Object.entries(state.duaFavorites.items).forEach(([sourceId, indices]) => {
+    indices.forEach((index) => {
+      const key = buildDuaFavoriteKey(sourceId, index);
+      if (!lookup.has(key)) {
+        lookup.add(key);
+        list.push({ sourceId, index });
+      }
+    });
+  });
+
+  state.duaFavorites.order = list.map(({ sourceId, index }) => ({ sourceId, index }));
+  state.duaFavoritesLookup = lookup;
+  state.duaFavoritesList = list;
+
+  if (!list.length) {
+    state.duaFavoritesIndex = 0;
+    return;
+  }
+
+  if (previousEntry) {
+    const preservedIndex = list.findIndex((entry) => entry.sourceId === previousEntry.sourceId && entry.index === previousEntry.index);
+    if (preservedIndex !== -1) {
+      state.duaFavoritesIndex = preservedIndex;
+      return;
+    }
+  }
+
+  if (state.duaFavoritesIndex >= list.length) {
+    state.duaFavoritesIndex = 0;
+  }
+}
+
+function buildDuaFavoriteKey(sourceId, index) {
+  return `${sourceId}:${index}`;
+}
+
+function isDuaFavorite(sourceId, index) {
+  if (!sourceId || !Number.isInteger(index) || index < 0) {
+    return false;
+  }
+  const key = buildDuaFavoriteKey(sourceId, index);
+  return state.duaFavoritesLookup.has(key);
+}
+
+function toggleDuaFavorite(sourceId, index) {
+  if (!sourceId || !Number.isInteger(index) || index < 0) {
+    return;
+  }
+
+  if (!state.duaFavorites || typeof state.duaFavorites !== 'object') {
+    state.duaFavorites = createEmptyDuaFavorites();
+  }
+
+  const key = buildDuaFavoriteKey(sourceId, index);
+  const items = state.duaFavorites.items;
+  const currentList = Array.isArray(items[sourceId]) ? items[sourceId] : [];
+  const existingIndex = currentList.indexOf(index);
+  let targetKey = null;
+
+  if (existingIndex !== -1) {
+    currentList.splice(existingIndex, 1);
+    if (currentList.length) {
+      items[sourceId] = currentList;
+    } else {
+      delete items[sourceId];
+    }
+    state.duaFavorites.order = state.duaFavorites.order.filter((entry) => buildDuaFavoriteKey(entry.sourceId, entry.index) !== key);
+  } else {
+    if (!items[sourceId]) {
+      items[sourceId] = [];
+    }
+    items[sourceId].push(index);
+    items[sourceId] = Array.from(new Set(items[sourceId].filter((value) => Number.isInteger(value) && value >= 0))).sort((a, b) => a - b);
+    state.duaFavorites.order.push({ sourceId, index });
+    targetKey = key;
+  }
+
+  state.duaFavorites.version = DUA_FAVORITES_VERSION;
+  rebuildDuaFavoritesState();
+  if (targetKey) {
+    const newIndex = state.duaFavoritesList.findIndex((entry) => buildDuaFavoriteKey(entry.sourceId, entry.index) === targetKey);
+    if (newIndex !== -1) {
+      state.duaFavoritesIndex = newIndex;
+    }
+  }
+  saveDuaFavorites();
+  const ui = state.duaUI;
+  if (ui) {
+    updateDuaModeToggleUI();
+    updateFavoriteToggleUI();
+  }
+}
+
+function clearDuaFavorites() {
+  state.duaFavorites = createEmptyDuaFavorites();
+  rebuildDuaFavoritesState();
+  saveDuaFavorites();
+  if (state.duaMode === 'saved') {
+    state.duaMode = 'predefined';
+  }
+  updateDuaModeToggleUI();
+  updateFavoriteToggleUI();
 }
 
 function loadTranslationVisibility() {

@@ -221,6 +221,8 @@ button {
   overflow-x: auto;
   padding-bottom: 0.3rem;
   scrollbar-width: none;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
 }
 
 .hero__links::-webkit-scrollbar {
@@ -239,6 +241,8 @@ button {
   font-weight: 600;
   backdrop-filter: blur(6px);
   transition: transform var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
+  scroll-snap-align: start;
+  white-space: nowrap;
 }
 
 .hero-link:hover {
@@ -271,6 +275,7 @@ button {
   margin-bottom: 0.1rem;
   scrollbar-width: none;
   scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
 }
 
 .hero__tabs::-webkit-scrollbar {
@@ -1541,6 +1546,7 @@ button {
   padding: 0.35rem;
   border-radius: 999px;
   width: fit-content;
+  flex-wrap: wrap;
 }
 
 .dua-mode-toggle__option {
@@ -1562,14 +1568,36 @@ button {
   color: var(--accent-contrast);
 }
 
+.dua-mode-toggle__option.is-disabled,
+.dua-mode-toggle__option:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .dua-mode-toggle__option[hidden] {
   display: none !important;
 }
 
 .dua-header {
   display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.dua-header__main {
+  display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  min-width: 0;
+}
+
+.dua-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 .dua-title {
@@ -1581,6 +1609,43 @@ button {
 .dua-subtitle {
   color: var(--muted-text);
   font-size: 0.95rem;
+}
+
+.dua-favorite-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 0.25rem 0.65rem;
+  background: var(--accent-soft-bg);
+  color: var(--accent-color);
+  font-weight: 600;
+  transition: background-color var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.dua-favorite-toggle:hover:not(:disabled) {
+  background: var(--accent-soft-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-soft);
+}
+
+.dua-favorite-toggle.is-active {
+  background: var(--accent-color);
+  color: var(--accent-contrast);
+  box-shadow: var(--shadow-soft);
+}
+
+.dua-favorite-toggle:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.dua-favorite-toggle__icon {
+  font-size: 1.05rem;
+  line-height: 1;
 }
 
 .dua-body {
