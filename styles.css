@@ -567,7 +567,7 @@ button {
   color: var(--text-color);
 }
 
-.language-toggle {
+body .language-toggle {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   background: var(--surface-muted);
@@ -577,7 +577,7 @@ button {
   gap: 0.35rem;
 }
 
-.language-toggle__option {
+body .language-toggle__option {
   border: none;
   border-radius: 16px;
   background: transparent;
@@ -587,21 +587,26 @@ button {
   transition: background-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
-.language-toggle__option:hover,
-.language-toggle__option:focus-visible {
+body .language-toggle__option:hover,
+body .language-toggle__option:focus-visible {
   background: var(--surface-overlay);
   box-shadow: var(--shadow-soft);
 }
 
-.language-toggle__option:focus-visible {
+body .language-toggle__option:focus-visible {
   outline: 2px solid var(--focus-outline);
   outline-offset: 2px;
 }
 
-.language-toggle__option.is-active {
+body .language-toggle__option.is-active {
   background: var(--surface-color);
   box-shadow: var(--shadow-soft);
   color: var(--accent-color);
+}
+
+.app[data-current-prayer="zikirler"] .language-toggle,
+.app[data-current-prayer="zikirler"] .language-toggle__option {
+  display: none;
 }
 
 .theme-options {
