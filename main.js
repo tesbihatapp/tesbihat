@@ -1130,6 +1130,7 @@ document.addEventListener('DOMContentLoaded', () => {
   state.appRoot = appRoot;
   document.documentElement.setAttribute('lang', state.language === 'ar' ? 'ar' : 'tr');
   appRoot.dataset.appLanguage = state.language;
+  appRoot.dataset.currentPrayer = state.currentPrayer;
   appRoot.dataset.showTranslations = state.showTranslations ? 'true' : 'false';
   applyTheme(appRoot, state.themeSelection);
   applyFontScale(state.fontScale);
@@ -1148,7 +1149,7 @@ document.addEventListener('DOMContentLoaded', () => {
   attachSettingsActions();
   registerInstallPromptHandlers();
   initScrollTopButton();
-  
+
   setActivePrayer(state.currentPrayer);
 });
 
@@ -1193,9 +1194,14 @@ function setActivePrayer(prayerId) {
     link.setAttribute('aria-pressed', isActive ? 'true' : 'false');
   });
 
+  appRoot.dataset.currentPrayer = prayerId;
+
   state.currentPrayer = config ? prayerId : 'sabah';
 
   loadPrayerContent(state.currentPrayer);
+
+  const event = new CustomEvent('prayerchange', { detail: { prayerId: state.currentPrayer } });
+  document.dispatchEvent(event);
 }
 
 async function loadPrayerContent(prayerId) {
@@ -5973,6 +5979,12 @@ function initLanguageToggle() {
     return;
   }
 
+  const updateVisibility = () => {
+    const currentPrayer = state.appRoot?.dataset.currentPrayer;
+    const shouldHide = currentPrayer === 'zikirler';
+    container.style.display = shouldHide ? 'none' : '';
+  };
+
   const buttons = Array.from(container.querySelectorAll('[data-language]'));
   if (!buttons.length) {
     return;
@@ -5990,6 +6002,9 @@ function initLanguageToggle() {
   });
 
   updateLanguageToggleUI(state.language);
+  updateVisibility();
+
+  document.addEventListener('prayerchange', updateVisibility);
 }
 
 function updateLanguageToggleUI(language) {
