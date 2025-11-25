@@ -37,7 +37,7 @@ Ve tubelliğunâ bihâ aksa’l-ğâyât, min cemî’i’l-hayrâti fi’l-hay�
 **Sünnetten sonra 1 defa** "Âmennâ biennehû" **denilir. Akabinde 9 defa şu cümle-i tevhid söylenir:**
 
 Lâ ilâhe illallâhu vahdehû lâ şerîke leh, lehu’l-mulku ve lehu’l-hamdu ve huve ‘alâ kulli şey’in Kadîr. **(9 defa)**
-|tercume|Allah'tan başka ilah yoktur. O, tektir, ortağı yoktur. Mülk O'nundur, hamd O'na mahsustur ve O, her şeye kadirdir.
+|tercume|Allah'tan başka ilah yoktur. O, tektir, ortağı yoktur. Mülk O'nundur, hamd O'na mahsustur ve O, her şeye kadirdir.|/tercume|
 
 (counter:9)
 

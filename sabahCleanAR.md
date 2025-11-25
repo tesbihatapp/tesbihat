@@ -27,7 +27,7 @@ O salâvat hürmetine bizi derecelerin en üstüne yücelt.O salâvat hürmetine
 **Akabinde 9 defa şu cümle-i tevhid söylenir:**
 
 [لَا إِلٰهَ إِلَّا اللّٰهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ ولَهُ الْحَمْدُ، وَهُوَ عَلَى كُلِّ شَيْءٍ قَدِيرٌ (9)]
-|tercume|Allah'tan başka ilah yoktur. O, tektir, ortağı yoktur. Mülk O'nundur, hamd O'na mahsustur ve O, her şeye kadirdir.
+|tercume|Allah'tan başka ilah yoktur. O, tektir, ortağı yoktur. Mülk O'nundur, hamd O'na mahsustur ve O, her şeye kadirdir.|/tercume|
 
 
 **Onuncusunda ise;**
@@ -48,51 +48,51 @@ O salâvat hürmetine bizi derecelerin en üstüne yücelt.O salâvat hürmetine
 |/tercume|
 
 اَللّٰهُمَّ أَجِرْنَا مِنْ الْفِتْنَةِ الدِّينِيَّةِ وَالدُّنْيَوِيَّةِ❁
-|tercume|Allah'ım, bizi ahir zaman fitnesinden koru.
+|tercume|Allah'ım, bizi dinî ve dünyevî fitnelerden koru.
 |/tercume|
 
 اَللّٰهُمَّ أَجِرْنَا مِنْ فِتْنَةِ آخِرِ الزَّمَانِ❁
-|tercume|Allah'ım, bizi Mesih Deccal ve Süfyan fitnesinden koru.
+|tercume|Allah'ım, bizi ahir zaman fitnesinden koru.
 |/tercume|
 
 اَللّٰهُمَّ أَجِرْنَا مِنْ فِتْنَةِ الْمَسِيحِ الدَّجَّالِ وَالسُّفْيَانِ❁
-|tercume|Allah'ım, bizi dalaletlerden, bid'atlardan ve belalardan koru.
+|tercume|Allah'ım, bizi Mesih Deccal ve Süfyan fitnesinden koru.
 |/tercume|
 
 اَللّٰهُمَّ أَجِرْنَا مِنَ الضَّلَالَاتِ وَالْبِدْعِيَّاتِ وَالْبَلِيَّاتِ❁
-|tercume|Allah'ım, bizi kötülüğü emreden nefsin şerrinden koru.
+|tercume|Allah'ım, bizi dalaletlerden, bid'atlardan ve belalardan koru.
 |/tercume|
 
 اَللّٰهُمَّ أَجِرْنَا مِنْ شَرِّ النَّفْسِ الْأَمَّارَةِ❁
-|tercume|Allah'ım, bizi firavunlaşmış, kötülüğü emreden nefislerin şerlerinden koru.
+|tercume|Allah'ım, bizi kötülüğü emreden nefsin şerrinden koru.
 |/tercume|
 
 اَللّٰهُمَّ أَجِرْنَا مِنْ شُرُورِ النُّفُوسِ الْأَمَّارَاتِ الْفِرْعَوْنِيَّةِ❁
-|tercume|Allah'ım, bizi kadınların şerrinden koru
+|tercume|Allah'ım, bizi firavunlaşmış, kötülüğü emreden nefislerin şerlerinden koru.
 |/tercume|
 
 اَللّٰهُمَّ أَجِرْنَا مِنْ شَرِّ النِّسَاءِ❁
-|tercume|Allah'ım, bizi kadınların belasından koru.
+|tercume|Allah'ım, bizi kadınların şerrinden koru
 |/tercume|
 
 اَللّٰهُمَّ أَجِرْنَا مِنْ بَلَاءِ النِّسَاءِ❁
-|tercume|Allah'ım, bizi kadınların fitnesinden koru.
+|tercume|Allah'ım, bizi kadınların belasından koru.
 |/tercume|
 
 اَللّٰهُمَّ أَجِرْنَا مِنْ فِتْنَةِ النِّسَاءِ❁
-|tercume|Allah'ım, bizi kabir azabından koru
+|tercume|Allah'ım, bizi kadınların fitnesinden koru.
 |/tercume|
 
 اَللّٰهُمَّ أَجِرْنَا مِنْ عَذَابِ الْقَبْرِ❁
-|tercume|Allah'ım, bizi kıyamet günü azabından koru.
+|tercume|Allah'ım, bizi kabir azabından koru
 |/tercume|
 
 اَللّٰهُمَّ أَجِرْنَا مِنْ عَذَابِ يَوْمِ الْقِيَامَةِ❁
-|tercume|Allah'ım, bizi cehennem azabından koru.
+|tercume|Allah'ım, bizi kıyamet günü azabından koru.
 |/tercume|
 
 اَللّٰهُمَّ أَجِرْنَا مِنْ عَذَابِ جَهَنَّمَ❁
-|tercume|Allah'ım, bizi Kahhar isminin tecellisi olan azabından koru.
+|tercume|Allah'ım, bizi cehennem azabından koru.
 |/tercume|
 
 اَللّٰهُمَّ أَجِرْنَا مِنْ عَذَابِ قَهْرِكَ❁
