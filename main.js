@@ -4718,9 +4718,6 @@ function handleDuaOkClick() {
     }
     toggleDuaFavorite(entry.sourceId, entry.index);
     updateDuaModeToggleUI();
-    if (state.duaFavoritesList.length === 0) {
-      state.duaMode = state.personalDuaEnabled ? 'personal' : 'predefined';
-    }
     refreshDuaUI();
     focusDuaCardTop();
     return;
@@ -4800,17 +4797,12 @@ function refreshDuaUI() {
   }
 
   const sourceId = state.duaSource;
-  if (!state.personalDuaEnabled && state.duaMode !== 'predefined') {
+  if (!state.personalDuaEnabled && state.duaMode === 'personal') {
     state.duaMode = 'predefined';
     state.personalDuaEditing = false;
   }
 
   updateDuaModeToggleUI();
-
-  if (state.duaMode === 'saved' && state.duaFavoritesList.length === 0) {
-    state.duaMode = state.personalDuaEnabled ? 'personal' : 'predefined';
-    updateDuaModeToggleUI();
-  }
 
   const isPersonalMode = state.personalDuaEnabled && state.duaMode === 'personal';
   const isSavedMode = state.duaMode === 'saved';
@@ -5086,9 +5078,6 @@ function handleDuaFavoriteToggle() {
   triggerCounterHaptic('soft');
 
   if (state.duaMode === 'saved') {
-    if (state.duaFavoritesList.length === 0) {
-      state.duaMode = state.personalDuaEnabled ? 'personal' : 'predefined';
-    }
     refreshDuaUI();
   }
 }
@@ -5112,7 +5101,7 @@ function updateDuaModeToggleUI() {
   }
 
   const personalEnabled = Boolean(state.personalDuaEnabled);
-  ui.modeToggle.hidden = !personalEnabled && state.duaFavoritesList.length === 0;
+  ui.modeToggle.hidden = false;
 
   const personalButton = ui.modeButtons.personal;
   if (personalButton) {
@@ -5123,10 +5112,13 @@ function updateDuaModeToggleUI() {
   const savedButton = ui.modeButtons.saved;
   if (savedButton) {
     const hasFavorites = state.duaFavoritesList.length > 0;
-    savedButton.disabled = !hasFavorites;
-    savedButton.classList.toggle('is-disabled', !hasFavorites);
-    savedButton.setAttribute('aria-disabled', hasFavorites ? 'false' : 'true');
-    savedButton.title = hasFavorites ? 'Kaydedilen duaları göster' : 'Kaydedilen dua yok';
+    savedButton.disabled = false;
+    savedButton.classList.remove('is-disabled');
+    savedButton.setAttribute('aria-disabled', 'false');
+    savedButton.dataset.hasFavorites = hasFavorites ? 'true' : 'false';
+    savedButton.title = hasFavorites
+      ? 'Kaydedilen duaları göster'
+      : 'Kaydedilen dualarınızı burada görebilirsiniz.';
   }
 
   Object.entries(ui.modeButtons).forEach(([mode, button]) => {
