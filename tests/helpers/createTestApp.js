@@ -49,6 +49,22 @@ export function createTestApp() {
   const { window } = dom;
   stubMatchMedia(window);
 
+  if (!window.DOMPurify) {
+    window.DOMPurify = {
+      sanitize(content) {
+        return content;
+      },
+    };
+  }
+
+  if (!window.marked) {
+    window.marked = {
+      parse(content) {
+        return content;
+      },
+    };
+  }
+
   // Prevent scroll related helpers from crashing in JSDOM.
   window.HTMLElement.prototype.scrollIntoView = function scrollIntoView() {};
 
