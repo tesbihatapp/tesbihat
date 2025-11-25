@@ -200,7 +200,7 @@ Allah'dan başka hiçbir ilah yoktur. O, daima yaşayan, daima duran, bütün va
 |/tercume|
 
 يَا **عَظِيمُ** يَا اَللّٰهُ❁ يَا **حَنَّانُ** يَا اَللّٰهُ❁
-|tercume|Ey sonsuz azamet, mutlak ihatalı esma sahibi Azim olan Allah. Ey çok merhamet eden, latif rahmetini gösteren Hannan olan Allah./tercume|
+|tercume|Ey sonsuz azamet, mutlak ihatalı esma sahibi Azim olan Allah. Ey çok merhamet eden, latif rahmetini gösteren Hannan olan Allah.|/tercume|
 
 يَا **مَنَّانُ** يَا اَللّٰهُ❁ يَا **دَيَّانُ** يَا اَللّٰهُ❁
 |tercume|Ey bol ihsan eden, hakikî iyilik ve nimet sahibi Mennan olan Allah. Ey amellere layık karşılık veren, zayi etmeyen Deyyân olan|/tercume|

@@ -193,7 +193,7 @@ Lâ ilâhe illallâhu vahdehû lâ şerîke leh, lehu’l-mulku ve lehu’l-hamd
 
 **Otuzüçüncüsünde** "Muhammedu’r-Rasûlullahi sallâllâhu te’âlâ aleyhi ve sellem"  **ilave edildikten sonra 10 defa:** \[Lâ ilâhe illallâhu’l-Meliku’l-Hakku’l-Mubîn, Muhammedu’r-Rasûlullahi Sâdiku’l-va’di’l-emîn.\] **"denilir ve tesbihata devam edilir."**  
 **(counter:10)**
-|tercume||/tercume|
+|tercume|Bütün saltanat ve hükümranlık kendisinin olan (Melik) ve apaçık yegâne hakikatin ta kendisi olan Allah’tan başka hiçbir ilâh yoktur.|/tercume|
 
 Bismillâhirrahmânirrahîm. İnne’llâhe ve melâiketehû yusallûne ‘ale’n-nebiyy, yâ eyyuhe’llezîne âmenû sallû aleyhi ve sellimû teslîmâ, lebbeyk.
 |tercume|Hz. Peygambere, Allah salat, rahmet eder, melekler de salat, dua ve istiğfar eder. Ey iman edenler! Siz de ona salat (dua) ve tam bir teslimiyetle selâm getirin. (Ahzab Süresi, 56) Lebbeyk diyerek (Allah'ım emrine, davetine uyduk.)|/tercume|

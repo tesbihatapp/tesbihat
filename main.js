@@ -6246,6 +6246,11 @@ function wrapNamesInTextNode(node, encountered) {
     }
 
     const cleaned = word.trim();
+    if (!shouldAnnotateWord(cleaned)) {
+      fragment.appendChild(document.createTextNode(word));
+      lastIndex = end;
+      continue;
+    }
     const canonical = canonicalizeName(cleaned);
     const meaning = resolveNameMeaning(cleaned, canonical, encountered);
 
@@ -6266,6 +6271,21 @@ function wrapNamesInTextNode(node, encountered) {
   if (matched) {
     node.parentNode.replaceChild(fragment, node);
   }
+}
+
+function shouldAnnotateWord(word) {
+  // Kelime üstü tercümelerde yalnızca büyük harfle başlayan isimleri vurgula.
+  if (!word) {
+    return false;
+  }
+  const firstLetterMatch = word.match(/\p{L}/u);
+  if (!firstLetterMatch) {
+    return false;
+  }
+  const letter = firstLetterMatch[0];
+  const upper = letter.toLocaleUpperCase('tr-TR');
+  const lower = letter.toLocaleLowerCase('tr-TR');
+  return letter === upper && upper !== lower;
 }
 
 function createNameBadge(name, meaning) {
