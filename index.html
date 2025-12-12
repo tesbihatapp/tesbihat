@@ -176,6 +176,25 @@
               <button type="button" class="settings-action-button" data-reset-stats>İstatistikleri sıfırla</button>
             </div>
           </section>
+          <section class="settings-section">
+            <header class="settings-section__header">
+              <span class="settings-section__icon" aria-hidden="true">🌙</span>
+              <h3>Üç Aylar</h3>
+            </header>
+            <div class="settings-group">
+              <button type="button" class="settings-action-button secondary" data-ucaylar-export>
+                Üç Aylar verisini dışa aktar
+              </button>
+              <div class="settings-inline-actions">
+                <button type="button" class="settings-action-button" data-ucaylar-import-trigger>
+                  Üç Aylar verisini içe aktar
+                </button>
+                <input type="file" accept=".json,application/json" data-ucaylar-import-file hidden>
+              </div>
+              <small class="settings-hint">İçe aktarma mevcut Üç Aylar verisini silip yenisiyle değiştirir.</small>
+              <small class="settings-hint" data-ucaylar-transfer-status hidden></small>
+            </div>
+          </section>
         </div>
       </div>
     </div>

@@ -58,6 +58,9 @@ const UCAYLAR_MONTHS = {
   ramazan: { key: 'ramazan', label: 'Ramazan', manifestPath: `${UCAYLAR_BASE_PATH}/ramazan/manifest.json` },
 };
 
+const UCAYLAR_RAMAZAN_DEFAULT_FIELD_ID = 'teravih';
+const UCAYLAR_DEFAULTS_VERSION = 2;
+
 // Üç Aylar (Hijri) tarih aralıkları.
 // Not: Bu aralıklar Gregoryen (YYYY-MM-DD) olarak tutulur ve aylar yıl sınırını aşabilir.
 // Karşılaştırmalarda timezone kaynaklı gün kaymasını önlemek için Date.UTC kullanıyoruz.
@@ -65,7 +68,7 @@ const UCAYLAR_DATE_RANGES = {
   2025: {
     recep: { start: '2025-12-21', end: '2026-01-19' },
     saban: { start: '2026-01-20', end: '2026-02-18' },
-    ramazan: { start: '2026-02-19', end: '2026-03-20' },
+    ramazan: { start: '2026-02-19', end: '2026-03-19' },
   },
 };
 
@@ -1386,7 +1389,64 @@ function renderPrayerCollection(container, prayerId, config) {
   }
 
   wrapper.append(list);
+
+  if (prayerId === 'ucaylar') {
+    wrapper.append(buildUcAylarSummaryCard());
+  }
+
   container.append(wrapper);
+}
+
+function buildUcAylarSummaryCard() {
+  const card = document.createElement('article');
+  card.className = 'card ucaylar-summary';
+  card.dataset.disableTooltips = 'true';
+
+  const title = document.createElement('h3');
+  title.textContent = 'Üç Aylar Tablosu';
+
+  const description = document.createElement('p');
+  description.className = 'muted';
+  description.textContent = 'Sezon aralıklarına göre hesaplanan toplam puanlar.';
+
+  const todayKey = getTodayKey();
+  const recepRange = selectClosestUcAylarRange('recep', todayKey);
+  const sabanRange = selectClosestUcAylarRange('saban', todayKey);
+  const ramazanRange = selectClosestUcAylarRange('ramazan', todayKey);
+
+  const recepTotal = recepRange ? calculateUcAylarRangePoints('recep', recepRange, { createMissing: false }) : 0;
+  const sabanTotal = sabanRange ? calculateUcAylarRangePoints('saban', sabanRange, { createMissing: false }) : 0;
+  const ramazanTotal = ramazanRange ? calculateUcAylarRangePoints('ramazan', ramazanRange, { createMissing: false }) : 0;
+  const grandTotal = recepTotal + sabanTotal + ramazanTotal;
+
+  const table = document.createElement('table');
+  table.className = 'stats-table ucaylar-summary__table';
+
+  const thead = document.createElement('thead');
+  thead.innerHTML = '<tr><th>Ay</th><th>Toplam puan</th></tr>';
+  table.append(thead);
+
+  const tbody = document.createElement('tbody');
+  tbody.innerHTML = `
+    <tr><th scope="row">Recep</th><td>${formatUcAylarPoints(recepTotal)}</td></tr>
+    <tr><th scope="row">Şaban</th><td>${formatUcAylarPoints(sabanTotal)}</td></tr>
+    <tr><th scope="row">Ramazan</th><td>${formatUcAylarPoints(ramazanTotal)}</td></tr>
+  `;
+  table.append(tbody);
+
+  const tfoot = document.createElement('tfoot');
+  tfoot.innerHTML = `<tr><th scope="row">Toplam Üç Aylar</th><td>${formatUcAylarPoints(grandTotal)}</td></tr>`;
+  table.append(tfoot);
+
+  const hint = document.createElement('p');
+  hint.className = 'stats-hint';
+  const recepText = recepRange ? `${recepRange.start} → ${recepRange.end}` : 'tanımsız';
+  const sabanText = sabanRange ? `${sabanRange.start} → ${sabanRange.end}` : 'tanımsız';
+  const ramazanText = ramazanRange ? `${ramazanRange.start} → ${ramazanRange.end}` : 'tanımsız';
+  hint.textContent = `Aralıklar: Recep ${recepText} • Şaban ${sabanText} • Ramazan ${ramazanText}`;
+
+  card.append(title, description, table, hint);
+  return card;
 }
 
 async function renderPrayerCollectionItem(container, prayerId, config, item) {
@@ -1456,6 +1516,7 @@ function renderUcAylarMonthView(container, monthKey, options = {}) {
   const month = UCAYLAR_MONTHS[monthKey];
   const parentPrayerId = options.parentPrayerId || 'ucaylar';
   const parentConfig = options.parentConfig || PRAYER_CONFIG[parentPrayerId] || PRAYER_CONFIG.ucaylar;
+  const initialTab = options.initialTab === 'tracker' ? 'tracker' : 'content';
 
   if (!month) {
     container.innerHTML = `
@@ -1514,6 +1575,10 @@ function renderUcAylarMonthView(container, monthKey, options = {}) {
   const trackerPanel = root.querySelector('[data-ucaylar-panel="tracker"]');
 
   const setTab = (nextTab) => {
+    if (state.ucaylar) {
+      state.ucaylar.activeMonthKey = monthKey;
+      state.ucaylar.activeMonthTab = nextTab;
+    }
     tabButtons.forEach((button) => {
       const isActive = button.dataset.ucaylarTab === nextTab;
       button.classList.toggle('is-active', isActive);
@@ -1533,7 +1598,7 @@ function renderUcAylarMonthView(container, monthKey, options = {}) {
     button.addEventListener('click', () => setTab(button.dataset.ucaylarTab));
   });
 
-  setTab('content');
+  setTab(initialTab);
 }
 
 function renderUcAylarContentPanel(panel, monthKey) {
@@ -1689,7 +1754,8 @@ function renderUcAylarTrackerPanel(panel, monthKey) {
     return;
   }
 
-  const initialDateKey = isValidDateKey(panel.dataset.ucaylarDate) ? panel.dataset.ucaylarDate : getTodayKey();
+  const storedDateKey = isValidDateKey(panel.dataset.ucaylarDate) ? panel.dataset.ucaylarDate : null;
+  const todayKey = getTodayKey();
   const initialManageOpen = panel.dataset.ucaylarManageOpen === 'true';
 
   panel.dataset.ucaylarManageOpen = initialManageOpen ? 'true' : 'false';
@@ -1709,7 +1775,11 @@ function renderUcAylarTrackerPanel(panel, monthKey) {
       <div class="ucaylar-tracker__actions">
         <label class="ucaylar-tracker__date">
           <span class="ucaylar-tracker__date-label">Tarih</span>
-          <input type="date" class="ucaylar-tracker__date-input" data-ucaylar-date>
+          <div class="ucaylar-tracker__date-control" role="group" aria-label="Tarih seçimi">
+            <button type="button" class="button-pill secondary ucaylar-date-nav" data-ucaylar-prev aria-label="Önceki gün">‹</button>
+            <input type="date" class="ucaylar-tracker__date-input" data-ucaylar-date>
+            <button type="button" class="button-pill secondary ucaylar-date-nav" data-ucaylar-next aria-label="Sonraki gün">›</button>
+          </div>
         </label>
         <button type="button" class="button-pill secondary" data-ucaylar-manage-toggle>Alanları Yönet</button>
       </div>
@@ -1726,39 +1796,65 @@ function renderUcAylarTrackerPanel(panel, monthKey) {
     </div>
   `;
 
-  const managerCard = document.createElement('article');
-  managerCard.className = 'card ucaylar-field-manager';
-  managerCard.hidden = !initialManageOpen;
-  managerCard.innerHTML = `
-    <header class="ucaylar-field-manager__header">
-      <h3>Alanları yönet</h3>
-      <p class="muted">Etiket, puan, gizleme ve sıralamayı buradan düzenleyin.</p>
-    </header>
-    <div class="ucaylar-field-manager__list" data-ucaylar-field-manager-list></div>
-    <div class="ucaylar-field-manager__add">
-      <h4>Yeni alan ekle</h4>
-      <form class="ucaylar-field-manager__form" data-ucaylar-field-form novalidate>
-        <label>
-          <span>Etiket</span>
-          <input type="text" name="label" autocomplete="off" required>
-        </label>
-        <label>
-          <span>Tür</span>
-          <select name="type">
-            <option value="checkbox">Onay kutusu</option>
-            <option value="number">Sayı</option>
-          </select>
-        </label>
-        <label>
-          <span>Puan</span>
-          <input type="number" name="points" step="0.1" min="0" value="5">
-        </label>
-        <label>
-          <span>Adım (sayı için)</span>
-          <input type="number" name="step" step="1" min="1" value="1">
-        </label>
-        <button type="submit" class="settings-action-button">Ekle</button>
-      </form>
+  const managerOverlay = document.createElement('div');
+  managerOverlay.className = 'settings-overlay ucaylar-field-overlay';
+  managerOverlay.hidden = !initialManageOpen;
+  managerOverlay.innerHTML = `
+    <div class="settings-sheet card ucaylar-field-sheet" role="dialog" aria-modal="true" aria-labelledby="ucaylar-fields-title">
+      <header class="settings-sheet__header">
+        <h2 id="ucaylar-fields-title">Alanları yönet</h2>
+        <button type="button" class="settings-close" data-ucaylar-fields-close aria-label="Alan yönetimini kapat">✕</button>
+      </header>
+      <p class="settings-sheet__intro">Etiket, puan, gizleme, tür ve sıralamayı buradan düzenleyin.</p>
+      <div class="settings-sheet__content ucaylar-field-sheet__content">
+        <section class="settings-section">
+          <div class="ucaylar-field-manager__list" data-ucaylar-field-manager-list></div>
+        </section>
+        <section class="settings-section">
+          <div class="ucaylar-field-manager__add">
+            <h3>Yeni alan ekle</h3>
+            <form class="ucaylar-field-manager__form" data-ucaylar-field-form novalidate>
+              <label>
+                <span>Etiket</span>
+                <input type="text" name="label" autocomplete="off" required>
+              </label>
+              <label>
+                <span>Tür</span>
+                <select name="type">
+                  <option value="checkbox">Onay kutusu</option>
+                  <option value="number">Sayı</option>
+                </select>
+              </label>
+              <label>
+                <span>Puan</span>
+                <input type="number" name="points" step="0.1" min="0" value="5">
+              </label>
+              <label>
+                <span>Adım (sayı için)</span>
+                <input type="number" name="step" step="1" min="1" value="1">
+              </label>
+              <button type="submit" class="settings-action-button">Ekle</button>
+            </form>
+          </div>
+        </section>
+      </div>
+      <footer class="ucaylar-field-footer">
+        <p class="settings-hint ucaylar-field-footer__status" data-ucaylar-field-status hidden></p>
+        <div class="ucaylar-field-footer__actions">
+          <button type="button" class="settings-action-button secondary" data-ucaylar-fields-reset disabled>Değişiklikleri Sıfırla</button>
+          <button type="button" class="settings-action-button" data-ucaylar-fields-save disabled>Kaydet</button>
+        </div>
+      </footer>
+      <div class="ucaylar-confirm-overlay" data-ucaylar-confirm hidden>
+        <div class="ucaylar-confirm-sheet card" role="dialog" aria-modal="true" aria-labelledby="ucaylar-confirm-title">
+          <h3 id="ucaylar-confirm-title">Alanı sil</h3>
+          <p>Bu alan silinecek ve geçmiş kayıtlarınızdan kaldırılacak. Emin misiniz?</p>
+          <div class="ucaylar-confirm__actions">
+            <button type="button" class="settings-action-button secondary" data-ucaylar-confirm-cancel>İptal</button>
+            <button type="button" class="settings-action-button" data-ucaylar-confirm-delete>Sil</button>
+          </div>
+        </div>
+      </div>
     </div>
   `;
 
@@ -1766,20 +1862,30 @@ function renderUcAylarTrackerPanel(panel, monthKey) {
   fieldsCard.className = 'card ucaylar-tracker__fields';
   fieldsCard.innerHTML = `<div class="ucaylar-tracker__fields-inner" data-ucaylar-fields></div>`;
 
-  root.append(toolbarCard, managerCard, fieldsCard);
+  root.append(toolbarCard, fieldsCard);
   panel.innerHTML = '';
   panel.append(root);
+  panel.append(managerOverlay);
 
   const dateInput = root.querySelector('[data-ucaylar-date]');
+  const prevButton = root.querySelector('[data-ucaylar-prev]');
+  const nextButton = root.querySelector('[data-ucaylar-next]');
   const manageToggle = root.querySelector('[data-ucaylar-manage-toggle]');
   const dayTotalEl = root.querySelector('[data-ucaylar-day-total]');
   const monthTotalEl = root.querySelector('[data-ucaylar-month-total]');
   const rangeInfoEl = root.querySelector('[data-ucaylar-range]');
   const fieldsContainer = root.querySelector('[data-ucaylar-fields]');
-  const managerList = root.querySelector('[data-ucaylar-field-manager-list]');
-  const managerForm = root.querySelector('[data-ucaylar-field-form]');
+  const managerClose = managerOverlay.querySelector('[data-ucaylar-fields-close]');
+  const managerList = managerOverlay.querySelector('[data-ucaylar-field-manager-list]');
+  const managerForm = managerOverlay.querySelector('[data-ucaylar-field-form]');
+  const managerSaveButton = managerOverlay.querySelector('[data-ucaylar-fields-save]');
+  const managerResetButton = managerOverlay.querySelector('[data-ucaylar-fields-reset]');
+  const managerStatus = managerOverlay.querySelector('[data-ucaylar-field-status]');
+  const confirmBox = managerOverlay.querySelector('[data-ucaylar-confirm]');
+  const confirmCancel = managerOverlay.querySelector('[data-ucaylar-confirm-cancel]');
+  const confirmDelete = managerOverlay.querySelector('[data-ucaylar-confirm-delete]');
 
-  let activeDateKey = initialDateKey;
+  let activeDateKey = storedDateKey || todayKey;
   let activeRange = null;
   let saveTimer = null;
 
@@ -1826,7 +1932,24 @@ function renderUcAylarTrackerPanel(panel, monthKey) {
     return getUcAylarRangeForStartYear(monthKey, year);
   };
 
-  activeRange = resolveRangeForDateKey(activeDateKey);
+  // Üç Aylar ayları için öncelik: bugüne en yakın tanımlı aralık.
+  activeRange = selectClosestUcAylarRange(monthKey, todayKey) || resolveRangeForDateKey(activeDateKey);
+
+  // Varsayılan tarih: (1) daha önce seçili tarih aralık içindeyse onu koru,
+  // (2) bugün aralık içindeyse bugün,
+  // (3) değilse bugünü aralığa clamp ederek en yakın sınır.
+  if (activeRange) {
+    if (storedDateKey && isDateKeyInRange(storedDateKey, activeRange)) {
+      activeDateKey = storedDateKey;
+    } else if (isDateKeyInRange(todayKey, activeRange)) {
+      activeDateKey = todayKey;
+    } else {
+      activeDateKey = clampDateKeyToRange(todayKey, activeRange);
+    }
+  } else {
+    activeDateKey = storedDateKey || todayKey;
+  }
+
   applyActiveRange();
 
   if (dateInput) {
@@ -1838,21 +1961,114 @@ function renderUcAylarTrackerPanel(panel, monthKey) {
         return;
       }
       activeDateKey = next;
-      activeRange = resolveRangeForDateKey(activeDateKey);
+      // Aralık tanımlıysa dışarı çıkan seçimi clamp et.
       applyActiveRange();
+      if (activeRange && !isDateKeyInRange(activeDateKey, activeRange)) {
+        activeDateKey = clampDateKeyToRange(activeDateKey, activeRange);
+        applyActiveRange();
+      }
       renderFields();
       updateTotals();
+      updateNavButtons();
     });
   }
 
+  const dayMs = 24 * 60 * 60 * 1000;
+  const updateNavButtons = () => {
+    if (!prevButton && !nextButton) {
+      return;
+    }
+    if (!activeRange) {
+      if (prevButton) prevButton.disabled = false;
+      if (nextButton) nextButton.disabled = false;
+      return;
+    }
+    const currentUtcMs = dateKeyToUtcMs(activeDateKey);
+    if (!Number.isFinite(currentUtcMs)) {
+      if (prevButton) prevButton.disabled = true;
+      if (nextButton) nextButton.disabled = true;
+      return;
+    }
+    if (prevButton) prevButton.disabled = currentUtcMs <= activeRange.startUtcMs;
+    if (nextButton) nextButton.disabled = currentUtcMs >= activeRange.endUtcMs;
+  };
+
+  const shiftActiveDateBy = (deltaDays) => {
+    const currentUtcMs = dateKeyToUtcMs(activeDateKey);
+    if (!Number.isFinite(currentUtcMs)) {
+      return;
+    }
+    const nextKey = utcMsToDateKey(currentUtcMs + deltaDays * dayMs);
+    if (!isValidDateKey(nextKey)) {
+      return;
+    }
+    activeDateKey = nextKey;
+    if (activeRange) {
+      activeDateKey = clampDateKeyToRange(activeDateKey, activeRange);
+    }
+    applyActiveRange();
+    renderFields();
+    updateTotals();
+    updateNavButtons();
+  };
+
+  if (prevButton) {
+    prevButton.addEventListener('click', () => {
+      if (prevButton.disabled) {
+        return;
+      }
+      shiftActiveDateBy(-1);
+    });
+  }
+
+  if (nextButton) {
+    nextButton.addEventListener('click', () => {
+      if (nextButton.disabled) {
+        return;
+      }
+      shiftActiveDateBy(1);
+    });
+  }
+
+  const closeManagerOverlay = () => {
+    closeDeleteConfirm();
+    managerOverlay.hidden = true;
+    panel.dataset.ucaylarManageOpen = 'false';
+  };
+
+  const openManagerOverlay = () => {
+    managerOverlay.hidden = false;
+    panel.dataset.ucaylarManageOpen = 'true';
+    renderManager();
+    const firstInput = managerOverlay.querySelector('input, select, button');
+    if (firstInput && typeof firstInput.focus === 'function') {
+      firstInput.focus();
+    }
+  };
+
+  if (managerClose) {
+    managerClose.addEventListener('click', closeManagerOverlay);
+  }
+
+  managerOverlay.addEventListener('click', (event) => {
+    if (event.target === managerOverlay) {
+      closeManagerOverlay();
+    }
+  });
+
+  managerOverlay.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      if (confirmBox && !confirmBox.hidden) {
+        closeDeleteConfirm();
+        return;
+      }
+      closeManagerOverlay();
+    }
+  });
+
   if (manageToggle) {
     manageToggle.addEventListener('click', () => {
-      const nextOpen = managerCard.hidden;
-      managerCard.hidden = !nextOpen;
-      panel.dataset.ucaylarManageOpen = nextOpen ? 'true' : 'false';
-      if (nextOpen) {
-        renderManager();
-      }
+      openManagerOverlay();
     });
   }
 
@@ -1867,6 +2083,199 @@ function renderUcAylarTrackerPanel(panel, monthKey) {
   };
 
   const getActiveYear = () => Number.parseInt(activeDateKey.split('-')[0], 10);
+
+  const setManagerStatus = (message) => {
+    if (!managerStatus) {
+      return;
+    }
+    if (!message) {
+      managerStatus.hidden = true;
+      managerStatus.textContent = '';
+      return;
+    }
+    managerStatus.hidden = false;
+    managerStatus.textContent = message;
+  };
+
+  const cloneFields = (fields) => (Array.isArray(fields) ? fields.map((field) => ({ ...field })) : []);
+  const normalizeDraftFields = (fields) => cloneFields(fields).map((field) => normalizeUcAylarField(field)).filter(Boolean);
+
+  const listConfigYears = () => {
+    if (!activeRange) {
+      const year = getActiveYear();
+      return Number.isFinite(year) ? [year] : [];
+    }
+    const years = new Set();
+    iterateDateKeysInRange(activeRange).forEach((dateKey) => {
+      const year = Number.parseInt(dateKey.slice(0, 4), 10);
+      if (Number.isFinite(year)) {
+        years.add(year);
+      }
+    });
+    return Array.from(years).sort((a, b) => a - b);
+  };
+
+  const baseConfigYear = activeRange ? Number.parseInt(activeRange.start.slice(0, 4), 10) : getActiveYear();
+  const persistedConfigTracker = Number.isFinite(baseConfigYear) ? ensureDefaultUcAylarTracker(baseConfigYear, monthKey) : ensureDefaultUcAylarTracker(getActiveYear(), monthKey);
+
+  let persistedFieldsSnapshot = cloneFields(persistedConfigTracker.fields);
+  let persistedRemovedDefaultsSnapshot = normalizeUcAylarRemovedDefaultFieldIds(persistedConfigTracker.removedDefaultFieldIds);
+  let draftFields = cloneFields(persistedFieldsSnapshot);
+  let draftRemovedDefaults = new Set(persistedRemovedDefaultsSnapshot);
+  let draftDirty = false;
+  let pendingDeleteFieldId = null;
+
+  const setDraftDirty = (dirty) => {
+    draftDirty = Boolean(dirty);
+    if (managerSaveButton) {
+      managerSaveButton.disabled = !draftDirty;
+    }
+    if (managerResetButton) {
+      managerResetButton.disabled = !draftDirty;
+    }
+  };
+
+  const getFieldPoints = (field) => (field && field.type === 'checkbox' ? field.pointsWhenDone : field.pointsPerUnit);
+  const setFieldPoints = (field, points) => {
+    const normalizedPoints = Number.isFinite(Number(points)) ? Math.max(0, Number(points)) : 0;
+    if (!field) {
+      return;
+    }
+    if (field.type === 'checkbox') {
+      field.pointsWhenDone = normalizedPoints;
+      return;
+    }
+    field.pointsPerUnit = normalizedPoints;
+    if (!Number.isFinite(Number(field.step)) || Number(field.step) < 1) {
+      field.step = 1;
+    }
+  };
+
+  const closeDeleteConfirm = () => {
+    pendingDeleteFieldId = null;
+    if (confirmBox) {
+      confirmBox.hidden = true;
+    }
+  };
+
+  const openDeleteConfirm = (fieldId) => {
+    pendingDeleteFieldId = fieldId;
+    if (confirmBox) {
+      confirmBox.hidden = false;
+    }
+  };
+
+  if (confirmCancel) {
+    confirmCancel.addEventListener('click', closeDeleteConfirm);
+  }
+
+  if (confirmDelete) {
+    confirmDelete.addEventListener('click', () => {
+      const fieldId = pendingDeleteFieldId;
+      closeDeleteConfirm();
+      if (!fieldId) {
+        return;
+      }
+      const remaining = draftFields.filter((field) => field && field.id !== fieldId);
+      if (remaining.length === draftFields.length) {
+        return;
+      }
+      draftFields = remaining;
+      if (monthKey === 'ramazan' && fieldId === UCAYLAR_RAMAZAN_DEFAULT_FIELD_ID) {
+        draftRemovedDefaults.add(UCAYLAR_RAMAZAN_DEFAULT_FIELD_ID);
+      }
+      setDraftDirty(true);
+      renderManager();
+      setManagerStatus('Silme işlemi kaydedilmek üzere hazır.');
+    });
+  }
+
+  if (managerResetButton) {
+    managerResetButton.addEventListener('click', () => {
+      draftFields = cloneFields(persistedFieldsSnapshot);
+      draftRemovedDefaults = new Set(persistedRemovedDefaultsSnapshot);
+      setDraftDirty(false);
+      closeDeleteConfirm();
+      renderManager();
+      setManagerStatus('Değişiklikler sıfırlandı.');
+      window.setTimeout(() => setManagerStatus(''), 2000);
+    });
+  }
+
+  const applyDraftToTrackers = () => {
+    const years = listConfigYears();
+    if (!years.length) {
+      return;
+    }
+
+    const nextFields = normalizeDraftFields(draftFields);
+    const nextFieldMap = new Map(nextFields.map((field) => [field.id, field]));
+
+    years.forEach((year) => {
+      const tracker = ensureDefaultUcAylarTracker(year, monthKey);
+      const beforeFields = Array.isArray(tracker.fields) ? tracker.fields.map((field) => normalizeUcAylarField(field)).filter(Boolean) : [];
+      const beforeFieldMap = new Map(beforeFields.map((field) => [field.id, field]));
+
+      // Silinen alanlar: entry.values'tan temizle
+      beforeFields.forEach((field) => {
+        if (!field || !field.id) {
+          return;
+        }
+        if (!nextFieldMap.has(field.id)) {
+          removeFieldFromEntries(tracker.entries, field.id);
+        }
+      });
+
+      // Tür değişimi: entry.values içinde değerleri dönüştür
+      nextFields.forEach((field) => {
+        const previous = beforeFieldMap.get(field.id);
+        if (!previous) {
+          return;
+        }
+        if (previous.type !== field.type) {
+          convertFieldValuesForTypeChange(tracker.entries, field.id, previous.type, field.type);
+        }
+      });
+
+      // Alanları override et
+      tracker.fields = cloneFields(nextFields);
+      tracker.removedDefaultFieldIds = Array.from(draftRemovedDefaults).sort();
+
+      // Alan tiplerine göre değerleri normalize et + artık kullanılmayan fieldId'leri düşür
+      const currentFieldMap = new Map(tracker.fields.map((field) => [field.id, field]));
+      Object.values(tracker.entries || {}).forEach((entry) => {
+        if (!entry || typeof entry !== 'object') {
+          return;
+        }
+        const values = entry.values && typeof entry.values === 'object' ? entry.values : {};
+        entry.values = normalizeUcAylarEntryValues(values, currentFieldMap);
+      });
+    });
+
+    saveUcAylarData(state.ucaylar.data);
+    // Kaydettikten sonra snapshot güncelle
+    const refreshed = Number.isFinite(baseConfigYear) ? ensureDefaultUcAylarTracker(baseConfigYear, monthKey) : ensureDefaultUcAylarTracker(getActiveYear(), monthKey);
+    persistedFieldsSnapshot = cloneFields(refreshed.fields);
+    persistedRemovedDefaultsSnapshot = normalizeUcAylarRemovedDefaultFieldIds(refreshed.removedDefaultFieldIds);
+    draftFields = cloneFields(persistedFieldsSnapshot);
+    draftRemovedDefaults = new Set(persistedRemovedDefaultsSnapshot);
+    setDraftDirty(false);
+    closeDeleteConfirm();
+    renderFields();
+    updateTotals();
+  };
+
+  if (managerSaveButton) {
+    managerSaveButton.addEventListener('click', () => {
+      if (!draftDirty) {
+        return;
+      }
+      applyDraftToTrackers();
+      renderManager();
+      setManagerStatus('Değişiklikler kaydedildi.');
+      window.setTimeout(() => setManagerStatus(''), 2500);
+    });
+  }
 
   const renderFields = () => {
     if (!fieldsContainer) {
@@ -1946,11 +2355,11 @@ function renderUcAylarTrackerPanel(panel, monthKey) {
     if (!managerList) {
       return;
     }
-    const year = getActiveYear();
-    const tracker = ensureDefaultUcAylarTracker(year, monthKey);
     managerList.innerHTML = '';
+    closeDeleteConfirm();
+    setManagerStatus(draftDirty ? 'Kaydedilmemiş değişiklikler var.' : '');
 
-    tracker.fields.forEach((field, index) => {
+    draftFields.forEach((field, index) => {
       const item = document.createElement('div');
       item.className = 'ucaylar-field-edit';
       item.dataset.fieldId = field.id;
@@ -1960,29 +2369,42 @@ function renderUcAylarTrackerPanel(panel, monthKey) {
       labelInput.value = field.label;
       labelInput.className = 'ucaylar-field-edit__label';
       labelInput.addEventListener('input', () => {
-        field.label = labelInput.value.trim() || field.label;
-        scheduleSave();
-        renderFields();
-        updateTotals();
+        const nextLabel = labelInput.value.trim();
+        field.label = nextLabel || field.label;
+        setDraftDirty(true);
+      });
+
+      const typeSelect = document.createElement('select');
+      typeSelect.className = 'ucaylar-field-edit__type';
+      typeSelect.innerHTML = `
+        <option value="checkbox">Onay</option>
+        <option value="number">Sayı</option>
+      `;
+      typeSelect.value = field.type === 'number' ? 'number' : 'checkbox';
+      typeSelect.addEventListener('change', () => {
+        const nextType = typeSelect.value === 'number' ? 'number' : 'checkbox';
+        const previousType = field.type === 'number' ? 'number' : 'checkbox';
+        if (previousType === nextType) {
+          return;
+        }
+        const points = getFieldPoints(field);
+        field.type = nextType;
+        setFieldPoints(field, points);
+        setDraftDirty(true);
+        renderManager();
       });
 
       const pointsInput = document.createElement('input');
       pointsInput.type = 'number';
       pointsInput.min = '0';
       pointsInput.step = '0.1';
-      pointsInput.value = String(field.type === 'checkbox' ? field.pointsWhenDone : field.pointsPerUnit);
+      pointsInput.value = String(getFieldPoints(field));
       pointsInput.className = 'ucaylar-field-edit__points';
       pointsInput.addEventListener('input', () => {
         const parsed = Number.parseFloat(pointsInput.value);
         const nextPoints = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
-        if (field.type === 'checkbox') {
-          field.pointsWhenDone = nextPoints;
-        } else {
-          field.pointsPerUnit = nextPoints;
-        }
-        scheduleSave();
-        renderFields();
-        updateTotals();
+        setFieldPoints(field, nextPoints);
+        setDraftDirty(true);
       });
 
       const hiddenToggle = document.createElement('label');
@@ -1993,9 +2415,7 @@ function renderUcAylarTrackerPanel(panel, monthKey) {
         hiddenInput.checked = Boolean(field.hidden);
         hiddenInput.addEventListener('change', () => {
           field.hidden = hiddenInput.checked;
-          scheduleSave();
-          renderFields();
-          updateTotals();
+          setDraftDirty(true);
         });
       }
 
@@ -2006,38 +2426,41 @@ function renderUcAylarTrackerPanel(panel, monthKey) {
       moveUp.disabled = index === 0;
       moveUp.addEventListener('click', () => {
         if (index <= 0) return;
-        const next = tracker.fields.slice();
+        const next = draftFields.slice();
         const temp = next[index - 1];
         next[index - 1] = next[index];
         next[index] = temp;
-        tracker.fields = next;
-        scheduleSave();
+        draftFields = next;
+        setDraftDirty(true);
         renderManager();
-        renderFields();
-        updateTotals();
       });
 
       const moveDown = document.createElement('button');
       moveDown.type = 'button';
       moveDown.className = 'button-pill secondary';
       moveDown.textContent = '↓';
-      moveDown.disabled = index === tracker.fields.length - 1;
+      moveDown.disabled = index === draftFields.length - 1;
       moveDown.addEventListener('click', () => {
-        if (index >= tracker.fields.length - 1) return;
-        const next = tracker.fields.slice();
+        if (index >= draftFields.length - 1) return;
+        const next = draftFields.slice();
         const temp = next[index + 1];
         next[index + 1] = next[index];
         next[index] = temp;
-        tracker.fields = next;
-        scheduleSave();
+        draftFields = next;
+        setDraftDirty(true);
         renderManager();
-        renderFields();
-        updateTotals();
       });
+
+      const deleteButton = document.createElement('button');
+      deleteButton.type = 'button';
+      deleteButton.className = 'button-pill secondary ucaylar-field-edit__delete';
+      deleteButton.textContent = '🗑️';
+      deleteButton.setAttribute('aria-label', 'Alanı sil');
+      deleteButton.addEventListener('click', () => openDeleteConfirm(field.id));
 
       const meta = document.createElement('div');
       meta.className = 'ucaylar-field-edit__meta';
-      meta.append(hiddenToggle, pointsInput, moveUp, moveDown);
+      meta.append(typeSelect, pointsInput, hiddenToggle, moveUp, moveDown, deleteButton);
 
       item.append(labelInput, meta);
       managerList.append(item);
@@ -2063,8 +2486,6 @@ function renderUcAylarTrackerPanel(panel, monthKey) {
   if (managerForm) {
     managerForm.addEventListener('submit', (event) => {
       event.preventDefault();
-      const year = getActiveYear();
-      const tracker = ensureDefaultUcAylarTracker(year, monthKey);
       const form = event.currentTarget;
       const formData = new FormData(form);
       const label = String(formData.get('label') || '').trim();
@@ -2083,8 +2504,8 @@ function renderUcAylarTrackerPanel(panel, monthKey) {
         step: Number.isFinite(step) ? Math.max(1, step) : 1,
       });
 
-      tracker.fields.push(field);
-      scheduleSave();
+      draftFields.push(field);
+      setDraftDirty(true);
 
       form.reset();
       const labelInput = form.querySelector('input[name="label"]');
@@ -2093,8 +2514,7 @@ function renderUcAylarTrackerPanel(panel, monthKey) {
       }
 
       renderManager();
-      renderFields();
-      updateTotals();
+      setManagerStatus('Yeni alan eklendi (kaydetmek için Kaydet’e basın).');
     });
   }
 
@@ -2103,6 +2523,7 @@ function renderUcAylarTrackerPanel(panel, monthKey) {
     renderManager();
   }
   updateTotals();
+  updateNavButtons();
 }
 
 function loadUcAylarData() {
@@ -2131,7 +2552,8 @@ function saveUcAylarData(data) {
   }
 }
 
-function migrateUcAylarData(data) {
+function migrateUcAylarData(data, options = {}) {
+  const source = options && options.source === 'import' ? 'import' : 'local';
   const empty = { version: UCAYLAR_TRACKER_STORAGE_VERSION, trackers: {} };
   if (!data || typeof data !== 'object') {
     return empty;
@@ -2143,7 +2565,10 @@ function migrateUcAylarData(data) {
   if (version === UCAYLAR_TRACKER_STORAGE_VERSION) {
     const normalized = { version: UCAYLAR_TRACKER_STORAGE_VERSION, trackers: {} };
     Object.entries(trackers).forEach(([key, tracker]) => {
-      normalized.trackers[key] = normalizeUcAylarTracker(tracker);
+      const monthKey = extractUcAylarMonthKeyFromTrackerKey(key);
+      const normalizedTracker = normalizeUcAylarTracker(tracker);
+      applyUcAylarMonthDefaults(normalizedTracker, monthKey, { source });
+      normalized.trackers[key] = normalizedTracker;
     });
     return normalized;
   }
@@ -2151,7 +2576,10 @@ function migrateUcAylarData(data) {
   if (version === 0) {
     const normalized = { version: UCAYLAR_TRACKER_STORAGE_VERSION, trackers: {} };
     Object.entries(trackers).forEach(([key, tracker]) => {
-      normalized.trackers[key] = normalizeUcAylarTracker(tracker);
+      const monthKey = extractUcAylarMonthKeyFromTrackerKey(key);
+      const normalizedTracker = normalizeUcAylarTracker(tracker);
+      applyUcAylarMonthDefaults(normalizedTracker, monthKey, { source });
+      normalized.trackers[key] = normalizedTracker;
     });
     return normalized;
   }
@@ -2159,15 +2587,144 @@ function migrateUcAylarData(data) {
   return empty;
 }
 
+function extractUcAylarMonthKeyFromTrackerKey(key) {
+  if (typeof key !== 'string') {
+    return '';
+  }
+  const separatorIndex = key.indexOf('-');
+  if (separatorIndex <= 0) {
+    return '';
+  }
+  return key.slice(separatorIndex + 1);
+}
+
+function normalizeUcAylarRemovedDefaultFieldIds(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const cleaned = value
+    .filter((entry) => typeof entry === 'string')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  return Array.from(new Set(cleaned)).sort();
+}
+
+function applyUcAylarMonthDefaults(tracker, monthKey, options = {}) {
+  if (!tracker || typeof tracker !== 'object') {
+    return;
+  }
+
+  if (options.source !== 'import') {
+    const currentVersion = Number.isFinite(Number(tracker.defaultsVersion)) ? Number(tracker.defaultsVersion) : 0;
+    if (currentVersion < UCAYLAR_DEFAULTS_VERSION) {
+      upgradeUcAylarDefaultsV2(tracker);
+      tracker.defaultsVersion = UCAYLAR_DEFAULTS_VERSION;
+    }
+  }
+
+  if (!Array.isArray(tracker.removedDefaultFieldIds)) {
+    tracker.removedDefaultFieldIds = normalizeUcAylarRemovedDefaultFieldIds(tracker.removedDefaultFieldIds);
+  } else {
+    tracker.removedDefaultFieldIds = normalizeUcAylarRemovedDefaultFieldIds(tracker.removedDefaultFieldIds);
+  }
+
+  if (monthKey !== 'ramazan') {
+    return;
+  }
+
+  const dismissed = new Set(tracker.removedDefaultFieldIds);
+  const hasTeravih = Array.isArray(tracker.fields) && tracker.fields.some((field) => field && field.id === UCAYLAR_RAMAZAN_DEFAULT_FIELD_ID);
+  if (hasTeravih || dismissed.has(UCAYLAR_RAMAZAN_DEFAULT_FIELD_ID)) {
+    return;
+  }
+
+  // Import sırasında alanlar "override" edilir: dosyada Teravih yoksa otomatik eklemeyelim.
+  if (options.source === 'import') {
+    tracker.removedDefaultFieldIds = Array.from(new Set([...tracker.removedDefaultFieldIds, UCAYLAR_RAMAZAN_DEFAULT_FIELD_ID])).sort();
+    return;
+  }
+
+  if (!Array.isArray(tracker.fields)) {
+    tracker.fields = createDefaultUcAylarFields();
+  }
+  tracker.fields.push({
+    id: UCAYLAR_RAMAZAN_DEFAULT_FIELD_ID,
+    label: 'Teravih',
+    type: 'checkbox',
+    hidden: false,
+    pointsWhenDone: 100,
+  });
+}
+
+function upgradeUcAylarDefaultsV2(tracker) {
+  if (!tracker || typeof tracker !== 'object' || !Array.isArray(tracker.fields)) {
+    return;
+  }
+
+  const fieldsById = new Map(tracker.fields.map((field) => [field && field.id, field]));
+
+  const updateLabel = (fieldId, nextLabel) => {
+    const field = fieldsById.get(fieldId);
+    if (!field || typeof field !== 'object') {
+      return;
+    }
+    field.label = nextLabel;
+  };
+
+  const updateTypeToNumber = (fieldId) => {
+    const field = fieldsById.get(fieldId);
+    if (!field || typeof field !== 'object') {
+      return;
+    }
+    const fromType = field.type === 'number' ? 'number' : 'checkbox';
+    if (fromType === 'number') {
+      field.type = 'number';
+      field.step = Number.isFinite(Number(field.step)) ? Math.max(1, Number(field.step)) : 1;
+      return;
+    }
+
+    const carriedPoints = Number.isFinite(Number(field.pointsWhenDone)) ? Math.max(0, Number(field.pointsWhenDone)) : 0;
+    field.type = 'number';
+    field.pointsPerUnit = carriedPoints;
+    field.step = Number.isFinite(Number(field.step)) ? Math.max(1, Number(field.step)) : 1;
+
+    if (tracker.entries && typeof tracker.entries === 'object') {
+      convertFieldValuesForTypeChange(tracker.entries, fieldId, 'checkbox', 'number');
+    }
+  };
+
+  // Etiket düzeltmeleri
+  updateLabel('kuran', 'Kur’an-ı Kerim');
+  updateLabel('zikir', 'Zikir');
+  updateLabel('kucuk-cevsen', 'Küçük Cevşen (Bab)');
+
+  // Tip değişimleri (varsayılanı sayı yapmak istediklerimiz)
+  updateTypeToNumber('kucuk-cevsen');
+  updateTypeToNumber('tesbihat');
+  updateTypeToNumber('tevhidname');
+  updateTypeToNumber('kulubuddaria');
+
+  const zikir = fieldsById.get('zikir');
+  if (zikir && typeof zikir === 'object' && zikir.type === 'number') {
+    if (!Number.isFinite(Number(zikir.step)) || Number(zikir.step) < 1) {
+      zikir.step = 100;
+    }
+  }
+}
+
 function normalizeUcAylarTracker(tracker) {
   const normalized = {
     fields: createDefaultUcAylarFields(),
     entries: {},
+    removedDefaultFieldIds: [],
   };
 
   if (!tracker || typeof tracker !== 'object') {
     return normalized;
   }
+
+  normalized.removedDefaultFieldIds = normalizeUcAylarRemovedDefaultFieldIds(tracker.removedDefaultFieldIds);
+  normalized.defaultsVersion = Number.isFinite(Number(tracker.defaultsVersion)) ? Number(tracker.defaultsVersion) : 0;
 
   if (Array.isArray(tracker.fields) && tracker.fields.length) {
     normalized.fields = tracker.fields.map((field) => normalizeUcAylarField(field)).filter(Boolean);
@@ -2176,17 +2733,60 @@ function normalizeUcAylarTracker(tracker) {
     }
   }
 
+  const fieldMap = new Map(normalized.fields.map((field) => [field.id, field]));
+
   if (tracker.entries && typeof tracker.entries === 'object') {
     Object.entries(tracker.entries).forEach(([dateKey, entry]) => {
       if (!isValidDateKey(dateKey) || !entry || typeof entry !== 'object') {
         return;
       }
       const values = entry.values && typeof entry.values === 'object' ? entry.values : {};
-      normalized.entries[dateKey] = { values: { ...values } };
+      normalized.entries[dateKey] = { values: normalizeUcAylarEntryValues(values, fieldMap) };
     });
   }
 
   return normalized;
+}
+
+function normalizeUcAylarEntryValues(values, fieldMap) {
+  const normalized = {};
+  if (!values || typeof values !== 'object' || !(fieldMap instanceof Map)) {
+    return normalized;
+  }
+  Object.entries(values).forEach(([fieldId, rawValue]) => {
+    const field = fieldMap.get(fieldId);
+    if (!field) {
+      return;
+    }
+    const normalizedValue = normalizeUcAylarValueForField(field, rawValue);
+    if (typeof normalizedValue === 'undefined') {
+      return;
+    }
+    normalized[fieldId] = normalizedValue;
+  });
+  return normalized;
+}
+
+function normalizeUcAylarValueForField(field, value) {
+  if (!field) {
+    return undefined;
+  }
+  if (field.type === 'checkbox') {
+    if (value === true) return true;
+    if (value === false) return false;
+    if (typeof value === 'number') return value > 0;
+    if (typeof value === 'string') {
+      const lowered = value.trim().toLowerCase();
+      return lowered === 'true' || lowered === '1' || lowered === 'on' || lowered === 'yes';
+    }
+    return Boolean(value);
+  }
+
+  const parsed = typeof value === 'number' ? value : Number.parseFloat(String(value));
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 0;
+  }
+  return parsed;
 }
 
 function normalizeUcAylarField(field) {
@@ -2224,7 +2824,13 @@ function ensureDefaultUcAylarTracker(year, monthKey) {
   const key = getUcAylarTrackerKey(year, monthKey);
   let tracker = data.trackers[key];
   if (!tracker || typeof tracker !== 'object') {
-    tracker = { fields: createDefaultUcAylarFields(), entries: {} };
+    tracker = {
+      fields: createDefaultUcAylarFields(),
+      entries: {},
+      removedDefaultFieldIds: [],
+      defaultsVersion: UCAYLAR_DEFAULTS_VERSION,
+    };
+    applyUcAylarMonthDefaults(tracker, monthKey, { source: 'local' });
     data.trackers[key] = tracker;
     saveUcAylarData(data);
     return tracker;
@@ -2249,6 +2855,7 @@ function ensureDefaultUcAylarTracker(year, monthKey) {
     });
   }
 
+  applyUcAylarMonthDefaults(tracker, monthKey, { source: 'local' });
   data.trackers[key] = tracker;
   return tracker;
 }
@@ -2287,11 +2894,13 @@ function calculateDayPoints(fields, values) {
   return fields.reduce((total, field) => total + calculateFieldPoints(field, values[field.id]), 0);
 }
 
-function calculateUcAylarRangePoints(monthKey, range) {
+function calculateUcAylarRangePoints(monthKey, range, options = {}) {
   const normalized = normalizeUcAylarRange(range);
   if (!normalized) {
     return 0;
   }
+
+  const createMissing = options.createMissing !== false;
 
   // Storage şeması değişmeden (yıl bazlı tracker) range toplamı:
   // Range içindeki her gün için ilgili takvimin yıl tracker'ından puanı ekle.
@@ -2304,8 +2913,17 @@ function calculateUcAylarRangePoints(monthKey, range) {
     }
     let tracker = byYearCache.get(year);
     if (!tracker) {
-      tracker = ensureDefaultUcAylarTracker(year, monthKey);
+      if (createMissing) {
+        tracker = ensureDefaultUcAylarTracker(year, monthKey);
+      } else {
+        const key = getUcAylarTrackerKey(year, monthKey);
+        const candidate = state.ucaylar && state.ucaylar.data && state.ucaylar.data.trackers ? state.ucaylar.data.trackers[key] : null;
+        tracker = candidate && typeof candidate === 'object' ? normalizeUcAylarTracker(candidate) : null;
+      }
       byYearCache.set(year, tracker);
+    }
+    if (!tracker) {
+      return;
     }
     const entry = tracker && tracker.entries ? tracker.entries[dateKey] : null;
     if (!entry || typeof entry !== 'object') {
@@ -2329,6 +2947,82 @@ function calculateMonthPoints(tracker, year) {
     const values = entry.values && typeof entry.values === 'object' ? entry.values : {};
     return total + calculateDayPoints(tracker.fields, values);
   }, 0);
+}
+
+function convertFieldValuesForTypeChange(entriesByDate, fieldId, fromType, toType) {
+  if (!entriesByDate || typeof entriesByDate !== 'object' || !fieldId) {
+    return;
+  }
+  if (fromType === toType) {
+    return;
+  }
+
+  Object.values(entriesByDate).forEach((entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return;
+    }
+    if (!entry.values || typeof entry.values !== 'object') {
+      entry.values = {};
+    }
+
+    const raw = entry.values[fieldId];
+    const numeric = typeof raw === 'number' ? raw : Number.parseFloat(String(raw));
+    const normalizedNumber = Number.isFinite(numeric) ? Math.max(0, numeric) : 0;
+    const normalizedBoolean = raw === true
+      || raw === 1
+      || raw === '1'
+      || (typeof raw === 'string' && raw.trim().toLowerCase() === 'true');
+
+    if (fromType === 'checkbox' && toType === 'number') {
+      if (normalizedBoolean) {
+        entry.values[fieldId] = 1;
+      } else {
+        delete entry.values[fieldId];
+      }
+      return;
+    }
+
+    if (fromType === 'number' && toType === 'checkbox') {
+      if (normalizedNumber > 0) {
+        entry.values[fieldId] = true;
+      } else {
+        delete entry.values[fieldId];
+      }
+      return;
+    }
+
+    // Fallback: normalize by target type.
+    if (toType === 'checkbox') {
+      entry.values[fieldId] = normalizedNumber > 0;
+      if (!entry.values[fieldId]) {
+        delete entry.values[fieldId];
+      }
+      return;
+    }
+
+    if (toType === 'number') {
+      if (normalizedNumber > 0) {
+        entry.values[fieldId] = normalizedNumber;
+      } else {
+        delete entry.values[fieldId];
+      }
+    }
+  });
+}
+
+function removeFieldFromEntries(entriesByDate, fieldId) {
+  if (!entriesByDate || typeof entriesByDate !== 'object' || !fieldId) {
+    return;
+  }
+  Object.values(entriesByDate).forEach((entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return;
+    }
+    if (!entry.values || typeof entry.values !== 'object') {
+      return;
+    }
+    delete entry.values[fieldId];
+  });
 }
 
 function formatUcAylarPoints(points) {
@@ -2381,22 +3075,22 @@ function createUcAylarField({ label, type, points, step }) {
 
 function createDefaultUcAylarFields() {
   return [
-    { id: 'kuran', label: 'Kur’an-ı Kerim (Ayda 1 cüz)', type: 'number', hidden: false, pointsPerUnit: 10, step: 1 },
+    { id: 'kuran', label: 'Kur’an-ı Kerim', type: 'number', hidden: false, pointsPerUnit: 10, step: 1 },
     { id: 'meal', label: 'Meal', type: 'number', hidden: false, pointsPerUnit: 1, step: 1 },
     { id: 'risale', label: 'Risale', type: 'number', hidden: false, pointsPerUnit: 1, step: 1 },
     { id: 'pirlanta', label: 'Pırlanta', type: 'number', hidden: false, pointsPerUnit: 1, step: 1 },
     { id: 'buyuk-cevsen', label: 'Büyük Cevşen', type: 'number', hidden: false, pointsPerUnit: 1, step: 1 },
-    { id: 'kucuk-cevsen', label: 'Küçük Cevşen', type: 'checkbox', hidden: false, pointsWhenDone: 5 },
+    { id: 'kucuk-cevsen', label: 'Küçük Cevşen (Bab)', type: 'number', hidden: false, pointsPerUnit: 5, step: 1 },
     { id: 'duha', label: 'Duha', type: 'checkbox', hidden: false, pointsWhenDone: 5 },
     { id: 'evvabin', label: 'Evvabin', type: 'checkbox', hidden: false, pointsWhenDone: 5 },
     { id: 'teheccut', label: 'Teheccüt', type: 'checkbox', hidden: false, pointsWhenDone: 5 },
     { id: 'hacet', label: 'Hacet', type: 'checkbox', hidden: false, pointsWhenDone: 5 },
     { id: 'oruc', label: 'Oruç', type: 'checkbox', hidden: false, pointsWhenDone: 10 },
-    { id: 'zikir', label: 'Zikir (100 kere)', type: 'number', hidden: false, pointsPerUnit: 0.05, step: 100 },
+    { id: 'zikir', label: 'Zikir', type: 'number', hidden: false, pointsPerUnit: 0.05, step: 100 },
     { id: 'dinleme', label: 'Dinleme', type: 'number', hidden: false, pointsPerUnit: 0.2, step: 5 },
-    { id: 'tesbihat', label: 'Tesbihat', type: 'checkbox', hidden: false, pointsWhenDone: 5 },
-    { id: 'tevhidname', label: 'Tevhidname', type: 'checkbox', hidden: false, pointsWhenDone: 5 },
-    { id: 'kulubuddaria', label: 'Kulubüddaria', type: 'checkbox', hidden: false, pointsWhenDone: 5 },
+    { id: 'tesbihat', label: 'Tesbihat', type: 'number', hidden: false, pointsPerUnit: 5, step: 1 },
+    { id: 'tevhidname', label: 'Tevhidname', type: 'number', hidden: false, pointsPerUnit: 5, step: 1 },
+    { id: 'kulubuddaria', label: 'Kulubüddaria', type: 'number', hidden: false, pointsPerUnit: 5, step: 1 },
   ];
 }
 
@@ -8031,42 +8725,40 @@ function updateSettingsDuaControls() {
 function attachSettingsActions() {
   const resetButton = document.querySelector('[data-reset-dua]');
   const favoritesResetButton = document.querySelector('[data-reset-dua-favorites]');
-  if (!resetButton) {
-    return;
-  }
+  if (resetButton) {
+    state.duaResetButton = resetButton;
+    updateSettingsDuaControls();
 
-  state.duaResetButton = resetButton;
-  updateSettingsDuaControls();
-
-  resetButton.addEventListener('click', async () => {
-    if (resetButton.disabled) {
-      return;
-    }
-
-    const label = DUA_SOURCES[state.duaSource]?.label || 'seçili dua kaynağı';
-    const confirmed = window.confirm(`${label} okuma ilerlemesini sıfırlamak istiyor musunuz?`);
-    if (!confirmed) {
-      return;
-    }
-
-    resetButton.disabled = true;
-    try {
-      const duas = await loadDuaSourceData(state.duaSource);
-      state.duas = duas;
-      const nextState = resetDuaState(duas.length, state.duaSource, 0);
-      if (nextState.remaining.length > 0) {
-        nextState.current = pickRandomFrom(nextState.remaining);
-        saveDuaState();
-      } else {
-        saveDuaState();
+    resetButton.addEventListener('click', async () => {
+      if (resetButton.disabled) {
+        return;
       }
-      refreshDuaUI();
-    } catch (error) {
-      console.error('Dua ilerlemesi sıfırlanamadı.', error);
-    } finally {
-      resetButton.disabled = false;
-    }
-  });
+
+      const label = DUA_SOURCES[state.duaSource]?.label || 'seçili dua kaynağı';
+      const confirmed = window.confirm(`${label} okuma ilerlemesini sıfırlamak istiyor musunuz?`);
+      if (!confirmed) {
+        return;
+      }
+
+      resetButton.disabled = true;
+      try {
+        const duas = await loadDuaSourceData(state.duaSource);
+        state.duas = duas;
+        const nextState = resetDuaState(duas.length, state.duaSource, 0);
+        if (nextState.remaining.length > 0) {
+          nextState.current = pickRandomFrom(nextState.remaining);
+          saveDuaState();
+        } else {
+          saveDuaState();
+        }
+        refreshDuaUI();
+      } catch (error) {
+        console.error('Dua ilerlemesi sıfırlanamadı.', error);
+      } finally {
+        resetButton.disabled = false;
+      }
+    });
+  }
 
   if (favoritesResetButton) {
     favoritesResetButton.addEventListener('click', () => {
@@ -8081,6 +8773,131 @@ function attachSettingsActions() {
       clearDuaFavorites();
       window.alert('Kaydedilen dualar temizlendi.');
       refreshDuaUI();
+    });
+  }
+
+  attachUcAylarTransferControls();
+}
+
+function attachUcAylarTransferControls() {
+  const exportButton = document.querySelector('[data-ucaylar-export]');
+  const importTrigger = document.querySelector('[data-ucaylar-import-trigger]');
+  const importFile = document.querySelector('[data-ucaylar-import-file]');
+  const status = document.querySelector('[data-ucaylar-transfer-status]');
+
+  const setStatus = (message) => {
+    if (!status) {
+      return;
+    }
+    if (!message) {
+      status.hidden = true;
+      status.textContent = '';
+      return;
+    }
+    status.hidden = false;
+    status.textContent = message;
+  };
+
+  const downloadJson = (filename, payload) => {
+    try {
+      const content = JSON.stringify(payload, null, 2);
+      const blob = new Blob([content], { type: 'application/json' });
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      console.warn('Dosya indirilemedi.', error);
+      setStatus('Dosya indirilemedi. Lütfen tekrar deneyin.');
+    }
+  };
+
+  const formatDateForFilename = (dateKey) => {
+    if (!isValidDateKey(dateKey)) {
+      return '';
+    }
+    return dateKey.split('-').join('');
+  };
+
+  if (exportButton) {
+    exportButton.addEventListener('click', () => {
+      const payload = loadUcAylarData();
+      const todayKey = getTodayKey();
+      const suffix = formatDateForFilename(todayKey) || 'backup';
+      downloadJson(`tesbihat-ucaylar-backup-${suffix}.json`, payload);
+      setStatus('Üç Aylar verisi indirildi.');
+      window.setTimeout(() => setStatus(''), 2500);
+    });
+  }
+
+  const refreshUcAylarIfActive = () => {
+    if (state.currentPrayer !== 'ucaylar') {
+      return;
+    }
+    const content = document.getElementById('content');
+    if (!content) {
+      return;
+    }
+    const monthKey = state.ucaylar && state.ucaylar.activeMonthKey ? state.ucaylar.activeMonthKey : null;
+    const tab = state.ucaylar && state.ucaylar.activeMonthTab ? state.ucaylar.activeMonthTab : null;
+    if (monthKey) {
+      renderUcAylarMonthView(content, monthKey, { parentPrayerId: 'ucaylar', parentConfig: PRAYER_CONFIG.ucaylar, initialTab: tab === 'tracker' ? 'tracker' : 'content' });
+      return;
+    }
+    renderPrayerCollection(content, 'ucaylar', PRAYER_CONFIG.ucaylar);
+  };
+
+  const handleImportFile = async (file) => {
+    if (!file) {
+      return;
+    }
+    setStatus('');
+
+    try {
+      let text = '';
+      if (typeof file.text === 'function') {
+        text = await file.text();
+      } else {
+        text = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ''));
+          reader.onerror = () => reject(reader.error || new Error('Dosya okunamadı.'));
+          reader.readAsText(file);
+        });
+      }
+      const parsed = JSON.parse(text);
+      if (!parsed || typeof parsed !== 'object') {
+        throw new Error('Geçersiz JSON.');
+      }
+      if (typeof parsed.trackers !== 'object' || parsed.trackers === null) {
+        throw new Error('Geçersiz veri: trackers bulunamadı.');
+      }
+      const migrated = migrateUcAylarData(parsed, { source: 'import' });
+      state.ucaylar.data = migrated;
+      saveUcAylarData(migrated);
+      setStatus('Üç Aylar verisi içe aktarıldı.');
+      refreshUcAylarIfActive();
+      window.setTimeout(() => setStatus(''), 3500);
+    } catch (error) {
+      console.warn('Üç Aylar verisi içe aktarılamadı.', error);
+      setStatus('İçe aktarma başarısız. Dosya biçimini kontrol edin.');
+    }
+  };
+
+  if (importTrigger && importFile) {
+    importTrigger.addEventListener('click', () => {
+      setStatus('');
+      importFile.value = '';
+      importFile.click();
+    });
+
+    importFile.addEventListener('change', () => {
+      const file = importFile.files && importFile.files[0] ? importFile.files[0] : null;
+      handleImportFile(file);
     });
   }
 }
