@@ -1876,6 +1876,284 @@ body .language-toggle__option.is-active {
   display: none;
 }
 
+.muted {
+  margin: 0.35rem 0 0;
+  color: var(--muted-text);
+}
+
+.ucaylar-month {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.ucaylar-month__header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.ucaylar-month__title {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.ucaylar-tabs {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 0.4rem;
+  padding: 0.35rem;
+  border-radius: 999px;
+  background: var(--surface-overlay);
+  box-shadow: var(--shadow-soft);
+}
+
+.ucaylar-tab {
+  padding: 0.45rem 1.1rem;
+  border-radius: 999px;
+  font-weight: 600;
+  color: var(--muted-text);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+}
+
+.ucaylar-tab:focus-visible {
+  outline: 2px solid var(--focus-outline);
+  outline-offset: 2px;
+}
+
+.ucaylar-tab:hover {
+  transform: translateY(-1px);
+}
+
+.ucaylar-tab.is-active {
+  background: var(--accent-color);
+  color: var(--accent-contrast);
+  box-shadow: var(--shadow-soft);
+}
+
+.ucaylar-panels {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.ucaylar-panel[hidden] {
+  display: none;
+}
+
+.ucaylar-tracker {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.ucaylar-tracker__toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.ucaylar-tracker__heading h3 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.ucaylar-tracker__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: flex-end;
+}
+
+.ucaylar-tracker__date {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.ucaylar-tracker__date-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted-text);
+}
+
+.ucaylar-tracker input[type="date"],
+.ucaylar-tracker input[type="number"],
+.ucaylar-field-manager input[type="text"],
+.ucaylar-field-manager input[type="number"],
+.ucaylar-field-manager select {
+  padding: 0.65rem 0.75rem;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: var(--surface-elevated);
+  color: var(--text-color);
+  font: inherit;
+}
+
+.ucaylar-tracker__totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+}
+
+.ucaylar-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 14px;
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-color);
+}
+
+.ucaylar-total__label {
+  color: var(--muted-text);
+  font-weight: 600;
+}
+
+.ucaylar-total__value {
+  font-size: 1.1rem;
+}
+
+.ucaylar-tracker__fields-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.ucaylar-field {
+  display: grid;
+  grid-template-columns: 1fr minmax(110px, 160px) minmax(80px, 120px);
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.75rem 0.9rem;
+  border-radius: 14px;
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-color);
+}
+
+.ucaylar-field__label {
+  font-weight: 650;
+}
+
+.ucaylar-field__input {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ucaylar-field__input input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+}
+
+.ucaylar-field__points {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.points-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  background: var(--accent-soft-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+  font-weight: 700;
+  min-width: 3.2rem;
+  text-align: center;
+}
+
+.ucaylar-field-manager__header h3 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.ucaylar-field-manager__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  margin-top: 1rem;
+}
+
+.ucaylar-field-edit {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.6rem;
+  padding: 0.85rem 0.9rem;
+  border-radius: 14px;
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-color);
+}
+
+.ucaylar-field-edit__label {
+  width: 100%;
+}
+
+.ucaylar-field-edit__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.ucaylar-field-edit__points {
+  max-width: 140px;
+}
+
+.ucaylar-field-edit__hidden {
+  display: inline-flex;
+  gap: 0.45rem;
+  align-items: center;
+  color: var(--muted-text);
+  font-weight: 600;
+}
+
+.ucaylar-field-manager__add {
+  margin-top: 1.2rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.ucaylar-field-manager__add h4 {
+  margin: 0 0 0.6rem;
+}
+
+.ucaylar-field-manager__form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.85rem;
+  align-items: end;
+}
+
+.ucaylar-field-manager__form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-weight: 650;
+  color: var(--muted-text);
+}
+
+@media (max-width: 560px) {
+  .ucaylar-field {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .ucaylar-field__input,
+  .ucaylar-field__points {
+    justify-content: flex-start;
+  }
+}
+
 .zikir-reader {
   display: flex;
   flex-direction: column;

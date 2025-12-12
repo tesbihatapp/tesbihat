@@ -7,7 +7,7 @@
    =================================================================== */
 
 /* Versiyon numarasını her “önemli” değişimde artır ki eski cache temizlensin. */
-const CACHE_VERSION = 'v36';
+const CACHE_VERSION = 'v37';
 
 /* Scope → /tesbihat/  veya  /tesbihat/staging/  tespiti */
 const SCOPE_URL = self.registration && self.registration.scope ? new URL(self.registration.scope) : new URL('/', self.location.origin);
@@ -46,6 +46,17 @@ const RAW_ASSETS = [
   'TesbihatinOnemi.txt',
   'zikir-defaults.json',
   'names.json',
+
+  // Üç Aylar
+  'uc-aylar/recep/manifest.json',
+  'uc-aylar/recep/content/genel.md',
+  'uc-aylar/recep/content/tesbihler.md',
+  'uc-aylar/saban/manifest.json',
+  'uc-aylar/saban/content/genel.md',
+  'uc-aylar/saban/content/tesbihler.md',
+  'uc-aylar/ramazan/manifest.json',
+  'uc-aylar/ramazan/content/genel.md',
+  'uc-aylar/ramazan/content/tesbihler.md',
 
   // ikonlar
   'icons/icon-180.png',

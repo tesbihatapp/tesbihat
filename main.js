@@ -9,6 +9,8 @@ const DUA_FAVORITES_STORAGE_KEY = 'tesbihat:dua-favorites';
 const DUA_FAVORITES_VERSION = 1;
 const ZIKIR_STORAGE_KEY = 'tesbihat:zikirs';
 const ZIKIR_STORAGE_VERSION = 1;
+const UCAYLAR_TRACKER_STORAGE_KEY = 'tesbihat:ucaylar-tracker';
+const UCAYLAR_TRACKER_STORAGE_VERSION = 1;
 const COMPLETION_STORAGE_KEY = 'tesbihat:completions';
 const COMPLETION_STORAGE_VERSION = 1;
 const TRANSLATION_VISIBILITY_STORAGE_KEY = 'tesbihat:translations-visible';
@@ -49,6 +51,12 @@ let duaRepository = null;
 let zikirDefaultsPromise = null;
 const FEATURES_SOURCE_PATH = 'HomeFeatures.md';
 const ZIKIR_DEFAULTS_PATH = 'zikir-defaults.json';
+const UCAYLAR_BASE_PATH = 'uc-aylar';
+const UCAYLAR_MONTHS = {
+  recep: { key: 'recep', label: 'Recep', manifestPath: `${UCAYLAR_BASE_PATH}/recep/manifest.json` },
+  saban: { key: 'saban', label: 'Şaban', manifestPath: `${UCAYLAR_BASE_PATH}/saban/manifest.json` },
+  ramazan: { key: 'ramazan', label: 'Ramazan', manifestPath: `${UCAYLAR_BASE_PATH}/ramazan/manifest.json` },
+};
 
 const NAME_SECTIONS = [
   {
@@ -720,6 +728,15 @@ const PRAYER_CONFIG = {
       },
     ],
   },
+  ucaylar: {
+    label: 'Üç Aylar',
+    description: 'Recep, Şaban ve Ramazan içerikleri ve çetele takibi.',
+    items: [
+      { id: 'recep', label: 'Recep', view: 'ucaylar-month', monthKey: 'recep' },
+      { id: 'saban', label: 'Şaban', view: 'ucaylar-month', monthKey: 'saban' },
+      { id: 'ramazan', label: 'Ramazan', view: 'ucaylar-month', monthKey: 'ramazan' },
+    ],
+  },
 };
 
 const CEVSEN_PARTS = [
@@ -756,6 +773,12 @@ const HOME_QUICK_LINKS = [
     label: 'Dualar',
     description: 'Dua arşivine göz at',
     icon: '🤲🏼',
+  },
+  {
+    id: 'ucaylar',
+    label: 'Üç Aylar',
+    description: 'İçerikler ve çetele takibi',
+    icon: '🌙',
   },
 ];
 
@@ -1065,6 +1088,9 @@ const state = {
   completionData: loadCompletionData(),
   completionButtons: new Map(),
   fontScale: loadFontScale(),
+  ucaylar: {
+    data: loadUcAylarData(),
+  },
   names: null,
   tooltipElement: null,
   activeTooltipTarget: null,
@@ -1352,6 +1378,11 @@ async function renderPrayerCollectionItem(container, prayerId, config, item) {
   hideNameTooltip();
   container.innerHTML = '';
 
+  if (item && item.view === 'ucaylar-month' && item.monthKey) {
+    renderUcAylarMonthView(container, item.monthKey, { parentPrayerId: prayerId, parentConfig: config });
+    return;
+  }
+
   const wrapper = document.createElement('div');
   wrapper.className = 'collection-detail';
 
@@ -1361,7 +1392,7 @@ async function renderPrayerCollectionItem(container, prayerId, config, item) {
   const backButton = document.createElement('button');
   backButton.type = 'button';
   backButton.className = 'collection-back button-pill secondary';
-  backButton.textContent = 'Dualar listesine dön';
+  backButton.textContent = `${config && config.label ? config.label : 'Liste'} listesine dön`;
   backButton.addEventListener('click', () => {
     renderPrayerCollection(container, prayerId, config);
   });
@@ -1401,6 +1432,849 @@ async function renderPrayerCollectionItem(container, prayerId, config, item) {
       <p>İçerik yüklenirken bir hata oluştu. Lütfen daha sonra tekrar deneyin.</p>
     `;
   }
+}
+
+function renderUcAylarMonthView(container, monthKey, options = {}) {
+  hideNameTooltip();
+  container.innerHTML = '';
+
+  const month = UCAYLAR_MONTHS[monthKey];
+  const parentPrayerId = options.parentPrayerId || 'ucaylar';
+  const parentConfig = options.parentConfig || PRAYER_CONFIG[parentPrayerId] || PRAYER_CONFIG.ucaylar;
+
+  if (!month) {
+    container.innerHTML = `
+      <article class="card">
+        <h2>Üç Aylar</h2>
+        <p>Seçilen ay bulunamadı.</p>
+      </article>
+    `;
+    return;
+  }
+
+  const root = document.createElement('div');
+  root.className = 'ucaylar-month';
+
+  const headerCard = document.createElement('article');
+  headerCard.className = 'card ucaylar-month__header';
+
+  const backButton = document.createElement('button');
+  backButton.type = 'button';
+  backButton.className = 'button-pill secondary';
+  backButton.textContent = 'Üç Aylar listesine dön';
+  backButton.addEventListener('click', () => {
+    renderPrayerCollection(container, parentPrayerId, parentConfig);
+    if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  });
+
+  const title = document.createElement('h2');
+  title.className = 'ucaylar-month__title';
+  title.textContent = month.label;
+
+  headerCard.append(backButton, title);
+  root.append(headerCard);
+
+  const tabs = document.createElement('div');
+  tabs.className = 'ucaylar-tabs';
+  tabs.setAttribute('role', 'tablist');
+  tabs.innerHTML = `
+    <button type="button" class="ucaylar-tab is-active" data-ucaylar-tab="content" aria-pressed="true">İçerikler</button>
+    <button type="button" class="ucaylar-tab" data-ucaylar-tab="tracker" aria-pressed="false">Çetele</button>
+  `;
+
+  const panels = document.createElement('div');
+  panels.className = 'ucaylar-panels';
+  panels.innerHTML = `
+    <div class="ucaylar-panel" data-ucaylar-panel="content"></div>
+    <div class="ucaylar-panel" data-ucaylar-panel="tracker" hidden></div>
+  `;
+
+  root.append(tabs, panels);
+  container.append(root);
+
+  const tabButtons = Array.from(root.querySelectorAll('[data-ucaylar-tab]'));
+  const contentPanel = root.querySelector('[data-ucaylar-panel="content"]');
+  const trackerPanel = root.querySelector('[data-ucaylar-panel="tracker"]');
+
+  const setTab = (nextTab) => {
+    tabButtons.forEach((button) => {
+      const isActive = button.dataset.ucaylarTab === nextTab;
+      button.classList.toggle('is-active', isActive);
+      button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+    if (contentPanel) contentPanel.hidden = nextTab !== 'content';
+    if (trackerPanel) trackerPanel.hidden = nextTab !== 'tracker';
+
+    if (nextTab === 'content') {
+      renderUcAylarContentPanel(contentPanel, monthKey);
+    } else {
+      renderUcAylarTrackerPanel(trackerPanel, monthKey);
+    }
+  };
+
+  tabButtons.forEach((button) => {
+    button.addEventListener('click', () => setTab(button.dataset.ucaylarTab));
+  });
+
+  setTab('content');
+}
+
+function renderUcAylarContentPanel(panel, monthKey) {
+  const month = UCAYLAR_MONTHS[monthKey];
+  if (!panel || !month) {
+    return;
+  }
+  panel.innerHTML = `
+    <article class="card">
+      <h3>${month.label} içerikleri</h3>
+      <p class="muted">İçerik listesi yükleniyor…</p>
+    </article>
+  `;
+
+  loadUcAylarMonthManifest(monthKey)
+    .then((manifest) => {
+      renderUcAylarContentList(panel, monthKey, manifest);
+    })
+    .catch((error) => {
+      console.warn('Üç Aylar manifest yüklenemedi.', error);
+      panel.innerHTML = `
+        <article class="card">
+          <h3>İçerikler yüklenemedi</h3>
+          <p>Bu ayın içerik listesi yüklenirken bir sorun yaşandı.</p>
+        </article>
+      `;
+    });
+}
+
+async function loadUcAylarMonthManifest(monthKey) {
+  const month = UCAYLAR_MONTHS[monthKey];
+  if (!month) {
+    throw new Error('Ay bulunamadı.');
+  }
+  const response = await fetch(month.manifestPath, { cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error(`Manifest okunamadı: ${month.manifestPath}`);
+  }
+  return response.json();
+}
+
+function renderUcAylarContentList(panel, monthKey, manifest) {
+  const month = UCAYLAR_MONTHS[monthKey];
+  const items = manifest && Array.isArray(manifest.items) ? manifest.items : [];
+
+  panel.innerHTML = '';
+
+  const intro = document.createElement('article');
+  intro.className = 'card';
+  intro.innerHTML = `
+    <h3>${(manifest && manifest.title) || (month ? month.label : 'İçerikler')}</h3>
+    <p class="muted">Okumak istediğiniz başlığı seçin.</p>
+  `;
+  panel.append(intro);
+
+  const list = document.createElement('div');
+  list.className = 'collection-list';
+
+  if (!items.length) {
+    const empty = document.createElement('article');
+    empty.className = 'card collection-empty';
+    empty.textContent = 'Bu ay için henüz içerik eklenmedi.';
+    list.append(empty);
+    panel.append(list);
+    return;
+  }
+
+  items.forEach((item) => {
+    const card = document.createElement('article');
+    card.className = 'card collection-card';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'collection-card__button';
+    button.addEventListener('click', () => {
+      renderUcAylarContentDetail(panel, monthKey, manifest, item);
+      if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    });
+
+    const title = document.createElement('span');
+    title.className = 'collection-card__title';
+    title.textContent = item.title || item.id || 'İçerik';
+
+    const icon = document.createElement('span');
+    icon.className = 'collection-card__icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = '>';
+
+    button.append(title, icon);
+    card.append(button);
+    list.append(card);
+  });
+
+  panel.append(list);
+}
+
+function renderUcAylarContentDetail(panel, monthKey, manifest, item) {
+  const month = UCAYLAR_MONTHS[monthKey];
+  if (!panel || !item) {
+    return;
+  }
+
+  panel.innerHTML = '';
+
+  const headerCard = document.createElement('article');
+  headerCard.className = 'card collection-detail__header';
+
+  const backButton = document.createElement('button');
+  backButton.type = 'button';
+  backButton.className = 'collection-back button-pill secondary';
+  backButton.textContent = 'İçerik listesine dön';
+  backButton.addEventListener('click', () => {
+    renderUcAylarContentList(panel, monthKey, manifest);
+  });
+
+  const title = document.createElement('h3');
+  title.className = 'collection-detail__title';
+  title.textContent = item.title || item.id || (month ? month.label : 'İçerik');
+
+  headerCard.append(backButton, title);
+  panel.append(headerCard);
+
+  const contentCard = document.createElement('article');
+  contentCard.className = 'card collection-detail__content';
+  contentCard.innerHTML = `<div class="loading">İçerik yükleniyor…</div>`;
+  panel.append(contentCard);
+
+  const monthBase = `${UCAYLAR_BASE_PATH}/${monthKey}/`;
+  const markdownPath = item.markdown ? `${monthBase}${item.markdown}` : null;
+
+  if (!markdownPath) {
+    contentCard.innerHTML = `<p>İçerik dosyası bulunamadı.</p>`;
+    return;
+  }
+
+  fetchText(markdownPath)
+    .then(async (markdown) => {
+      renderTesbihat(contentCard, markdown);
+      await ensureNamesLoaded();
+      annotateNames(contentCard);
+      setupCounters(contentCard, `ucaylar-${monthKey}-${item.id || 'item'}`);
+    })
+    .catch((error) => {
+      console.warn('Üç Aylar içeriği yüklenemedi.', error);
+      contentCard.innerHTML = `<p>İçerik yüklenirken bir hata oluştu.</p>`;
+    });
+}
+
+function renderUcAylarTrackerPanel(panel, monthKey) {
+  const month = UCAYLAR_MONTHS[monthKey];
+  if (!panel || !month) {
+    return;
+  }
+
+  const initialDateKey = isValidDateKey(panel.dataset.ucaylarDate) ? panel.dataset.ucaylarDate : getTodayKey();
+  const initialManageOpen = panel.dataset.ucaylarManageOpen === 'true';
+
+  panel.dataset.ucaylarDate = initialDateKey;
+  panel.dataset.ucaylarManageOpen = initialManageOpen ? 'true' : 'false';
+
+  const root = document.createElement('div');
+  root.className = 'ucaylar-tracker';
+
+  const toolbarCard = document.createElement('article');
+  toolbarCard.className = 'card ucaylar-tracker__toolbar';
+  toolbarCard.innerHTML = `
+    <div class="ucaylar-tracker__toolbar-row">
+      <div class="ucaylar-tracker__heading">
+        <h3>${month.label} çetelesi</h3>
+        <p class="muted">Günlük girişleri kaydedip puanları takip edebilirsiniz.</p>
+      </div>
+      <div class="ucaylar-tracker__actions">
+        <label class="ucaylar-tracker__date">
+          <span class="ucaylar-tracker__date-label">Tarih</span>
+          <input type="date" class="ucaylar-tracker__date-input" data-ucaylar-date>
+        </label>
+        <button type="button" class="button-pill secondary" data-ucaylar-manage-toggle>Alanları Yönet</button>
+      </div>
+    </div>
+    <div class="ucaylar-tracker__totals">
+      <div class="ucaylar-total">
+        <span class="ucaylar-total__label">Gün toplam puan</span>
+        <strong class="ucaylar-total__value" data-ucaylar-day-total>0</strong>
+      </div>
+      <div class="ucaylar-total">
+        <span class="ucaylar-total__label">Ay toplam puan</span>
+        <strong class="ucaylar-total__value" data-ucaylar-month-total>0</strong>
+      </div>
+    </div>
+  `;
+
+  const managerCard = document.createElement('article');
+  managerCard.className = 'card ucaylar-field-manager';
+  managerCard.hidden = !initialManageOpen;
+  managerCard.innerHTML = `
+    <header class="ucaylar-field-manager__header">
+      <h3>Alanları yönet</h3>
+      <p class="muted">Etiket, puan, gizleme ve sıralamayı buradan düzenleyin.</p>
+    </header>
+    <div class="ucaylar-field-manager__list" data-ucaylar-field-manager-list></div>
+    <div class="ucaylar-field-manager__add">
+      <h4>Yeni alan ekle</h4>
+      <form class="ucaylar-field-manager__form" data-ucaylar-field-form novalidate>
+        <label>
+          <span>Etiket</span>
+          <input type="text" name="label" autocomplete="off" required>
+        </label>
+        <label>
+          <span>Tür</span>
+          <select name="type">
+            <option value="checkbox">Onay kutusu</option>
+            <option value="number">Sayı</option>
+          </select>
+        </label>
+        <label>
+          <span>Puan</span>
+          <input type="number" name="points" step="0.1" min="0" value="5">
+        </label>
+        <label>
+          <span>Adım (sayı için)</span>
+          <input type="number" name="step" step="1" min="1" value="1">
+        </label>
+        <button type="submit" class="settings-action-button">Ekle</button>
+      </form>
+    </div>
+  `;
+
+  const fieldsCard = document.createElement('article');
+  fieldsCard.className = 'card ucaylar-tracker__fields';
+  fieldsCard.innerHTML = `<div class="ucaylar-tracker__fields-inner" data-ucaylar-fields></div>`;
+
+  root.append(toolbarCard, managerCard, fieldsCard);
+  panel.innerHTML = '';
+  panel.append(root);
+
+  const dateInput = root.querySelector('[data-ucaylar-date]');
+  const manageToggle = root.querySelector('[data-ucaylar-manage-toggle]');
+  const dayTotalEl = root.querySelector('[data-ucaylar-day-total]');
+  const monthTotalEl = root.querySelector('[data-ucaylar-month-total]');
+  const fieldsContainer = root.querySelector('[data-ucaylar-fields]');
+  const managerList = root.querySelector('[data-ucaylar-field-manager-list]');
+  const managerForm = root.querySelector('[data-ucaylar-field-form]');
+
+  let activeDateKey = initialDateKey;
+  let saveTimer = null;
+
+  if (dateInput) {
+    dateInput.value = activeDateKey;
+    dateInput.addEventListener('change', () => {
+      const next = dateInput.value;
+      if (!isValidDateKey(next)) {
+        dateInput.value = activeDateKey;
+        return;
+      }
+      activeDateKey = next;
+      panel.dataset.ucaylarDate = activeDateKey;
+      renderFields();
+      updateTotals();
+    });
+  }
+
+  if (manageToggle) {
+    manageToggle.addEventListener('click', () => {
+      const nextOpen = managerCard.hidden;
+      managerCard.hidden = !nextOpen;
+      panel.dataset.ucaylarManageOpen = nextOpen ? 'true' : 'false';
+      if (nextOpen) {
+        renderManager();
+      }
+    });
+  }
+
+  const scheduleSave = () => {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+    }
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      saveUcAylarData(state.ucaylar.data);
+    }, 200);
+  };
+
+  const getActiveYear = () => Number.parseInt(activeDateKey.split('-')[0], 10);
+
+  const renderFields = () => {
+    if (!fieldsContainer) {
+      return;
+    }
+
+    const year = getActiveYear();
+    const tracker = ensureDefaultUcAylarTracker(year, monthKey);
+    const entry = ensureUcAylarEntry(tracker, activeDateKey);
+    const visibleFields = tracker.fields.filter((field) => !field.hidden);
+
+    fieldsContainer.innerHTML = '';
+
+    if (!visibleFields.length) {
+      fieldsContainer.innerHTML = `<p class="muted">Görüntülenecek alan yok. “Alanları Yönet” bölümünden alan ekleyebilirsiniz.</p>`;
+      return;
+    }
+
+    visibleFields.forEach((field) => {
+      const row = document.createElement('div');
+      row.className = 'ucaylar-field';
+      row.dataset.fieldId = field.id;
+
+      const label = document.createElement('div');
+      label.className = 'ucaylar-field__label';
+      label.textContent = field.label;
+
+      const inputWrap = document.createElement('div');
+      inputWrap.className = 'ucaylar-field__input';
+
+      const pointsWrap = document.createElement('div');
+      pointsWrap.className = 'ucaylar-field__points';
+
+      const pointsBadge = document.createElement('span');
+      pointsBadge.className = 'points-badge';
+      pointsBadge.textContent = formatUcAylarPoints(0);
+      pointsWrap.append(pointsBadge);
+
+      if (field.type === 'checkbox') {
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = Boolean(entry.values[field.id]);
+        input.addEventListener('change', () => {
+          entry.values[field.id] = input.checked;
+          pointsBadge.textContent = formatUcAylarPoints(calculateFieldPoints(field, input.checked));
+          updateTotals();
+          scheduleSave();
+        });
+        inputWrap.append(input);
+        pointsBadge.textContent = formatUcAylarPoints(calculateFieldPoints(field, input.checked));
+      } else {
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.min = '0';
+        input.step = String(field.step || 1);
+        const rawValue = entry.values[field.id];
+        const numericValue = typeof rawValue === 'number' && Number.isFinite(rawValue) ? rawValue : 0;
+        input.value = numericValue ? String(numericValue) : '';
+        input.addEventListener('input', () => {
+          const parsed = Number.parseFloat(input.value);
+          const nextValue = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+          entry.values[field.id] = nextValue;
+          pointsBadge.textContent = formatUcAylarPoints(calculateFieldPoints(field, nextValue));
+          updateTotals();
+          scheduleSave();
+        });
+        inputWrap.append(input);
+        pointsBadge.textContent = formatUcAylarPoints(calculateFieldPoints(field, numericValue));
+      }
+
+      row.append(label, inputWrap, pointsWrap);
+      fieldsContainer.append(row);
+    });
+  };
+
+  const renderManager = () => {
+    if (!managerList) {
+      return;
+    }
+    const year = getActiveYear();
+    const tracker = ensureDefaultUcAylarTracker(year, monthKey);
+    managerList.innerHTML = '';
+
+    tracker.fields.forEach((field, index) => {
+      const item = document.createElement('div');
+      item.className = 'ucaylar-field-edit';
+      item.dataset.fieldId = field.id;
+
+      const labelInput = document.createElement('input');
+      labelInput.type = 'text';
+      labelInput.value = field.label;
+      labelInput.className = 'ucaylar-field-edit__label';
+      labelInput.addEventListener('input', () => {
+        field.label = labelInput.value.trim() || field.label;
+        scheduleSave();
+        renderFields();
+      });
+
+      const pointsInput = document.createElement('input');
+      pointsInput.type = 'number';
+      pointsInput.min = '0';
+      pointsInput.step = '0.1';
+      pointsInput.value = String(field.type === 'checkbox' ? field.pointsWhenDone : field.pointsPerUnit);
+      pointsInput.className = 'ucaylar-field-edit__points';
+      pointsInput.addEventListener('input', () => {
+        const parsed = Number.parseFloat(pointsInput.value);
+        const nextPoints = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+        if (field.type === 'checkbox') {
+          field.pointsWhenDone = nextPoints;
+        } else {
+          field.pointsPerUnit = nextPoints;
+        }
+        scheduleSave();
+        renderFields();
+        updateTotals();
+      });
+
+      const hiddenToggle = document.createElement('label');
+      hiddenToggle.className = 'ucaylar-field-edit__hidden';
+      hiddenToggle.innerHTML = `<input type="checkbox"> <span>Gizle</span>`;
+      const hiddenInput = hiddenToggle.querySelector('input');
+      if (hiddenInput) {
+        hiddenInput.checked = Boolean(field.hidden);
+        hiddenInput.addEventListener('change', () => {
+          field.hidden = hiddenInput.checked;
+          scheduleSave();
+          renderFields();
+        });
+      }
+
+      const moveUp = document.createElement('button');
+      moveUp.type = 'button';
+      moveUp.className = 'button-pill secondary';
+      moveUp.textContent = '↑';
+      moveUp.disabled = index === 0;
+      moveUp.addEventListener('click', () => {
+        if (index <= 0) return;
+        const next = tracker.fields.slice();
+        const temp = next[index - 1];
+        next[index - 1] = next[index];
+        next[index] = temp;
+        tracker.fields = next;
+        scheduleSave();
+        renderManager();
+        renderFields();
+      });
+
+      const moveDown = document.createElement('button');
+      moveDown.type = 'button';
+      moveDown.className = 'button-pill secondary';
+      moveDown.textContent = '↓';
+      moveDown.disabled = index === tracker.fields.length - 1;
+      moveDown.addEventListener('click', () => {
+        if (index >= tracker.fields.length - 1) return;
+        const next = tracker.fields.slice();
+        const temp = next[index + 1];
+        next[index + 1] = next[index];
+        next[index] = temp;
+        tracker.fields = next;
+        scheduleSave();
+        renderManager();
+        renderFields();
+      });
+
+      const meta = document.createElement('div');
+      meta.className = 'ucaylar-field-edit__meta';
+      meta.append(hiddenToggle, pointsInput, moveUp, moveDown);
+
+      item.append(labelInput, meta);
+      managerList.append(item);
+    });
+  };
+
+  const updateTotals = () => {
+    const year = getActiveYear();
+    const tracker = ensureDefaultUcAylarTracker(year, monthKey);
+    const entry = ensureUcAylarEntry(tracker, activeDateKey);
+    const dayPoints = calculateDayPoints(tracker.fields, entry.values);
+    const monthPoints = calculateMonthPoints(tracker, year);
+    if (dayTotalEl) dayTotalEl.textContent = formatUcAylarPoints(dayPoints);
+    if (monthTotalEl) monthTotalEl.textContent = formatUcAylarPoints(monthPoints);
+  };
+
+  if (managerForm) {
+    managerForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const year = getActiveYear();
+      const tracker = ensureDefaultUcAylarTracker(year, monthKey);
+      const form = event.currentTarget;
+      const formData = new FormData(form);
+      const label = String(formData.get('label') || '').trim();
+      const type = String(formData.get('type') || 'checkbox');
+      const points = Number.parseFloat(String(formData.get('points') || '5'));
+      const step = Number.parseInt(String(formData.get('step') || '1'), 10);
+
+      if (!label) {
+        return;
+      }
+
+      const field = createUcAylarField({
+        label,
+        type: type === 'number' ? 'number' : 'checkbox',
+        points: Number.isFinite(points) ? Math.max(0, points) : 0,
+        step: Number.isFinite(step) ? Math.max(1, step) : 1,
+      });
+
+      tracker.fields.push(field);
+      scheduleSave();
+
+      form.reset();
+      const labelInput = form.querySelector('input[name="label"]');
+      if (labelInput) {
+        labelInput.focus();
+      }
+
+      renderManager();
+      renderFields();
+      updateTotals();
+    });
+  }
+
+  renderFields();
+  if (initialManageOpen) {
+    renderManager();
+  }
+  updateTotals();
+}
+
+function loadUcAylarData() {
+  const empty = { version: UCAYLAR_TRACKER_STORAGE_VERSION, trackers: {} };
+  try {
+    const raw = localStorage.getItem(UCAYLAR_TRACKER_STORAGE_KEY);
+    if (!raw) {
+      return empty;
+    }
+    const parsed = JSON.parse(raw);
+    return migrateUcAylarData(parsed);
+  } catch (error) {
+    console.warn('Üç Aylar çetele verisi okunamadı, sıfırlanacak.', error);
+    return empty;
+  }
+}
+
+function saveUcAylarData(data) {
+  if (!data || typeof data !== 'object') {
+    return;
+  }
+  try {
+    localStorage.setItem(UCAYLAR_TRACKER_STORAGE_KEY, JSON.stringify(data));
+  } catch (error) {
+    console.warn('Üç Aylar çetele verisi kaydedilemedi.', error);
+  }
+}
+
+function migrateUcAylarData(data) {
+  const empty = { version: UCAYLAR_TRACKER_STORAGE_VERSION, trackers: {} };
+  if (!data || typeof data !== 'object') {
+    return empty;
+  }
+
+  const version = Number.isFinite(Number(data.version)) ? Number(data.version) : 0;
+  const trackers = data.trackers && typeof data.trackers === 'object' ? data.trackers : {};
+
+  if (version === UCAYLAR_TRACKER_STORAGE_VERSION) {
+    const normalized = { version: UCAYLAR_TRACKER_STORAGE_VERSION, trackers: {} };
+    Object.entries(trackers).forEach(([key, tracker]) => {
+      normalized.trackers[key] = normalizeUcAylarTracker(tracker);
+    });
+    return normalized;
+  }
+
+  if (version === 0) {
+    const normalized = { version: UCAYLAR_TRACKER_STORAGE_VERSION, trackers: {} };
+    Object.entries(trackers).forEach(([key, tracker]) => {
+      normalized.trackers[key] = normalizeUcAylarTracker(tracker);
+    });
+    return normalized;
+  }
+
+  return empty;
+}
+
+function normalizeUcAylarTracker(tracker) {
+  const normalized = {
+    fields: createDefaultUcAylarFields(),
+    entries: {},
+  };
+
+  if (!tracker || typeof tracker !== 'object') {
+    return normalized;
+  }
+
+  if (Array.isArray(tracker.fields) && tracker.fields.length) {
+    normalized.fields = tracker.fields.map((field) => normalizeUcAylarField(field)).filter(Boolean);
+    if (!normalized.fields.length) {
+      normalized.fields = createDefaultUcAylarFields();
+    }
+  }
+
+  if (tracker.entries && typeof tracker.entries === 'object') {
+    Object.entries(tracker.entries).forEach(([dateKey, entry]) => {
+      if (!isValidDateKey(dateKey) || !entry || typeof entry !== 'object') {
+        return;
+      }
+      const values = entry.values && typeof entry.values === 'object' ? entry.values : {};
+      normalized.entries[dateKey] = { values: { ...values } };
+    });
+  }
+
+  return normalized;
+}
+
+function normalizeUcAylarField(field) {
+  if (!field || typeof field !== 'object') {
+    return null;
+  }
+  const type = field.type === 'number' ? 'number' : 'checkbox';
+  const id = typeof field.id === 'string' && field.id.trim() ? field.id.trim() : createUcAylarFieldId(field.label || 'alan');
+  const label = typeof field.label === 'string' && field.label.trim() ? field.label.trim() : 'Alan';
+  const hidden = Boolean(field.hidden);
+  const step = type === 'number' && Number.isFinite(Number(field.step)) ? Math.max(1, Number(field.step)) : 1;
+
+  if (type === 'checkbox') {
+    const pointsWhenDone = Number.isFinite(Number(field.pointsWhenDone)) ? Math.max(0, Number(field.pointsWhenDone)) : 5;
+    return { id, label, type, hidden, pointsWhenDone };
+  }
+
+  const pointsPerUnit = Number.isFinite(Number(field.pointsPerUnit)) ? Math.max(0, Number(field.pointsPerUnit)) : 1;
+  return { id, label, type, hidden, pointsPerUnit, step };
+}
+
+function getUcAylarTrackerKey(year, monthKey) {
+  return `${year}-${monthKey}`;
+}
+
+function ensureDefaultUcAylarTracker(year, monthKey) {
+  const data = state.ucaylar.data || { version: UCAYLAR_TRACKER_STORAGE_VERSION, trackers: {} };
+  if (!state.ucaylar.data) {
+    state.ucaylar.data = data;
+  }
+  if (!data.trackers || typeof data.trackers !== 'object') {
+    data.trackers = {};
+  }
+
+  const key = getUcAylarTrackerKey(year, monthKey);
+  let tracker = data.trackers[key];
+  if (!tracker) {
+    tracker = { fields: createDefaultUcAylarFields(), entries: {} };
+    data.trackers[key] = tracker;
+    saveUcAylarData(data);
+    return tracker;
+  }
+
+  data.trackers[key] = normalizeUcAylarTracker(tracker);
+  return data.trackers[key];
+}
+
+function ensureUcAylarEntry(tracker, dateKey) {
+  if (!tracker.entries || typeof tracker.entries !== 'object') {
+    tracker.entries = {};
+  }
+  let entry = tracker.entries[dateKey];
+  if (!entry || typeof entry !== 'object') {
+    entry = { values: {} };
+    tracker.entries[dateKey] = entry;
+    return entry;
+  }
+  if (!entry.values || typeof entry.values !== 'object') {
+    entry.values = {};
+  }
+  return entry;
+}
+
+function calculateFieldPoints(field, value) {
+  if (!field) {
+    return 0;
+  }
+  if (field.type === 'checkbox') {
+    return value ? Number(field.pointsWhenDone) || 0 : 0;
+  }
+  const numeric = typeof value === 'number' && Number.isFinite(value) ? value : 0;
+  return numeric * (Number(field.pointsPerUnit) || 0);
+}
+
+function calculateDayPoints(fields, values) {
+  if (!Array.isArray(fields) || !values || typeof values !== 'object') {
+    return 0;
+  }
+  return fields.reduce((total, field) => total + calculateFieldPoints(field, values[field.id]), 0);
+}
+
+function calculateMonthPoints(tracker, year) {
+  if (!tracker || !tracker.entries || typeof tracker.entries !== 'object') {
+    return 0;
+  }
+  const prefix = `${year}-`;
+  return Object.entries(tracker.entries).reduce((total, [dateKey, entry]) => {
+    if (!dateKey.startsWith(prefix) || !entry || typeof entry !== 'object') {
+      return total;
+    }
+    const values = entry.values && typeof entry.values === 'object' ? entry.values : {};
+    return total + calculateDayPoints(tracker.fields, values);
+  }, 0);
+}
+
+function formatUcAylarPoints(points) {
+  const value = Number.isFinite(Number(points)) ? Number(points) : 0;
+  const rounded = Math.round(value * 10) / 10;
+  if (Math.abs(rounded - Math.round(rounded)) < 0.001) {
+    return String(Math.round(rounded));
+  }
+  return rounded.toFixed(1);
+}
+
+function createUcAylarFieldId(label) {
+  const source = typeof label === 'string' ? label : 'alan';
+  const normalized = source
+    .toLocaleLowerCase('tr-TR')
+    .replace(/ı/g, 'i')
+    .replace(/ğ/g, 'g')
+    .replace(/ü/g, 'u')
+    .replace(/ş/g, 's')
+    .replace(/ö/g, 'o')
+    .replace(/ç/g, 'c')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+  const suffix = Math.random().toString(16).slice(2, 6);
+  return `uc-${normalized || 'alan'}-${suffix}`;
+}
+
+function createUcAylarField({ label, type, points, step }) {
+  const id = createUcAylarFieldId(label);
+  const safeLabel = typeof label === 'string' ? label.trim() : 'Alan';
+  if (type === 'number') {
+    return {
+      id,
+      label: safeLabel || 'Alan',
+      type: 'number',
+      hidden: false,
+      pointsPerUnit: Number.isFinite(points) ? points : 1,
+      step: Number.isFinite(step) ? Math.max(1, step) : 1,
+    };
+  }
+  return {
+    id,
+    label: safeLabel || 'Alan',
+    type: 'checkbox',
+    hidden: false,
+    pointsWhenDone: Number.isFinite(points) ? points : 5,
+  };
+}
+
+function createDefaultUcAylarFields() {
+  return [
+    { id: 'kuran', label: 'Kur’an-ı Kerim (Ayda 1 cüz)', type: 'number', hidden: false, pointsPerUnit: 10, step: 1 },
+    { id: 'meal', label: 'Meal', type: 'number', hidden: false, pointsPerUnit: 1, step: 1 },
+    { id: 'risale', label: 'Risale', type: 'number', hidden: false, pointsPerUnit: 1, step: 1 },
+    { id: 'pirlanta', label: 'Pırlanta', type: 'number', hidden: false, pointsPerUnit: 1, step: 1 },
+    { id: 'buyuk-cevsen', label: 'Büyük Cevşen', type: 'number', hidden: false, pointsPerUnit: 1, step: 1 },
+    { id: 'kucuk-cevsen', label: 'Küçük Cevşen', type: 'checkbox', hidden: false, pointsWhenDone: 5 },
+    { id: 'duha', label: 'Duha', type: 'checkbox', hidden: false, pointsWhenDone: 5 },
+    { id: 'evvabin', label: 'Evvabin', type: 'checkbox', hidden: false, pointsWhenDone: 5 },
+    { id: 'teheccut', label: 'Teheccüt', type: 'checkbox', hidden: false, pointsWhenDone: 5 },
+    { id: 'hacet', label: 'Hacet', type: 'checkbox', hidden: false, pointsWhenDone: 5 },
+    { id: 'oruc', label: 'Oruç', type: 'checkbox', hidden: false, pointsWhenDone: 10 },
+    { id: 'zikir', label: 'Zikir (100 kere)', type: 'number', hidden: false, pointsPerUnit: 0.05, step: 100 },
+    { id: 'dinleme', label: 'Dinleme', type: 'number', hidden: false, pointsPerUnit: 0.2, step: 5 },
+    { id: 'tesbihat', label: 'Tesbihat', type: 'checkbox', hidden: false, pointsWhenDone: 5 },
+    { id: 'tevhidname', label: 'Tevhidname', type: 'checkbox', hidden: false, pointsWhenDone: 5 },
+    { id: 'kulubuddaria', label: 'Kulubüddaria', type: 'checkbox', hidden: false, pointsWhenDone: 5 },
+  ];
 }
 
 async function renderCevsen(container, config) {
