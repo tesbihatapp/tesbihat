@@ -58,6 +58,17 @@ const UCAYLAR_MONTHS = {
   ramazan: { key: 'ramazan', label: 'Ramazan', manifestPath: `${UCAYLAR_BASE_PATH}/ramazan/manifest.json` },
 };
 
+// Üç Aylar (Hijri) tarih aralıkları.
+// Not: Bu aralıklar Gregoryen (YYYY-MM-DD) olarak tutulur ve aylar yıl sınırını aşabilir.
+// Karşılaştırmalarda timezone kaynaklı gün kaymasını önlemek için Date.UTC kullanıyoruz.
+const UCAYLAR_DATE_RANGES = {
+  2025: {
+    recep: { start: '2025-12-21', end: '2026-01-19' },
+    saban: { start: '2026-01-20', end: '2026-02-18' },
+    ramazan: { start: '2026-02-19', end: '2026-03-20' },
+  },
+};
+
 const NAME_SECTIONS = [
   {
     start: 'Tercümân-ı İsm-i A’zam Duâsı:',
@@ -1153,6 +1164,10 @@ document.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
+  if (typeof window !== 'undefined' && window.location && window.location.protocol === 'file:') {
+    console.info('[Tesbihat] Yerel önizleme için bir sunucu kullanın: `npx serve .` veya `python3 -m http.server 3000` → http://localhost:3000');
+  }
+
   state.appRoot = appRoot;
   document.documentElement.setAttribute('lang', state.language === 'ar' ? 'ar' : 'tr');
   appRoot.dataset.appLanguage = state.language;
@@ -1677,7 +1692,6 @@ function renderUcAylarTrackerPanel(panel, monthKey) {
   const initialDateKey = isValidDateKey(panel.dataset.ucaylarDate) ? panel.dataset.ucaylarDate : getTodayKey();
   const initialManageOpen = panel.dataset.ucaylarManageOpen === 'true';
 
-  panel.dataset.ucaylarDate = initialDateKey;
   panel.dataset.ucaylarManageOpen = initialManageOpen ? 'true' : 'false';
 
   const root = document.createElement('div');
@@ -1690,6 +1704,7 @@ function renderUcAylarTrackerPanel(panel, monthKey) {
       <div class="ucaylar-tracker__heading">
         <h3>${month.label} çetelesi</h3>
         <p class="muted">Günlük girişleri kaydedip puanları takip edebilirsiniz.</p>
+        <p class="muted" data-ucaylar-range></p>
       </div>
       <div class="ucaylar-tracker__actions">
         <label class="ucaylar-tracker__date">
@@ -1759,12 +1774,60 @@ function renderUcAylarTrackerPanel(panel, monthKey) {
   const manageToggle = root.querySelector('[data-ucaylar-manage-toggle]');
   const dayTotalEl = root.querySelector('[data-ucaylar-day-total]');
   const monthTotalEl = root.querySelector('[data-ucaylar-month-total]');
+  const rangeInfoEl = root.querySelector('[data-ucaylar-range]');
   const fieldsContainer = root.querySelector('[data-ucaylar-fields]');
   const managerList = root.querySelector('[data-ucaylar-field-manager-list]');
   const managerForm = root.querySelector('[data-ucaylar-field-form]');
 
   let activeDateKey = initialDateKey;
+  let activeRange = null;
   let saveTimer = null;
+
+  const updateRangeInfo = () => {
+    if (!rangeInfoEl) {
+      return;
+    }
+    if (activeRange) {
+      rangeInfoEl.textContent = `Geçerli aralık: ${activeRange.start} → ${activeRange.end}`;
+      return;
+    }
+    const knownRanges = listUcAylarRangesForMonth(monthKey);
+    rangeInfoEl.textContent = knownRanges.length ? 'Bu yıl için tarih aralığı tanımlı değil.' : 'Bu ay için tarih aralığı tanımlı değil.';
+  };
+
+  const applyActiveRange = () => {
+    if (dateInput) {
+      if (activeRange) {
+        dateInput.min = activeRange.start;
+        dateInput.max = activeRange.end;
+        const clamped = clampDateKeyToRange(activeDateKey, activeRange);
+        if (clamped !== activeDateKey) {
+          activeDateKey = clamped;
+        }
+      } else {
+        dateInput.removeAttribute('min');
+        dateInput.removeAttribute('max');
+      }
+      dateInput.value = activeDateKey;
+    }
+    panel.dataset.ucaylarDate = activeDateKey;
+    updateRangeInfo();
+  };
+
+  const resolveRangeForDateKey = (dateKey) => {
+    const contained = getUcAylarRangeForDate(monthKey, dateKey);
+    if (contained) {
+      return contained;
+    }
+    const year = Number.parseInt(dateKey.slice(0, 4), 10);
+    if (!Number.isFinite(year)) {
+      return null;
+    }
+    return getUcAylarRangeForStartYear(monthKey, year);
+  };
+
+  activeRange = resolveRangeForDateKey(activeDateKey);
+  applyActiveRange();
 
   if (dateInput) {
     dateInput.value = activeDateKey;
@@ -1775,7 +1838,8 @@ function renderUcAylarTrackerPanel(panel, monthKey) {
         return;
       }
       activeDateKey = next;
-      panel.dataset.ucaylarDate = activeDateKey;
+      activeRange = resolveRangeForDateKey(activeDateKey);
+      applyActiveRange();
       renderFields();
       updateTotals();
     });
@@ -1899,6 +1963,7 @@ function renderUcAylarTrackerPanel(panel, monthKey) {
         field.label = labelInput.value.trim() || field.label;
         scheduleSave();
         renderFields();
+        updateTotals();
       });
 
       const pointsInput = document.createElement('input');
@@ -1930,6 +1995,7 @@ function renderUcAylarTrackerPanel(panel, monthKey) {
           field.hidden = hiddenInput.checked;
           scheduleSave();
           renderFields();
+          updateTotals();
         });
       }
 
@@ -1948,6 +2014,7 @@ function renderUcAylarTrackerPanel(panel, monthKey) {
         scheduleSave();
         renderManager();
         renderFields();
+        updateTotals();
       });
 
       const moveDown = document.createElement('button');
@@ -1965,6 +2032,7 @@ function renderUcAylarTrackerPanel(panel, monthKey) {
         scheduleSave();
         renderManager();
         renderFields();
+        updateTotals();
       });
 
       const meta = document.createElement('div');
@@ -1981,9 +2049,15 @@ function renderUcAylarTrackerPanel(panel, monthKey) {
     const tracker = ensureDefaultUcAylarTracker(year, monthKey);
     const entry = ensureUcAylarEntry(tracker, activeDateKey);
     const dayPoints = calculateDayPoints(tracker.fields, entry.values);
-    const monthPoints = calculateMonthPoints(tracker, year);
     if (dayTotalEl) dayTotalEl.textContent = formatUcAylarPoints(dayPoints);
-    if (monthTotalEl) monthTotalEl.textContent = formatUcAylarPoints(monthPoints);
+
+    try {
+      const monthPoints = activeRange ? calculateUcAylarRangePoints(monthKey, activeRange) : calculateMonthPoints(tracker, year);
+      if (monthTotalEl) monthTotalEl.textContent = formatUcAylarPoints(monthPoints);
+    } catch (error) {
+      console.warn('Üç Aylar toplam puan hesaplanamadı.', error);
+      if (monthTotalEl) monthTotalEl.textContent = '0';
+    }
   };
 
   if (managerForm) {
@@ -2149,15 +2223,34 @@ function ensureDefaultUcAylarTracker(year, monthKey) {
 
   const key = getUcAylarTrackerKey(year, monthKey);
   let tracker = data.trackers[key];
-  if (!tracker) {
+  if (!tracker || typeof tracker !== 'object') {
     tracker = { fields: createDefaultUcAylarFields(), entries: {} };
     data.trackers[key] = tracker;
     saveUcAylarData(data);
     return tracker;
   }
 
-  data.trackers[key] = normalizeUcAylarTracker(tracker);
-  return data.trackers[key];
+  // Önemli: Burada tracker objesini her çağrıda "clone" etmiyoruz.
+  // Aksi halde UI event handler'larının kapattığı referanslar (entry/field) güncellenmez
+  // ve toplamlar doğru hesaplanamaz.
+  if (!Array.isArray(tracker.fields) || tracker.fields.length === 0) {
+    tracker.fields = createDefaultUcAylarFields();
+  }
+  if (!tracker.entries || typeof tracker.entries !== 'object') {
+    tracker.entries = {};
+  } else {
+    Object.values(tracker.entries).forEach((entry) => {
+      if (!entry || typeof entry !== 'object') {
+        return;
+      }
+      if (!entry.values || typeof entry.values !== 'object') {
+        entry.values = {};
+      }
+    });
+  }
+
+  data.trackers[key] = tracker;
+  return tracker;
 }
 
 function ensureUcAylarEntry(tracker, dateKey) {
@@ -2192,6 +2285,36 @@ function calculateDayPoints(fields, values) {
     return 0;
   }
   return fields.reduce((total, field) => total + calculateFieldPoints(field, values[field.id]), 0);
+}
+
+function calculateUcAylarRangePoints(monthKey, range) {
+  const normalized = normalizeUcAylarRange(range);
+  if (!normalized) {
+    return 0;
+  }
+
+  // Storage şeması değişmeden (yıl bazlı tracker) range toplamı:
+  // Range içindeki her gün için ilgili takvimin yıl tracker'ından puanı ekle.
+  const byYearCache = new Map();
+  let total = 0;
+  iterateDateKeysInRange(normalized).forEach((dateKey) => {
+    const year = Number.parseInt(dateKey.slice(0, 4), 10);
+    if (!Number.isFinite(year)) {
+      return;
+    }
+    let tracker = byYearCache.get(year);
+    if (!tracker) {
+      tracker = ensureDefaultUcAylarTracker(year, monthKey);
+      byYearCache.set(year, tracker);
+    }
+    const entry = tracker && tracker.entries ? tracker.entries[dateKey] : null;
+    if (!entry || typeof entry !== 'object') {
+      return;
+    }
+    const values = entry.values && typeof entry.values === 'object' ? entry.values : {};
+    total += calculateDayPoints(tracker.fields, values);
+  });
+  return total;
 }
 
 function calculateMonthPoints(tracker, year) {
@@ -4129,6 +4252,168 @@ function pruneCompletionRecord(record, retentionDays = COMPLETION_RETENTION_DAYS
 
 function getTodayKey() {
   return formatDateKey(new Date());
+}
+
+function dateKeyToUtcMs(dateKey) {
+  if (!isValidDateKey(dateKey)) {
+    return Number.NaN;
+  }
+  const [year, month, day] = dateKey.split('-').map((part) => Number.parseInt(part, 10));
+  return Date.UTC(year, month - 1, day);
+}
+
+function utcMsToDateKey(utcMs) {
+  const date = new Date(utcMs);
+  if (!Number.isFinite(date.getTime())) {
+    return '';
+  }
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function normalizeUcAylarRange(range) {
+  if (!range || typeof range !== 'object') {
+    return null;
+  }
+  const start = typeof range.start === 'string' ? range.start : '';
+  const end = typeof range.end === 'string' ? range.end : '';
+  if (!isValidDateKey(start) || !isValidDateKey(end)) {
+    return null;
+  }
+  const startUtcMs = dateKeyToUtcMs(start);
+  const endUtcMs = dateKeyToUtcMs(end);
+  if (!Number.isFinite(startUtcMs) || !Number.isFinite(endUtcMs)) {
+    return null;
+  }
+  if (startUtcMs <= endUtcMs) {
+    return { start, end, startUtcMs, endUtcMs };
+  }
+  return { start: end, end: start, startUtcMs: endUtcMs, endUtcMs: startUtcMs };
+}
+
+function isDateKeyInRange(dateKey, range) {
+  const normalized = normalizeUcAylarRange(range);
+  if (!normalized) {
+    return false;
+  }
+  const utcMs = dateKeyToUtcMs(dateKey);
+  if (!Number.isFinite(utcMs)) {
+    return false;
+  }
+  return utcMs >= normalized.startUtcMs && utcMs <= normalized.endUtcMs;
+}
+
+function clampDateKeyToRange(dateKey, range) {
+  const normalized = normalizeUcAylarRange(range);
+  if (!normalized) {
+    return dateKey;
+  }
+  const utcMs = dateKeyToUtcMs(dateKey);
+  if (!Number.isFinite(utcMs)) {
+    return normalized.start;
+  }
+  if (utcMs < normalized.startUtcMs) {
+    return normalized.start;
+  }
+  if (utcMs > normalized.endUtcMs) {
+    return normalized.end;
+  }
+  return dateKey;
+}
+
+function getUcAylarRangeForDate(monthKey, dateKey) {
+  if (!monthKey || !isValidDateKey(dateKey)) {
+    return null;
+  }
+  const utcMs = dateKeyToUtcMs(dateKey);
+  if (!Number.isFinite(utcMs)) {
+    return null;
+  }
+
+  const seasons = UCAYLAR_DATE_RANGES && typeof UCAYLAR_DATE_RANGES === 'object' ? UCAYLAR_DATE_RANGES : {};
+  const seasonEntries = Object.entries(seasons);
+  for (const [seasonYearRaw, season] of seasonEntries) {
+    if (!season || typeof season !== 'object') {
+      continue;
+    }
+    const range = normalizeUcAylarRange(season[monthKey]);
+    if (!range) {
+      continue;
+    }
+    if (utcMs >= range.startUtcMs && utcMs <= range.endUtcMs) {
+      return { ...range, seasonYear: Number.parseInt(seasonYearRaw, 10) || null };
+    }
+  }
+  return null;
+}
+
+function listUcAylarRangesForMonth(monthKey) {
+  const seasons = UCAYLAR_DATE_RANGES && typeof UCAYLAR_DATE_RANGES === 'object' ? UCAYLAR_DATE_RANGES : {};
+  return Object.entries(seasons)
+    .map(([seasonYearRaw, season]) => {
+      if (!season || typeof season !== 'object') {
+        return null;
+      }
+      const range = normalizeUcAylarRange(season[monthKey]);
+      if (!range) {
+        return null;
+      }
+      return { ...range, seasonYear: Number.parseInt(seasonYearRaw, 10) || null };
+    })
+    .filter(Boolean);
+}
+
+function getUcAylarRangeForStartYear(monthKey, year) {
+  if (!monthKey || !Number.isFinite(Number(year))) {
+    return null;
+  }
+  const targetYear = Number(year);
+  const ranges = listUcAylarRangesForMonth(monthKey);
+  const matching = ranges.filter((range) => Number.parseInt(range.start.slice(0, 4), 10) === targetYear);
+  if (!matching.length) {
+    return null;
+  }
+  if (matching.length === 1) {
+    return matching[0];
+  }
+  return matching.sort((a, b) => a.startUtcMs - b.startUtcMs)[0];
+}
+
+function selectClosestUcAylarRange(monthKey, referenceDateKey) {
+  const ranges = listUcAylarRangesForMonth(monthKey);
+  if (!ranges.length) {
+    return null;
+  }
+
+  const referenceUtcMs = dateKeyToUtcMs(isValidDateKey(referenceDateKey) ? referenceDateKey : getTodayKey());
+  if (!Number.isFinite(referenceUtcMs)) {
+    return ranges[0];
+  }
+
+  const upcoming = ranges
+    .filter((range) => range.startUtcMs >= referenceUtcMs)
+    .sort((a, b) => a.startUtcMs - b.startUtcMs);
+  if (upcoming.length) {
+    return upcoming[0];
+  }
+
+  const past = ranges.slice().sort((a, b) => b.endUtcMs - a.endUtcMs);
+  return past[0] || null;
+}
+
+function iterateDateKeysInRange(range) {
+  const normalized = normalizeUcAylarRange(range);
+  if (!normalized) {
+    return [];
+  }
+  const keys = [];
+  const dayMs = 24 * 60 * 60 * 1000;
+  for (let utcMs = normalized.startUtcMs; utcMs <= normalized.endUtcMs; utcMs += dayMs) {
+    keys.push(utcMsToDateKey(utcMs));
+  }
+  return keys;
 }
 
 function formatDateKey(date) {
