@@ -11,6 +11,9 @@ const ZIKIR_STORAGE_KEY = 'tesbihat:zikirs';
 const ZIKIR_STORAGE_VERSION = 1;
 const UCAYLAR_TRACKER_STORAGE_KEY = 'tesbihat:ucaylar-tracker';
 const UCAYLAR_TRACKER_STORAGE_VERSION = 1;
+const SHARED_DUA_LAST_ROOM_STORAGE_KEY = 'tesbihat:shared-dua:last-room';
+const SHARED_DUA_ROUTE_PREFIX = '#/shared/';
+const SHARED_DUA_FIREBASE_SDK_VERSION = '10.12.0';
 const COMPLETION_STORAGE_KEY = 'tesbihat:completions';
 const COMPLETION_STORAGE_VERSION = 1;
 const TRANSLATION_VISIBILITY_STORAGE_KEY = 'tesbihat:translations-visible';
@@ -49,6 +52,7 @@ const TRACKED_PRAYER_SET = new Set(TRACKED_PRAYERS);
 const LANGUAGE_OPTIONS = ['tr', 'ar'];
 let duaRepository = null;
 let zikirDefaultsPromise = null;
+let sharedDuaFirebasePromise = null;
 const FEATURES_SOURCE_PATH = 'HomeFeatures.md';
 const ZIKIR_DEFAULTS_PATH = 'zikir-defaults.json';
 const UCAYLAR_BASE_PATH = 'uc-aylar';
@@ -751,6 +755,11 @@ const PRAYER_CONFIG = {
       { id: 'ramazan', label: 'Ramazan', view: 'ucaylar-month', monthKey: 'ramazan' },
     ],
   },
+  ortakdua: {
+    label: 'Ortak Dua',
+    description: 'Ortak hatim ve Cevşen okuma odaları.',
+    sharedDua: true,
+  },
 };
 
 const CEVSEN_PARTS = [
@@ -793,6 +802,12 @@ const HOME_QUICK_LINKS = [
     label: 'Üç Aylar',
     description: 'İçerikler ve çetele takibi',
     icon: '🌙',
+  },
+  {
+    id: 'ortakdua',
+    label: 'Ortak Dua',
+    description: 'Ortak hatim ve Cevşen',
+    icon: '🤝',
   },
 ];
 
@@ -1105,6 +1120,11 @@ const state = {
   ucaylar: {
     data: loadUcAylarData(),
   },
+  sharedDua: {
+    ui: null,
+    pendingRoomId: null,
+    lastRoomId: loadSharedDuaLastRoomId(),
+  },
   names: null,
   tooltipElement: null,
   activeTooltipTarget: null,
@@ -1194,6 +1214,30 @@ document.addEventListener('DOMContentLoaded', () => {
   registerInstallPromptHandlers();
   initScrollTopButton();
 
+  const sharedRoomId = parseSharedDuaRoomIdFromLocation();
+  if (sharedRoomId) {
+    state.sharedDua.pendingRoomId = sharedRoomId;
+    state.currentPrayer = 'ortakdua';
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('hashchange', () => {
+      const nextRoomId = parseSharedDuaRoomIdFromLocation();
+      if (!nextRoomId) {
+        return;
+      }
+      state.sharedDua.pendingRoomId = nextRoomId;
+      if (state.currentPrayer === 'ortakdua') {
+        const content = document.getElementById('content');
+        if (content) {
+          renderSharedDua(content);
+        }
+        return;
+      }
+      setActivePrayer('ortakdua');
+    });
+  }
+
   setActivePrayer(state.currentPrayer);
 });
 
@@ -1263,6 +1307,9 @@ async function loadPrayerContent(prayerId) {
       state.cevsen.toolbar = null;
     }
   }
+  if (!config || !config.sharedDua) {
+    cleanupSharedDuaUI();
+  }
 
   if (!config) {
     content.innerHTML = `<div class="card">Seçtiğiniz vakit bulunamadı.</div>`;
@@ -1281,6 +1328,11 @@ async function loadPrayerContent(prayerId) {
 
   if (config.zikirManager) {
     await renderZikirManager(content);
+    return;
+  }
+
+  if (config.sharedDua) {
+    await renderSharedDua(content);
     return;
   }
 
@@ -4059,6 +4111,1124 @@ async function renderHomePage(container) {
       </article>
     `;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Ortak Dua (Firebase)
+// ---------------------------------------------------------------------------
+
+function cleanupSharedDuaUI() {
+  const ui = state.sharedDua && state.sharedDua.ui;
+  if (!ui) {
+    return;
+  }
+  if (Array.isArray(ui.unsubscribers)) {
+    ui.unsubscribers.forEach((unsubscribe) => {
+      try {
+        if (typeof unsubscribe === 'function') {
+          unsubscribe();
+        }
+      } catch (_error) {
+        // ignore
+      }
+    });
+  }
+  state.sharedDua.ui = null;
+}
+
+function normaliseSharedDuaRoomId(roomId) {
+  if (!roomId || typeof roomId !== 'string') {
+    return null;
+  }
+  const trimmed = roomId.trim();
+  if (!trimmed) {
+    return null;
+  }
+  // Firestore auto IDs are URL safe, but user might paste with whitespace.
+  if (!/^[A-Za-z0-9_-]{8,}$/.test(trimmed)) {
+    return null;
+  }
+  return trimmed;
+}
+
+function parseSharedDuaRoomIdFromLocation() {
+  if (typeof window === 'undefined' || !window.location) {
+    return null;
+  }
+
+  const hash = typeof window.location.hash === 'string' ? window.location.hash : '';
+  if (hash && hash.startsWith(SHARED_DUA_ROUTE_PREFIX)) {
+    const remainder = hash.slice(SHARED_DUA_ROUTE_PREFIX.length);
+    const firstSegment = remainder.split('/')[0];
+    const decoded = firstSegment ? decodeURIComponent(firstSegment) : '';
+    const normalised = normaliseSharedDuaRoomId(decoded);
+    if (normalised) {
+      return normalised;
+    }
+  }
+
+  try {
+    const params = new URLSearchParams(window.location.search || '');
+    const shared = params.get('shared');
+    const room = params.get('room');
+    if ((shared === '1' || shared === 'true') && room) {
+      const decoded = decodeURIComponent(room);
+      return normaliseSharedDuaRoomId(decoded);
+    }
+  } catch (_error) {
+    // ignore
+  }
+
+  return null;
+}
+
+function getSharedDuaBaseUrl() {
+  if (typeof window === 'undefined' || !window.location) {
+    return '';
+  }
+  const origin = window.location.origin || '';
+  const pathname = window.location.pathname || '/';
+  const basePath = pathname.endsWith('/index.html') ? pathname.slice(0, -'/index.html'.length) : pathname;
+  return `${origin}${basePath}`;
+}
+
+function buildSharedDuaShareLink(roomId) {
+  const base = getSharedDuaBaseUrl();
+  return `${base}${SHARED_DUA_ROUTE_PREFIX}${encodeURIComponent(roomId)}`;
+}
+
+function setSharedDuaHash(roomId) {
+  if (typeof window === 'undefined' || !window.location || !window.history) {
+    return;
+  }
+  const normalised = normaliseSharedDuaRoomId(roomId);
+  if (!normalised) {
+    return;
+  }
+  const nextUrl = `${window.location.pathname}${window.location.search}${SHARED_DUA_ROUTE_PREFIX}${encodeURIComponent(normalised)}`;
+  window.history.replaceState(null, '', nextUrl);
+}
+
+function clearSharedDuaHash() {
+  if (typeof window === 'undefined' || !window.location || !window.history) {
+    return;
+  }
+  if (!window.location.hash || !window.location.hash.startsWith(SHARED_DUA_ROUTE_PREFIX)) {
+    return;
+  }
+  window.history.replaceState(null, '', window.location.pathname + window.location.search);
+}
+
+async function copyTextToClipboard(text) {
+  const payload = typeof text === 'string' ? text : '';
+  if (!payload) {
+    return false;
+  }
+
+  try {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      await navigator.clipboard.writeText(payload);
+      return true;
+    }
+  } catch (_error) {
+    // fallback below
+  }
+
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = payload;
+    textarea.setAttribute('readonly', 'true');
+    textarea.style.position = 'fixed';
+    textarea.style.top = '-9999px';
+    textarea.style.left = '-9999px';
+    document.body.append(textarea);
+    textarea.select();
+    const ok = document.execCommand && document.execCommand('copy');
+    textarea.remove();
+    return Boolean(ok);
+  } catch (_error) {
+    return false;
+  }
+}
+
+function getSharedDuaFirebaseConfig() {
+  const config = typeof window !== 'undefined' ? window.FIREBASE_CONFIG : null;
+  if (!config || typeof config !== 'object') {
+    return null;
+  }
+
+  const required = ['apiKey', 'authDomain', 'projectId', 'appId'];
+  const hasAll = required.every((key) => typeof config[key] === 'string' && config[key].trim());
+  if (!hasAll) {
+    return null;
+  }
+
+  return config;
+}
+
+async function ensureSharedDuaFirebase() {
+  if (sharedDuaFirebasePromise) {
+    return sharedDuaFirebasePromise;
+  }
+
+  sharedDuaFirebasePromise = (async () => {
+    const config = getSharedDuaFirebaseConfig();
+    if (!config) {
+      throw new Error('Firebase yapılandırması bulunamadı. Lütfen firebase-config.js dosyasını doldurun.');
+    }
+
+    const [appModule, authModule, firestoreModule] = await Promise.all([
+      import(`https://www.gstatic.com/firebasejs/${SHARED_DUA_FIREBASE_SDK_VERSION}/firebase-app.js`),
+      import(`https://www.gstatic.com/firebasejs/${SHARED_DUA_FIREBASE_SDK_VERSION}/firebase-auth.js`),
+      import(`https://www.gstatic.com/firebasejs/${SHARED_DUA_FIREBASE_SDK_VERSION}/firebase-firestore.js`),
+    ]);
+
+    const { initializeApp, getApps, getApp } = appModule;
+    const { getAuth, signInAnonymously } = authModule;
+
+    const app = getApps().length ? getApp() : initializeApp(config);
+    const auth = getAuth(app);
+
+    let user = auth.currentUser;
+    if (!user) {
+      const result = await signInAnonymously(auth);
+      user = result.user;
+    }
+    if (!user || !user.uid) {
+      throw new Error('Oturum açılamadı.');
+    }
+
+    const db = firestoreModule.getFirestore(app);
+    return {
+      uid: user.uid,
+      db,
+      fs: firestoreModule,
+    };
+  })();
+
+  return sharedDuaFirebasePromise;
+}
+
+function buildSharedDuaPartsDefinition(roomType, hatimMode, totalParts) {
+  const resolvedTotal = Math.max(0, Math.floor(totalParts || 0));
+  const parts = [];
+
+  if (roomType === 'cevsen') {
+    // 100 bab → 5'li gruplar = 20 parça.
+    for (let index = 1; index <= 20; index += 1) {
+      const start = (index - 1) * 5 + 1;
+      const end = Math.min(index * 5, 100);
+      parts.push({ id: String(index), index, label: `Bab ${start}-${end}` });
+    }
+    return parts;
+  }
+
+  if (roomType === 'hatim' && hatimMode === 'cuz') {
+    for (let index = 1; index <= 30; index += 1) {
+      parts.push({ id: String(index), index, label: `Cüz ${index}` });
+    }
+    return parts;
+  }
+
+  for (let index = 1; index <= resolvedTotal; index += 1) {
+    parts.push({ id: String(index), index, label: `Sayfa ${index}` });
+  }
+  return parts;
+}
+
+async function createSharedDuaRoom(options) {
+  const { db, fs, uid } = await ensureSharedDuaFirebase();
+
+  const roomType = options && options.type === 'cevsen' ? 'cevsen' : 'hatim';
+  const hatimMode = roomType === 'hatim' && options && options.hatimMode === 'page' ? 'page' : 'cuz';
+  const maxClaimsPerUser = clamp(Math.floor(options && options.maxClaimsPerUser ? options.maxClaimsPerUser : 1), 1, 5);
+  const name = options && typeof options.name === 'string' ? options.name.trim() : '';
+
+  const totalParts = roomType === 'cevsen'
+    ? 20
+    : hatimMode === 'page'
+      ? Math.max(1, Math.floor(options && options.totalParts ? options.totalParts : 604))
+      : 30;
+
+  const roomsCol = fs.collection(db, 'rooms');
+  const roomRef = fs.doc(roomsCol);
+  const roomId = roomRef.id;
+
+  const roomPayload = {
+    type: roomType,
+    hatimMode: roomType === 'hatim' ? hatimMode : null,
+    totalParts,
+    createdAt: fs.serverTimestamp(),
+    createdBy: uid,
+    name,
+    maxClaimsPerUser,
+    members: { [uid]: true },
+    claimCounts: { [uid]: 0 },
+    status: 'active',
+  };
+
+  await fs.setDoc(roomRef, roomPayload);
+
+  const parts = buildSharedDuaPartsDefinition(roomType, hatimMode, totalParts);
+  const chunkSize = 450; // Firestore batch limit: 500
+
+  for (let offset = 0; offset < parts.length; offset += chunkSize) {
+    const batch = fs.writeBatch(db);
+    const slice = parts.slice(offset, offset + chunkSize);
+    slice.forEach((part) => {
+      const partRef = fs.doc(fs.collection(db, 'rooms', roomId, 'parts'), part.id);
+      batch.set(partRef, {
+        index: part.index,
+        label: part.label,
+        state: 'available',
+        claimedBy: null,
+        claimedAt: null,
+        doneBy: null,
+        doneAt: null,
+      });
+    });
+    await batch.commit();
+  }
+
+  saveSharedDuaLastRoomId(roomId);
+  return roomId;
+}
+
+async function joinSharedDuaRoom(roomId) {
+  const { db, fs, uid } = await ensureSharedDuaFirebase();
+  const normalised = normaliseSharedDuaRoomId(roomId);
+  if (!normalised) {
+    throw new Error('Oda kodu geçersiz.');
+  }
+  const roomRef = fs.doc(db, 'rooms', normalised);
+  await fs.updateDoc(roomRef, { [`members.${uid}`]: true });
+  saveSharedDuaLastRoomId(normalised);
+  return normalised;
+}
+
+async function sharedDuaClaimPart(roomId, partId) {
+  const { db, fs, uid } = await ensureSharedDuaFirebase();
+  const normalised = normaliseSharedDuaRoomId(roomId);
+  const resolvedPartId = String(partId || '').trim();
+  if (!normalised || !resolvedPartId) {
+    throw new Error('Parça bulunamadı.');
+  }
+
+  const roomRef = fs.doc(db, 'rooms', normalised);
+  const partRef = fs.doc(db, 'rooms', normalised, 'parts', resolvedPartId);
+
+  await fs.runTransaction(db, async (transaction) => {
+    const roomSnap = await transaction.get(roomRef);
+    if (!roomSnap.exists()) {
+      throw new Error('Oda bulunamadı.');
+    }
+    const room = roomSnap.data() || {};
+    const maxClaims = clamp(Math.floor(room.maxClaimsPerUser || 1), 1, 5);
+    const current = room.claimCounts && typeof room.claimCounts[uid] === 'number' ? room.claimCounts[uid] : 0;
+    if (current >= maxClaims) {
+      throw new Error(`En fazla ${maxClaims} parça alabilirsiniz.`);
+    }
+
+    const partSnap = await transaction.get(partRef);
+    if (!partSnap.exists()) {
+      throw new Error('Parça bulunamadı.');
+    }
+    const part = partSnap.data() || {};
+    if (part.state !== 'available') {
+      throw new Error('Bu parça artık uygun değil.');
+    }
+
+    transaction.update(partRef, {
+      state: 'claimed',
+      claimedBy: uid,
+      claimedAt: fs.serverTimestamp(),
+      doneBy: null,
+      doneAt: null,
+    });
+
+    transaction.update(roomRef, {
+      [`claimCounts.${uid}`]: current + 1,
+    });
+  });
+}
+
+async function sharedDuaReleasePart(roomId, partId) {
+  const { db, fs, uid } = await ensureSharedDuaFirebase();
+  const normalised = normaliseSharedDuaRoomId(roomId);
+  const resolvedPartId = String(partId || '').trim();
+  if (!normalised || !resolvedPartId) {
+    throw new Error('Parça bulunamadı.');
+  }
+
+  const roomRef = fs.doc(db, 'rooms', normalised);
+  const partRef = fs.doc(db, 'rooms', normalised, 'parts', resolvedPartId);
+
+  await fs.runTransaction(db, async (transaction) => {
+    const roomSnap = await transaction.get(roomRef);
+    if (!roomSnap.exists()) {
+      throw new Error('Oda bulunamadı.');
+    }
+    const partSnap = await transaction.get(partRef);
+    if (!partSnap.exists()) {
+      throw new Error('Parça bulunamadı.');
+    }
+    const part = partSnap.data() || {};
+    if (part.state !== 'claimed' || part.claimedBy !== uid) {
+      throw new Error('Bu parçayı yalnızca alan kişi bırakabilir.');
+    }
+
+    transaction.update(partRef, {
+      state: 'available',
+      claimedBy: null,
+      claimedAt: null,
+      doneBy: null,
+      doneAt: null,
+    });
+
+    const room = roomSnap.data() || {};
+    const current = room.claimCounts && typeof room.claimCounts[uid] === 'number' ? room.claimCounts[uid] : 0;
+    transaction.update(roomRef, { [`claimCounts.${uid}`]: Math.max(0, current - 1) });
+  });
+}
+
+async function sharedDuaMarkDone(roomId, partId) {
+  const { db, fs, uid } = await ensureSharedDuaFirebase();
+  const normalised = normaliseSharedDuaRoomId(roomId);
+  const resolvedPartId = String(partId || '').trim();
+  if (!normalised || !resolvedPartId) {
+    throw new Error('Parça bulunamadı.');
+  }
+
+  const roomRef = fs.doc(db, 'rooms', normalised);
+  const partRef = fs.doc(db, 'rooms', normalised, 'parts', resolvedPartId);
+
+  await fs.runTransaction(db, async (transaction) => {
+    const roomSnap = await transaction.get(roomRef);
+    if (!roomSnap.exists()) {
+      throw new Error('Oda bulunamadı.');
+    }
+    const partSnap = await transaction.get(partRef);
+    if (!partSnap.exists()) {
+      throw new Error('Parça bulunamadı.');
+    }
+    const part = partSnap.data() || {};
+    if (part.state !== 'claimed' || part.claimedBy !== uid) {
+      throw new Error('Bu parçayı yalnızca alan kişi tamamlayabilir.');
+    }
+
+    transaction.update(partRef, {
+      state: 'done',
+      doneBy: uid,
+      doneAt: fs.serverTimestamp(),
+    });
+
+    const room = roomSnap.data() || {};
+    const current = room.claimCounts && typeof room.claimCounts[uid] === 'number' ? room.claimCounts[uid] : 0;
+    transaction.update(roomRef, { [`claimCounts.${uid}`]: Math.max(0, current - 1) });
+  });
+}
+
+async function sharedDuaClaimNextAvailable(roomId, parts) {
+  const normalised = normaliseSharedDuaRoomId(roomId);
+  if (!normalised) {
+    throw new Error('Oda kodu geçersiz.');
+  }
+
+  const list = Array.isArray(parts) ? parts.slice() : [];
+  list.sort((a, b) => Math.floor(a && a.index ? a.index : 0) - Math.floor(b && b.index ? b.index : 0));
+  const candidates = list.filter((part) => part && part.state === 'available' && part.id);
+  if (!candidates.length) {
+    throw new Error('Uygun parça bulunamadı.');
+  }
+
+  let lastError = null;
+  const attempts = Math.min(candidates.length, 6);
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      await sharedDuaClaimPart(normalised, candidates[attempt].id);
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (lastError) {
+    throw lastError;
+  }
+  throw new Error('Parça alınamadı.');
+}
+
+function computeSharedDuaProgress(parts) {
+  const list = Array.isArray(parts) ? parts : [];
+  let done = 0;
+  let claimed = 0;
+  let available = 0;
+  list.forEach((part) => {
+    const state = part && typeof part.state === 'string' ? part.state : 'available';
+    if (state === 'done') done += 1;
+    else if (state === 'claimed') claimed += 1;
+    else available += 1;
+  });
+  return { done, claimed, available, total: list.length };
+}
+
+function formatSharedDuaPercent(done, total) {
+  const resolvedTotal = Math.max(0, Math.floor(total || 0));
+  if (!resolvedTotal) {
+    return '0';
+  }
+  const resolvedDone = Math.max(0, Math.floor(done || 0));
+  return String(Math.round((resolvedDone / resolvedTotal) * 100));
+}
+
+async function renderSharedDua(container) {
+  hideNameTooltip();
+  cleanupSharedDuaUI();
+  container.innerHTML = '';
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'collection-wrapper shared-dua';
+  container.append(wrapper);
+
+  const pending = state.sharedDua && state.sharedDua.pendingRoomId ? state.sharedDua.pendingRoomId : null;
+  if (pending) {
+    state.sharedDua.pendingRoomId = null;
+    renderSharedDuaRoom(wrapper, pending);
+    return;
+  }
+
+  const fromUrl = parseSharedDuaRoomIdFromLocation();
+  if (fromUrl) {
+    renderSharedDuaRoom(wrapper, fromUrl);
+    return;
+  }
+
+  renderSharedDuaHome(wrapper);
+}
+
+function renderSharedDuaHome(wrapper) {
+  wrapper.innerHTML = '';
+
+  const introCard = document.createElement('article');
+  introCard.className = 'card collection-intro';
+  introCard.innerHTML = `
+    <h2 class="collection-intro__title">Ortak Dua</h2>
+    <p class="collection-intro__description">Ortak hatim veya Cevşen okuma odaları oluşturun ve katılın.</p>
+  `;
+  wrapper.append(introCard);
+
+  const list = document.createElement('div');
+  list.className = 'collection-list';
+
+  const card = (title, description, icon) => {
+    const el = document.createElement('article');
+    el.className = 'card shared-dua-card';
+    el.innerHTML = `
+      <div class="shared-dua-card__header">
+        <div class="shared-dua-card__icon" aria-hidden="true">${icon}</div>
+        <div class="shared-dua-card__title-wrap">
+          <h3 class="shared-dua-card__title">${title}</h3>
+          <p class="shared-dua-card__description muted">${description}</p>
+        </div>
+      </div>
+      <div class="shared-dua-card__actions">
+        <button type="button" class="button-pill" data-shared-create>Yeni Oda Oluştur</button>
+      </div>
+    `;
+    return el;
+  };
+
+  const hatimCard = card('Ortak Hatim', 'Cüz veya sayfa bazında hatim paylaşımı.', '📖');
+  hatimCard.querySelector('[data-shared-create]')?.addEventListener('click', () => {
+    renderSharedDuaCreate(wrapper, 'hatim');
+  });
+  list.append(hatimCard);
+
+  const cevsenCard = card('Ortak Cevşen', 'Cevşen-i Kebîr bablarını 5’li gruplar halinde paylaşın.', '📜');
+  cevsenCard.querySelector('[data-shared-create]')?.addEventListener('click', () => {
+    renderSharedDuaCreate(wrapper, 'cevsen');
+  });
+  list.append(cevsenCard);
+
+  const joinCard = document.createElement('article');
+  joinCard.className = 'card shared-dua-join';
+  joinCard.innerHTML = `
+    <h3>Odaya Katıl</h3>
+    <p class="muted">Paylaşılan bağlantıyı açabilir veya oda kodunu buraya yapıştırabilirsiniz.</p>
+    <form class="zikir-form shared-dua-join__form" data-shared-join-form>
+      <label class="zikir-form__label">
+        Oda kodu
+        <input type="text" autocomplete="off" inputmode="text" placeholder="Örn: AbCdEfGh12" data-shared-room-id />
+      </label>
+      <div class="zikir-form__row">
+        <button type="submit" class="button-pill secondary">Katıl</button>
+      </div>
+      <p class="zikir-form__message" data-shared-join-message hidden></p>
+    </form>
+  `;
+
+  const joinForm = joinCard.querySelector('[data-shared-join-form]');
+  const joinInput = joinCard.querySelector('[data-shared-room-id]');
+  const joinMessage = joinCard.querySelector('[data-shared-join-message]');
+
+  const setJoinMessage = (status, message) => {
+    if (!joinMessage) {
+      return;
+    }
+    if (!message) {
+      joinMessage.hidden = true;
+      joinMessage.textContent = '';
+      joinMessage.removeAttribute('data-status');
+      return;
+    }
+    joinMessage.hidden = false;
+    joinMessage.textContent = message;
+    if (status) {
+      joinMessage.dataset.status = status;
+    } else {
+      joinMessage.removeAttribute('data-status');
+    }
+  };
+
+  if (joinForm) {
+    joinForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      setJoinMessage('', '');
+      const value = joinInput && typeof joinInput.value === 'string' ? joinInput.value : '';
+      const roomId = normaliseSharedDuaRoomId(value);
+      if (!roomId) {
+        setJoinMessage('error', 'Lütfen geçerli bir oda kodu girin.');
+        return;
+      }
+      const submitButton = joinForm.querySelector('button[type="submit"]');
+      if (submitButton) {
+        submitButton.disabled = true;
+      }
+      try {
+        setSharedDuaHash(roomId);
+        await joinSharedDuaRoom(roomId);
+        renderSharedDuaRoom(wrapper, roomId);
+      } catch (error) {
+        console.warn('Odaya katılım başarısız.', error);
+        setJoinMessage('error', error && error.message ? error.message : 'Odaya katılırken bir sorun yaşandı.');
+      } finally {
+        if (submitButton) {
+          submitButton.disabled = false;
+        }
+      }
+    });
+  }
+
+  if (state.sharedDua && state.sharedDua.lastRoomId) {
+    const last = normaliseSharedDuaRoomId(state.sharedDua.lastRoomId);
+    if (last) {
+      const lastCard = document.createElement('article');
+      lastCard.className = 'card shared-dua-last';
+      lastCard.innerHTML = `
+        <h3>Son oda</h3>
+        <p class="muted">${last}</p>
+        <div class="shared-dua-card__actions">
+          <button type="button" class="button-pill secondary" data-shared-last-open>Odayı Aç</button>
+        </div>
+      `;
+      lastCard.querySelector('[data-shared-last-open]')?.addEventListener('click', () => {
+        setSharedDuaHash(last);
+        renderSharedDuaRoom(wrapper, last);
+      });
+      list.append(lastCard);
+    }
+  }
+
+  list.append(joinCard);
+  wrapper.append(list);
+}
+
+function renderSharedDuaCreate(wrapper, roomType) {
+  wrapper.innerHTML = '';
+
+  const headerCard = document.createElement('article');
+  headerCard.className = 'card collection-detail__header';
+
+  const backButton = document.createElement('button');
+  backButton.type = 'button';
+  backButton.className = 'collection-back button-pill secondary';
+  backButton.textContent = 'Ortak Dua’ya dön';
+  backButton.addEventListener('click', () => {
+    clearSharedDuaHash();
+    renderSharedDuaHome(wrapper);
+  });
+
+  const title = document.createElement('h3');
+  title.className = 'collection-detail__title';
+  title.textContent = roomType === 'cevsen' ? 'Ortak Cevşen odası oluştur' : 'Ortak Hatim odası oluştur';
+
+  headerCard.append(backButton, title);
+  wrapper.append(headerCard);
+
+  const formCard = document.createElement('article');
+  formCard.className = 'card shared-dua-create';
+
+  const hasFirebaseConfig = Boolean(getSharedDuaFirebaseConfig());
+  if (!hasFirebaseConfig) {
+    const warn = document.createElement('p');
+    warn.className = 'muted';
+    warn.textContent = 'Firebase yapılandırması bulunamadı. Bu özelliği kullanmak için `firebase-config.js` dosyasını doldurun.';
+    formCard.append(warn);
+  }
+
+  const form = document.createElement('form');
+  form.className = 'zikir-form';
+  form.innerHTML = `
+    ${roomType === 'hatim' ? `
+      <label class="zikir-form__label">
+        Hatim türü
+        <select data-shared-hatim-mode>
+          <option value="cuz">Cüzlü Hatim (30)</option>
+          <option value="page">Sayfalı Hatim</option>
+        </select>
+      </label>
+      <label class="zikir-form__label" data-shared-pages-wrap hidden>
+        Toplam sayfa
+        <input type="number" min="1" step="1" value="604" inputmode="numeric" data-shared-total-pages />
+      </label>
+    ` : ''}
+    <label class="zikir-form__label">
+      Oda adı (opsiyonel)
+      <input type="text" autocomplete="off" placeholder="Örn: Sabah hatmi" data-shared-room-name />
+    </label>
+    <label class="zikir-form__label">
+      Kişi başı maksimum parça
+      <select data-shared-max-claims>
+        <option value="1" selected>1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+      </select>
+    </label>
+    <div class="zikir-form__row">
+      <button type="submit" class="button-pill">Odayı Oluştur</button>
+    </div>
+    <p class="zikir-form__message" data-shared-create-message hidden></p>
+  `;
+
+  const modeSelect = form.querySelector('[data-shared-hatim-mode]');
+  const pagesWrap = form.querySelector('[data-shared-pages-wrap]');
+  const totalPagesInput = form.querySelector('[data-shared-total-pages]');
+  const message = form.querySelector('[data-shared-create-message]');
+
+  const setMessage = (status, text) => {
+    if (!message) {
+      return;
+    }
+    if (!text) {
+      message.hidden = true;
+      message.textContent = '';
+      message.removeAttribute('data-status');
+      return;
+    }
+    message.hidden = false;
+    message.textContent = text;
+    if (status) {
+      message.dataset.status = status;
+    } else {
+      message.removeAttribute('data-status');
+    }
+  };
+
+  const syncMode = () => {
+    if (!modeSelect || !pagesWrap) {
+      return;
+    }
+    const isPage = modeSelect.value === 'page';
+    pagesWrap.hidden = !isPage;
+  };
+
+  if (modeSelect) {
+    modeSelect.addEventListener('change', syncMode);
+    syncMode();
+  }
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    setMessage('', '');
+
+    const submitButton = form.querySelector('button[type="submit"]');
+    if (submitButton) {
+      submitButton.disabled = true;
+    }
+
+    try {
+      const nameInput = form.querySelector('[data-shared-room-name]');
+      const maxClaimsSelect = form.querySelector('[data-shared-max-claims]');
+      const hatimMode = modeSelect && modeSelect.value === 'page' ? 'page' : 'cuz';
+      const maxClaims = maxClaimsSelect ? Number.parseInt(maxClaimsSelect.value, 10) : 1;
+      const roomName = nameInput && typeof nameInput.value === 'string' ? nameInput.value : '';
+      const totalPages = totalPagesInput ? Number.parseInt(totalPagesInput.value, 10) : 604;
+
+      const roomId = await createSharedDuaRoom({
+        type: roomType,
+        hatimMode,
+        totalParts: hatimMode === 'page' ? totalPages : undefined,
+        name: roomName,
+        maxClaimsPerUser: maxClaims,
+      });
+
+      setSharedDuaHash(roomId);
+      renderSharedDuaRoom(wrapper, roomId);
+    } catch (error) {
+      console.error('Oda oluşturma başarısız.', error);
+      setMessage('error', error && error.message ? error.message : 'Oda oluşturulamadı. Lütfen tekrar deneyin.');
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
+      }
+    }
+  });
+
+  formCard.append(form);
+  wrapper.append(formCard);
+}
+
+function renderSharedDuaRoom(wrapper, roomId) {
+  const normalised = normaliseSharedDuaRoomId(roomId);
+  if (!normalised) {
+    wrapper.innerHTML = `
+      <article class="card">
+        <h2>Oda bulunamadı</h2>
+        <p class="muted">Bağlantı veya oda kodu geçersiz görünüyor.</p>
+      </article>
+    `;
+    return;
+  }
+
+  wrapper.innerHTML = '';
+
+  const headerCard = document.createElement('article');
+  headerCard.className = 'card collection-detail__header';
+
+  const backButton = document.createElement('button');
+  backButton.type = 'button';
+  backButton.className = 'collection-back button-pill secondary';
+  backButton.textContent = 'Ortak Dua’ya dön';
+  backButton.addEventListener('click', () => {
+    cleanupSharedDuaUI();
+    clearSharedDuaHash();
+    renderSharedDuaHome(wrapper);
+  });
+
+  const title = document.createElement('h3');
+  title.className = 'collection-detail__title';
+  title.textContent = 'Oda yükleniyor…';
+
+  headerCard.append(backButton, title);
+  wrapper.append(headerCard);
+
+  const roomCard = document.createElement('article');
+  roomCard.className = 'card shared-dua-room';
+  roomCard.innerHTML = `<p class="muted">Oturum açılıyor ve oda bilgileri yükleniyor…</p>`;
+  wrapper.append(roomCard);
+
+  const ui = {
+    roomId: normalised,
+    uid: null,
+    unsubscribers: [],
+    room: null,
+    parts: [],
+  };
+  state.sharedDua.ui = ui;
+
+  const renderError = (headline, message) => {
+    title.textContent = 'Ortak Dua';
+    roomCard.innerHTML = `
+      <h3>${headline}</h3>
+      <p class="muted">${message}</p>
+    `;
+  };
+
+  const renderRoom = () => {
+    const room = ui.room || {};
+    const parts = Array.isArray(ui.parts) ? ui.parts : [];
+    const progress = computeSharedDuaProgress(parts);
+
+    const name = room && typeof room.name === 'string' ? room.name.trim() : '';
+    const roomType = room && room.type === 'cevsen' ? 'cevsen' : 'hatim';
+    const roomLabel = roomType === 'cevsen' ? 'Ortak Cevşen' : 'Ortak Hatim';
+    title.textContent = name ? `${roomLabel}: ${name}` : `${roomLabel} odası`;
+
+    const shareLink = buildSharedDuaShareLink(ui.roomId);
+
+    const claimedByMe = parts.filter((part) => part && part.state === 'claimed' && part.claimedBy === ui.uid);
+    const completed = progress.total > 0 && progress.done === progress.total;
+
+    roomCard.innerHTML = `
+      <div class="shared-dua-room__top">
+        <div class="shared-dua-room__meta">
+          <p class="shared-dua-room__code"><strong>Oda kodu:</strong> <span>${ui.roomId}</span></p>
+          <p class="shared-dua-room__progress">${progress.done} / ${progress.total} tamamlandı (%${formatSharedDuaPercent(progress.done, progress.total)})</p>
+          ${completed ? '<p class="shared-dua-room__complete">Bu oda tamamlandı.</p>' : ''}
+        </div>
+        <div class="shared-dua-room__share">
+          <button type="button" class="button-pill secondary" data-shared-copy-link>Bağlantıyı kopyala</button>
+          <p class="zikir-form__message" data-shared-copy-status hidden></p>
+        </div>
+      </div>
+
+      <div class="shared-dua-room__actions">
+        <button type="button" class="button-pill" data-shared-claim-next>Uygun parçayı al</button>
+      </div>
+
+      <div class="shared-dua-room__section" data-shared-my-claims>
+        <h4>Benim parçalarım</h4>
+        ${claimedByMe.length ? '' : '<p class="muted">Henüz aldığınız bir parça yok.</p>'}
+        <div class="shared-dua-claims" data-shared-claims-list></div>
+      </div>
+
+      <div class="shared-dua-room__section">
+        <h4>Tüm parçalar</h4>
+        <div class="shared-dua-parts" data-shared-parts></div>
+      </div>
+    `;
+
+    const copyButton = roomCard.querySelector('[data-shared-copy-link]');
+    const copyStatus = roomCard.querySelector('[data-shared-copy-status]');
+    const setCopyStatus = (status, message) => {
+      if (!copyStatus) {
+        return;
+      }
+      if (!message) {
+        copyStatus.hidden = true;
+        copyStatus.textContent = '';
+        copyStatus.removeAttribute('data-status');
+        return;
+      }
+      copyStatus.hidden = false;
+      copyStatus.textContent = message;
+      if (status) {
+        copyStatus.dataset.status = status;
+      } else {
+        copyStatus.removeAttribute('data-status');
+      }
+    };
+
+    if (copyButton) {
+      copyButton.addEventListener('click', async () => {
+        setCopyStatus('', '');
+        const ok = await copyTextToClipboard(shareLink);
+        if (ok) {
+          setCopyStatus('success', 'Bağlantı kopyalandı.');
+          window.setTimeout(() => setCopyStatus('', ''), 2000);
+        } else {
+          setCopyStatus('error', 'Bağlantı kopyalanamadı.');
+        }
+      });
+    }
+
+    const claimNextButton = roomCard.querySelector('[data-shared-claim-next]');
+    if (claimNextButton) {
+      claimNextButton.disabled = completed || progress.total === 0;
+      claimNextButton.addEventListener('click', async () => {
+        if (claimNextButton.disabled) {
+          return;
+        }
+        claimNextButton.disabled = true;
+        try {
+          await sharedDuaClaimNextAvailable(ui.roomId, parts);
+        } catch (error) {
+          console.warn('Parça alınamadı.', error);
+          setCopyStatus('error', error && error.message ? error.message : 'Parça alınamadı.');
+          window.setTimeout(() => setCopyStatus('', ''), 2500);
+        } finally {
+          claimNextButton.disabled = completed || progress.total === 0;
+        }
+      });
+    }
+
+    const claimsList = roomCard.querySelector('[data-shared-claims-list]');
+    if (claimsList) {
+      claimsList.innerHTML = '';
+      const fragment = document.createDocumentFragment();
+      claimedByMe.forEach((part) => {
+        const row = document.createElement('div');
+        row.className = 'shared-dua-claim';
+        row.innerHTML = `
+          <div class="shared-dua-claim__label">${part.label || `Parça ${part.index}`}</div>
+          <div class="shared-dua-claim__actions">
+            <button type="button" class="button-pill secondary" data-shared-release>Bırak</button>
+            <button type="button" class="button-pill" data-shared-done>Tamamla</button>
+          </div>
+        `;
+        const releaseButton = row.querySelector('[data-shared-release]');
+        const doneButton = row.querySelector('[data-shared-done]');
+        if (releaseButton) {
+          releaseButton.addEventListener('click', async () => {
+            releaseButton.disabled = true;
+            doneButton && (doneButton.disabled = true);
+            try {
+              await sharedDuaReleasePart(ui.roomId, part.id);
+            } catch (error) {
+              console.warn('Parça bırakılamadı.', error);
+              setCopyStatus('error', error && error.message ? error.message : 'Parça bırakılamadı.');
+              window.setTimeout(() => setCopyStatus('', ''), 2500);
+            } finally {
+              releaseButton.disabled = false;
+              doneButton && (doneButton.disabled = false);
+            }
+          });
+        }
+        if (doneButton) {
+          doneButton.addEventListener('click', async () => {
+            releaseButton && (releaseButton.disabled = true);
+            doneButton.disabled = true;
+            try {
+              await sharedDuaMarkDone(ui.roomId, part.id);
+            } catch (error) {
+              console.warn('Parça tamamlanamadı.', error);
+              setCopyStatus('error', error && error.message ? error.message : 'Parça tamamlanamadı.');
+              window.setTimeout(() => setCopyStatus('', ''), 2500);
+            } finally {
+              releaseButton && (releaseButton.disabled = false);
+              doneButton.disabled = false;
+            }
+          });
+        }
+        fragment.append(row);
+      });
+      claimsList.append(fragment);
+    }
+
+    const partsContainer = roomCard.querySelector('[data-shared-parts]');
+    if (partsContainer) {
+      partsContainer.innerHTML = '';
+      const fragment = document.createDocumentFragment();
+
+      parts.forEach((part) => {
+        const stateValue = part && typeof part.state === 'string' ? part.state : 'available';
+        const isMine = stateValue === 'claimed' && part.claimedBy === ui.uid;
+
+        const item = document.createElement('div');
+        item.className = `shared-dua-part shared-dua-part--${stateValue}${isMine ? ' is-mine' : ''}`;
+
+        const statusLabel = stateValue === 'done' ? 'Tamamlandı' : stateValue === 'claimed' ? 'Alındı' : 'Uygun';
+
+        item.innerHTML = `
+          <div class="shared-dua-part__header">
+            <div class="shared-dua-part__label">${part.label || `Parça ${part.index}`}</div>
+            <div class="shared-dua-part__status">${statusLabel}</div>
+          </div>
+          <div class="shared-dua-part__actions"></div>
+        `;
+
+        const actions = item.querySelector('.shared-dua-part__actions');
+        if (actions) {
+          if (stateValue === 'available') {
+            const claim = document.createElement('button');
+            claim.type = 'button';
+            claim.className = 'button-pill secondary shared-dua-part__button';
+            claim.textContent = 'Al';
+            claim.addEventListener('click', async () => {
+              claim.disabled = true;
+              try {
+                await sharedDuaClaimPart(ui.roomId, part.id);
+              } catch (error) {
+                console.warn('Parça alınamadı.', error);
+                setCopyStatus('error', error && error.message ? error.message : 'Parça alınamadı.');
+                window.setTimeout(() => setCopyStatus('', ''), 2500);
+              } finally {
+                claim.disabled = false;
+              }
+            });
+            actions.append(claim);
+          } else if (isMine) {
+            const release = document.createElement('button');
+            release.type = 'button';
+            release.className = 'button-pill secondary shared-dua-part__button';
+            release.textContent = 'Bırak';
+
+            const done = document.createElement('button');
+            done.type = 'button';
+            done.className = 'button-pill shared-dua-part__button';
+            done.textContent = 'Tamamla';
+
+            release.addEventListener('click', async () => {
+              release.disabled = true;
+              done.disabled = true;
+              try {
+                await sharedDuaReleasePart(ui.roomId, part.id);
+              } catch (error) {
+                console.warn('Parça bırakılamadı.', error);
+                setCopyStatus('error', error && error.message ? error.message : 'Parça bırakılamadı.');
+                window.setTimeout(() => setCopyStatus('', ''), 2500);
+              } finally {
+                release.disabled = false;
+                done.disabled = false;
+              }
+            });
+
+            done.addEventListener('click', async () => {
+              release.disabled = true;
+              done.disabled = true;
+              try {
+                await sharedDuaMarkDone(ui.roomId, part.id);
+              } catch (error) {
+                console.warn('Parça tamamlanamadı.', error);
+                setCopyStatus('error', error && error.message ? error.message : 'Parça tamamlanamadı.');
+                window.setTimeout(() => setCopyStatus('', ''), 2500);
+              } finally {
+                release.disabled = false;
+                done.disabled = false;
+              }
+            });
+
+            actions.append(release, done);
+          }
+        }
+
+        fragment.append(item);
+      });
+
+      partsContainer.append(fragment);
+    }
+  };
+
+  (async () => {
+    try {
+      const { db, fs, uid } = await ensureSharedDuaFirebase();
+      ui.uid = uid;
+
+      // Odaya katılım (members.<uid>=true) + "son oda" kaydı.
+      await joinSharedDuaRoom(ui.roomId);
+
+      const roomRef = fs.doc(db, 'rooms', ui.roomId);
+      const partsQuery = fs.query(fs.collection(db, 'rooms', ui.roomId, 'parts'), fs.orderBy('index'));
+
+      const unsubRoom = fs.onSnapshot(roomRef, (snapshot) => {
+        if (!snapshot.exists()) {
+          ui.room = null;
+          renderError('Oda bulunamadı', 'Bu oda silinmiş veya erişime kapatılmış olabilir.');
+          return;
+        }
+        ui.room = { id: snapshot.id, ...snapshot.data() };
+        renderRoom();
+      }, (error) => {
+        console.error('Oda dinleyicisi hatası.', error);
+        renderError('Oda yüklenemedi', error && error.message ? error.message : 'Oda bilgileri alınamadı.');
+      });
+
+      const unsubParts = fs.onSnapshot(partsQuery, (snapshot) => {
+        ui.parts = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        renderRoom();
+      }, (error) => {
+        console.error('Parça dinleyicisi hatası.', error);
+        renderError('Parçalar yüklenemedi', error && error.message ? error.message : 'Parça listesi alınamadı.');
+      });
+
+      ui.unsubscribers.push(unsubRoom, unsubParts);
+    } catch (error) {
+      console.error('Ortak Dua oda açılışı başarısız.', error);
+      renderError('Ortak Dua kullanılamıyor', error && error.message ? error.message : 'Bu özellik şu anda kullanılamıyor.');
+    }
+  })();
 }
 
 async function renderZikirManager(container) {
@@ -7345,6 +8515,27 @@ function loadCounters() {
   } catch (error) {
     console.warn('Sayaçlar yüklenemedi, sıfırlanacak.', error);
     return {};
+  }
+}
+
+function loadSharedDuaLastRoomId() {
+  try {
+    const raw = localStorage.getItem(SHARED_DUA_LAST_ROOM_STORAGE_KEY);
+    return raw && typeof raw === 'string' ? raw : null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function saveSharedDuaLastRoomId(roomId) {
+  if (!roomId || typeof roomId !== 'string') {
+    return;
+  }
+  state.sharedDua.lastRoomId = roomId;
+  try {
+    localStorage.setItem(SHARED_DUA_LAST_ROOM_STORAGE_KEY, roomId);
+  } catch (error) {
+    console.warn('Son oda bilgisi kaydedilemedi.', error);
   }
 }
 

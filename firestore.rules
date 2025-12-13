@@ -1,0 +1,117 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function uid() {
+      return request.auth.uid;
+    }
+
+    function roomDoc(roomId) {
+      return get(/databases/$(database)/documents/rooms/$(roomId));
+    }
+
+    function isRoomMember(roomId) {
+      return isSignedIn() && roomDoc(roomId).data.members[uid()] == true;
+    }
+
+    match /rooms/{roomId} {
+      allow create: if isSignedIn()
+        && request.resource.data.createdBy == uid()
+        && request.resource.data.members[uid()] == true
+        && request.resource.data.type in ['hatim', 'cevsen']
+        && request.resource.data.totalParts is int
+        && request.resource.data.totalParts > 0
+        && request.resource.data.maxClaimsPerUser is int
+        && request.resource.data.maxClaimsPerUser >= 1
+        && request.resource.data.maxClaimsPerUser <= 5;
+
+      allow read: if isSignedIn() && resource.data.members[uid()] == true;
+
+      // Self-join: only add members.<uid> = true (no other changes).
+      allow update: if isSignedIn() && (
+        (
+          resource.data.members[uid()] != true
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+          && request.resource.data.members[uid()] == true
+          && request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([uid()])
+        )
+        ||
+        (
+          resource.data.members[uid()] == true
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['claimCounts'])
+          && request.resource.data.claimCounts is map
+          && request.resource.data.claimCounts.diff(
+            resource.data.claimCounts is map ? resource.data.claimCounts : {}
+          ).affectedKeys().hasOnly([uid()])
+          && request.resource.data.claimCounts[uid()] is int
+          && request.resource.data.claimCounts[uid()] >= 0
+          && request.resource.data.claimCounts[uid()] <= resource.data.maxClaimsPerUser
+        )
+      );
+
+      allow delete: if false;
+    }
+
+    match /rooms/{roomId}/parts/{partId} {
+      allow read: if isRoomMember(roomId);
+
+      // Parts are created only by the room creator.
+      allow create: if isSignedIn()
+        && roomDoc(roomId).data.createdBy == uid()
+        && roomDoc(roomId).data.members[uid()] == true
+        && request.resource.data.index is int
+        && request.resource.data.index > 0
+        && request.resource.data.label is string
+        && request.resource.data.state == 'available'
+        && request.resource.data.claimedBy == null
+        && request.resource.data.claimedAt == null
+        && request.resource.data.doneBy == null
+        && request.resource.data.doneAt == null;
+
+      allow update: if isRoomMember(roomId) && (
+        // available -> claimed (only by requester)
+        (
+          resource.data.state == 'available'
+          && request.resource.data.state == 'claimed'
+          && request.resource.data.index == resource.data.index
+          && request.resource.data.label == resource.data.label
+          && request.resource.data.claimedBy == uid()
+          && request.resource.data.claimedAt == request.time
+          && request.resource.data.doneBy == null
+          && request.resource.data.doneAt == null
+        )
+        ||
+        // claimed -> available (release; only claimer)
+        (
+          resource.data.state == 'claimed'
+          && resource.data.claimedBy == uid()
+          && request.resource.data.state == 'available'
+          && request.resource.data.index == resource.data.index
+          && request.resource.data.label == resource.data.label
+          && request.resource.data.claimedBy == null
+          && request.resource.data.claimedAt == null
+          && request.resource.data.doneBy == null
+          && request.resource.data.doneAt == null
+        )
+        ||
+        // claimed -> done (only claimer)
+        (
+          resource.data.state == 'claimed'
+          && resource.data.claimedBy == uid()
+          && request.resource.data.state == 'done'
+          && request.resource.data.index == resource.data.index
+          && request.resource.data.label == resource.data.label
+          && request.resource.data.claimedBy == resource.data.claimedBy
+          && request.resource.data.claimedAt == resource.data.claimedAt
+          && request.resource.data.doneBy == uid()
+          && request.resource.data.doneAt == request.time
+        )
+      );
+
+      allow delete: if false;
+    }
+  }
+}

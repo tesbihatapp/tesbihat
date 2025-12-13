@@ -2311,6 +2311,192 @@ body .language-toggle__option.is-active {
   }
 }
 
+/* Ortak Dua (Firebase) */
+
+.shared-dua-card__header {
+  display: flex;
+  gap: 0.9rem;
+  align-items: flex-start;
+}
+
+.shared-dua-card__icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-muted);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-soft);
+  flex: 0 0 auto;
+  font-size: 1.4rem;
+}
+
+.shared-dua-card__title {
+  margin: 0;
+  font-size: 1.12rem;
+}
+
+.shared-dua-card__description {
+  margin: 0.25rem 0 0;
+}
+
+.shared-dua-card__actions {
+  margin-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.shared-dua-room__top {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.shared-dua-room__code,
+.shared-dua-room__progress,
+.shared-dua-room__complete {
+  margin: 0;
+}
+
+.shared-dua-room__progress {
+  font-weight: 650;
+}
+
+.shared-dua-room__complete {
+  font-weight: 700;
+  color: #1b7f3a;
+}
+
+.shared-dua-room__actions {
+  margin-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.shared-dua-room__section {
+  margin-top: 1.25rem;
+}
+
+.shared-dua-room__section h4 {
+  margin: 0 0 0.6rem;
+  font-size: 1.02rem;
+}
+
+.shared-dua-claims {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.shared-dua-claim {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 14px;
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-color);
+}
+
+.shared-dua-claim__label {
+  font-weight: 650;
+}
+
+.shared-dua-claim__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: flex-end;
+}
+
+.shared-dua-parts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.shared-dua-part {
+  padding: 0.85rem 0.9rem;
+  border-radius: 16px;
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.shared-dua-part.is-mine {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 2px rgba(85, 107, 47, 0.12), var(--shadow-soft);
+}
+
+.shared-dua-part__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.shared-dua-part__label {
+  font-weight: 700;
+}
+
+.shared-dua-part__status {
+  font-size: 0.85rem;
+  font-weight: 650;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  background: var(--accent-soft-bg);
+  color: var(--accent-color);
+  white-space: nowrap;
+}
+
+.shared-dua-part--claimed .shared-dua-part__status {
+  background: rgba(245, 158, 11, 0.16);
+  color: #b45309;
+}
+
+.shared-dua-part--done .shared-dua-part__status {
+  background: rgba(34, 197, 94, 0.18);
+  color: #15803d;
+}
+
+.shared-dua-part__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.shared-dua-part__button {
+  padding: 0.5rem 1rem;
+}
+
+@media (min-width: 540px) {
+  .shared-dua-room__top {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+
+  .shared-dua-parts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 820px) {
+  .shared-dua-parts {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
 .zikir-reader {
   display: flex;
   flex-direction: column;

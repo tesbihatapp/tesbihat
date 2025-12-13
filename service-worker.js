@@ -7,7 +7,7 @@
    =================================================================== */
 
 /* Versiyon numarasını her “önemli” değişimde artır ki eski cache temizlensin. */
-const CACHE_VERSION = 'v37';
+const CACHE_VERSION = 'v38';
 
 /* Scope → /tesbihat/  veya  /tesbihat/staging/  tespiti */
 const SCOPE_URL = self.registration && self.registration.scope ? new URL(self.registration.scope) : new URL('/', self.location.origin);
@@ -24,6 +24,7 @@ const RAW_ASSETS = [
   'index.html',
   'styles.css',
   'main.js',
+  'firebase-config.js',
   'manifest.webmanifest',
 
   // içerikler
