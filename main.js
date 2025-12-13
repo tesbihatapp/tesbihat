@@ -9,6 +9,16 @@ const DUA_FAVORITES_STORAGE_KEY = 'tesbihat:dua-favorites';
 const DUA_FAVORITES_VERSION = 1;
 const ZIKIR_STORAGE_KEY = 'tesbihat:zikirs';
 const ZIKIR_STORAGE_VERSION = 1;
+const UCAYLAR_TRACKER_STORAGE_KEY = 'tesbihat:ucaylar-tracker';
+const UCAYLAR_TRACKER_STORAGE_VERSION = 1;
+const SHARED_DUA_LAST_ROOM_STORAGE_KEY = 'tesbihat:shared-dua:last-room';
+const SHARED_DUA_ROUTE_PREFIX = '#/shared/';
+const SHARED_DUA_DISPLAY_NAME_STORAGE_KEY = 'sharedDisplayName';
+const SHARED_DUA_FIREBASE_SDK_VERSION = '10.12.0';
+const SHARED_DUA_ROOM_CODE_ATTEMPTS = 5;
+const SHARED_DUA_ROOM_CODE_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+const SHARED_DUA_ROOM_CODE_MIN_LENGTH = 6;
+const SHARED_DUA_ROOM_CODE_MAX_LENGTH = 7;
 const COMPLETION_STORAGE_KEY = 'tesbihat:completions';
 const COMPLETION_STORAGE_VERSION = 1;
 const TRANSLATION_VISIBILITY_STORAGE_KEY = 'tesbihat:translations-visible';
@@ -47,8 +57,29 @@ const TRACKED_PRAYER_SET = new Set(TRACKED_PRAYERS);
 const LANGUAGE_OPTIONS = ['tr', 'ar'];
 let duaRepository = null;
 let zikirDefaultsPromise = null;
+let sharedDuaFirebasePromise = null;
 const FEATURES_SOURCE_PATH = 'HomeFeatures.md';
 const ZIKIR_DEFAULTS_PATH = 'zikir-defaults.json';
+const UCAYLAR_BASE_PATH = 'uc-aylar';
+const UCAYLAR_MONTHS = {
+  recep: { key: 'recep', label: 'Recep', manifestPath: `${UCAYLAR_BASE_PATH}/recep/manifest.json` },
+  saban: { key: 'saban', label: 'Şaban', manifestPath: `${UCAYLAR_BASE_PATH}/saban/manifest.json` },
+  ramazan: { key: 'ramazan', label: 'Ramazan', manifestPath: `${UCAYLAR_BASE_PATH}/ramazan/manifest.json` },
+};
+
+const UCAYLAR_RAMAZAN_DEFAULT_FIELD_ID = 'teravih';
+const UCAYLAR_DEFAULTS_VERSION = 2;
+
+// Üç Aylar (Hijri) tarih aralıkları.
+// Not: Bu aralıklar Gregoryen (YYYY-MM-DD) olarak tutulur ve aylar yıl sınırını aşabilir.
+// Karşılaştırmalarda timezone kaynaklı gün kaymasını önlemek için Date.UTC kullanıyoruz.
+const UCAYLAR_DATE_RANGES = {
+  2025: {
+    recep: { start: '2025-12-21', end: '2026-01-19' },
+    saban: { start: '2026-01-20', end: '2026-02-18' },
+    ramazan: { start: '2026-02-19', end: '2026-03-19' },
+  },
+};
 
 const NAME_SECTIONS = [
   {
@@ -720,6 +751,20 @@ const PRAYER_CONFIG = {
       },
     ],
   },
+  ucaylar: {
+    label: 'Üç Aylar',
+    description: 'Recep, Şaban ve Ramazan içerikleri ve çetele takibi.',
+    items: [
+      { id: 'recep', label: 'Recep', view: 'ucaylar-month', monthKey: 'recep' },
+      { id: 'saban', label: 'Şaban', view: 'ucaylar-month', monthKey: 'saban' },
+      { id: 'ramazan', label: 'Ramazan', view: 'ucaylar-month', monthKey: 'ramazan' },
+    ],
+  },
+  ortakdua: {
+    label: 'Ortak Dua',
+    description: 'Ortak hatim ve Cevşen okuma odaları.',
+    sharedDua: true,
+  },
 };
 
 const CEVSEN_PARTS = [
@@ -756,6 +801,18 @@ const HOME_QUICK_LINKS = [
     label: 'Dualar',
     description: 'Dua arşivine göz at',
     icon: '🤲🏼',
+  },
+  {
+    id: 'ucaylar',
+    label: 'Üç Aylar',
+    description: 'İçerikler ve çetele takibi',
+    icon: '🌙',
+  },
+  {
+    id: 'ortakdua',
+    label: 'Ortak Dua',
+    description: 'Ortak hatim ve Cevşen',
+    icon: '🤝',
   },
 ];
 
@@ -1065,6 +1122,15 @@ const state = {
   completionData: loadCompletionData(),
   completionButtons: new Map(),
   fontScale: loadFontScale(),
+  ucaylar: {
+    data: loadUcAylarData(),
+  },
+  sharedDua: {
+    ui: null,
+    pendingRoomId: null,
+    roomHistory: loadSharedDuaRoomHistory(),
+    lastRoom: loadSharedDuaLastRoom(),
+  },
   names: null,
   tooltipElement: null,
   activeTooltipTarget: null,
@@ -1127,6 +1193,10 @@ document.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
+  if (typeof window !== 'undefined' && window.location && window.location.protocol === 'file:') {
+    console.info('[Tesbihat] Yerel önizleme için bir sunucu kullanın: `npx serve .` veya `python3 -m http.server 3000` → http://localhost:3000');
+  }
+
   state.appRoot = appRoot;
   document.documentElement.setAttribute('lang', state.language === 'ar' ? 'ar' : 'tr');
   appRoot.dataset.appLanguage = state.language;
@@ -1149,6 +1219,30 @@ document.addEventListener('DOMContentLoaded', () => {
   attachSettingsActions();
   registerInstallPromptHandlers();
   initScrollTopButton();
+
+  const sharedRoomId = parseSharedDuaRoomIdFromLocation();
+  if (sharedRoomId) {
+    state.sharedDua.pendingRoomId = sharedRoomId;
+    state.currentPrayer = 'ortakdua';
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('hashchange', () => {
+      const nextRoomId = parseSharedDuaRoomIdFromLocation();
+      if (!nextRoomId) {
+        return;
+      }
+      state.sharedDua.pendingRoomId = nextRoomId;
+      if (state.currentPrayer === 'ortakdua') {
+        const content = document.getElementById('content');
+        if (content) {
+          renderSharedDua(content);
+        }
+        return;
+      }
+      setActivePrayer('ortakdua');
+    });
+  }
 
   setActivePrayer(state.currentPrayer);
 });
@@ -1219,6 +1313,9 @@ async function loadPrayerContent(prayerId) {
       state.cevsen.toolbar = null;
     }
   }
+  if (!config || !config.sharedDua) {
+    cleanupSharedDuaUI();
+  }
 
   if (!config) {
     content.innerHTML = `<div class="card">Seçtiğiniz vakit bulunamadı.</div>`;
@@ -1237,6 +1334,11 @@ async function loadPrayerContent(prayerId) {
 
   if (config.zikirManager) {
     await renderZikirManager(content);
+    return;
+  }
+
+  if (config.sharedDua) {
+    await renderSharedDua(content);
     return;
   }
 
@@ -1345,12 +1447,74 @@ function renderPrayerCollection(container, prayerId, config) {
   }
 
   wrapper.append(list);
+
+  if (prayerId === 'ucaylar') {
+    wrapper.append(buildUcAylarSummaryCard());
+  }
+
   container.append(wrapper);
+}
+
+function buildUcAylarSummaryCard() {
+  const card = document.createElement('article');
+  card.className = 'card ucaylar-summary';
+  card.dataset.disableTooltips = 'true';
+
+  const title = document.createElement('h3');
+  title.textContent = 'Üç Aylar Tablosu';
+
+  const description = document.createElement('p');
+  description.className = 'muted';
+  description.textContent = 'Sezon aralıklarına göre hesaplanan toplam puanlar.';
+
+  const todayKey = getTodayKey();
+  const recepRange = selectClosestUcAylarRange('recep', todayKey);
+  const sabanRange = selectClosestUcAylarRange('saban', todayKey);
+  const ramazanRange = selectClosestUcAylarRange('ramazan', todayKey);
+
+  const recepTotal = recepRange ? calculateUcAylarRangePoints('recep', recepRange, { createMissing: false }) : 0;
+  const sabanTotal = sabanRange ? calculateUcAylarRangePoints('saban', sabanRange, { createMissing: false }) : 0;
+  const ramazanTotal = ramazanRange ? calculateUcAylarRangePoints('ramazan', ramazanRange, { createMissing: false }) : 0;
+  const grandTotal = recepTotal + sabanTotal + ramazanTotal;
+
+  const table = document.createElement('table');
+  table.className = 'stats-table ucaylar-summary__table';
+
+  const thead = document.createElement('thead');
+  thead.innerHTML = '<tr><th>Ay</th><th>Toplam puan</th></tr>';
+  table.append(thead);
+
+  const tbody = document.createElement('tbody');
+  tbody.innerHTML = `
+    <tr><th scope="row">Recep</th><td>${formatUcAylarPoints(recepTotal)}</td></tr>
+    <tr><th scope="row">Şaban</th><td>${formatUcAylarPoints(sabanTotal)}</td></tr>
+    <tr><th scope="row">Ramazan</th><td>${formatUcAylarPoints(ramazanTotal)}</td></tr>
+  `;
+  table.append(tbody);
+
+  const tfoot = document.createElement('tfoot');
+  tfoot.innerHTML = `<tr><th scope="row">Toplam Üç Aylar</th><td>${formatUcAylarPoints(grandTotal)}</td></tr>`;
+  table.append(tfoot);
+
+  const hint = document.createElement('p');
+  hint.className = 'stats-hint';
+  const recepText = recepRange ? `${recepRange.start} → ${recepRange.end}` : 'tanımsız';
+  const sabanText = sabanRange ? `${sabanRange.start} → ${sabanRange.end}` : 'tanımsız';
+  const ramazanText = ramazanRange ? `${ramazanRange.start} → ${ramazanRange.end}` : 'tanımsız';
+  hint.textContent = `Aralıklar: Recep ${recepText} • Şaban ${sabanText} • Ramazan ${ramazanText}`;
+
+  card.append(title, description, table, hint);
+  return card;
 }
 
 async function renderPrayerCollectionItem(container, prayerId, config, item) {
   hideNameTooltip();
   container.innerHTML = '';
+
+  if (item && item.view === 'ucaylar-month' && item.monthKey) {
+    renderUcAylarMonthView(container, item.monthKey, { parentPrayerId: prayerId, parentConfig: config });
+    return;
+  }
 
   const wrapper = document.createElement('div');
   wrapper.className = 'collection-detail';
@@ -1361,7 +1525,7 @@ async function renderPrayerCollectionItem(container, prayerId, config, item) {
   const backButton = document.createElement('button');
   backButton.type = 'button';
   backButton.className = 'collection-back button-pill secondary';
-  backButton.textContent = 'Dualar listesine dön';
+  backButton.textContent = `${config && config.label ? config.label : 'Liste'} listesine dön`;
   backButton.addEventListener('click', () => {
     renderPrayerCollection(container, prayerId, config);
   });
@@ -1401,6 +1565,1591 @@ async function renderPrayerCollectionItem(container, prayerId, config, item) {
       <p>İçerik yüklenirken bir hata oluştu. Lütfen daha sonra tekrar deneyin.</p>
     `;
   }
+}
+
+function renderUcAylarMonthView(container, monthKey, options = {}) {
+  hideNameTooltip();
+  container.innerHTML = '';
+
+  const month = UCAYLAR_MONTHS[monthKey];
+  const parentPrayerId = options.parentPrayerId || 'ucaylar';
+  const parentConfig = options.parentConfig || PRAYER_CONFIG[parentPrayerId] || PRAYER_CONFIG.ucaylar;
+  const initialTab = options.initialTab === 'tracker' ? 'tracker' : 'content';
+
+  if (!month) {
+    container.innerHTML = `
+      <article class="card">
+        <h2>Üç Aylar</h2>
+        <p>Seçilen ay bulunamadı.</p>
+      </article>
+    `;
+    return;
+  }
+
+  const root = document.createElement('div');
+  root.className = 'ucaylar-month';
+
+  const headerCard = document.createElement('article');
+  headerCard.className = 'card ucaylar-month__header';
+
+  const backButton = document.createElement('button');
+  backButton.type = 'button';
+  backButton.className = 'button-pill secondary';
+  backButton.textContent = 'Üç Aylar listesine dön';
+  backButton.addEventListener('click', () => {
+    renderPrayerCollection(container, parentPrayerId, parentConfig);
+    if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  });
+
+  const title = document.createElement('h2');
+  title.className = 'ucaylar-month__title';
+  title.textContent = month.label;
+
+  headerCard.append(backButton, title);
+  root.append(headerCard);
+
+  const tabs = document.createElement('div');
+  tabs.className = 'ucaylar-tabs';
+  tabs.setAttribute('role', 'tablist');
+  tabs.innerHTML = `
+    <button type="button" class="ucaylar-tab is-active" data-ucaylar-tab="content" aria-pressed="true">İçerikler</button>
+    <button type="button" class="ucaylar-tab" data-ucaylar-tab="tracker" aria-pressed="false">Çetele</button>
+  `;
+
+  const panels = document.createElement('div');
+  panels.className = 'ucaylar-panels';
+  panels.innerHTML = `
+    <div class="ucaylar-panel" data-ucaylar-panel="content"></div>
+    <div class="ucaylar-panel" data-ucaylar-panel="tracker" hidden></div>
+  `;
+
+  root.append(tabs, panels);
+  container.append(root);
+
+  const tabButtons = Array.from(root.querySelectorAll('[data-ucaylar-tab]'));
+  const contentPanel = root.querySelector('[data-ucaylar-panel="content"]');
+  const trackerPanel = root.querySelector('[data-ucaylar-panel="tracker"]');
+
+  const setTab = (nextTab) => {
+    if (state.ucaylar) {
+      state.ucaylar.activeMonthKey = monthKey;
+      state.ucaylar.activeMonthTab = nextTab;
+    }
+    tabButtons.forEach((button) => {
+      const isActive = button.dataset.ucaylarTab === nextTab;
+      button.classList.toggle('is-active', isActive);
+      button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+    if (contentPanel) contentPanel.hidden = nextTab !== 'content';
+    if (trackerPanel) trackerPanel.hidden = nextTab !== 'tracker';
+
+    if (nextTab === 'content') {
+      renderUcAylarContentPanel(contentPanel, monthKey);
+    } else {
+      renderUcAylarTrackerPanel(trackerPanel, monthKey);
+    }
+  };
+
+  tabButtons.forEach((button) => {
+    button.addEventListener('click', () => setTab(button.dataset.ucaylarTab));
+  });
+
+  setTab(initialTab);
+}
+
+function renderUcAylarContentPanel(panel, monthKey) {
+  const month = UCAYLAR_MONTHS[monthKey];
+  if (!panel || !month) {
+    return;
+  }
+  panel.innerHTML = `
+    <article class="card">
+      <h3>${month.label} içerikleri</h3>
+      <p class="muted">İçerik listesi yükleniyor…</p>
+    </article>
+  `;
+
+  loadUcAylarMonthManifest(monthKey)
+    .then((manifest) => {
+      renderUcAylarContentList(panel, monthKey, manifest);
+    })
+    .catch((error) => {
+      console.warn('Üç Aylar manifest yüklenemedi.', error);
+      panel.innerHTML = `
+        <article class="card">
+          <h3>İçerikler yüklenemedi</h3>
+          <p>Bu ayın içerik listesi yüklenirken bir sorun yaşandı.</p>
+        </article>
+      `;
+    });
+}
+
+async function loadUcAylarMonthManifest(monthKey) {
+  const month = UCAYLAR_MONTHS[monthKey];
+  if (!month) {
+    throw new Error('Ay bulunamadı.');
+  }
+  const response = await fetch(month.manifestPath, { cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error(`Manifest okunamadı: ${month.manifestPath}`);
+  }
+  return response.json();
+}
+
+function renderUcAylarContentList(panel, monthKey, manifest) {
+  const month = UCAYLAR_MONTHS[monthKey];
+  const items = manifest && Array.isArray(manifest.items) ? manifest.items : [];
+
+  panel.innerHTML = '';
+
+  const intro = document.createElement('article');
+  intro.className = 'card';
+  intro.innerHTML = `
+    <h3>${(manifest && manifest.title) || (month ? month.label : 'İçerikler')}</h3>
+    <p class="muted">Okumak istediğiniz başlığı seçin.</p>
+  `;
+  panel.append(intro);
+
+  const list = document.createElement('div');
+  list.className = 'collection-list';
+
+  if (!items.length) {
+    const empty = document.createElement('article');
+    empty.className = 'card collection-empty';
+    empty.textContent = 'Bu ay için henüz içerik eklenmedi.';
+    list.append(empty);
+    panel.append(list);
+    return;
+  }
+
+  items.forEach((item) => {
+    const card = document.createElement('article');
+    card.className = 'card collection-card';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'collection-card__button';
+    button.addEventListener('click', () => {
+      renderUcAylarContentDetail(panel, monthKey, manifest, item);
+      if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    });
+
+    const title = document.createElement('span');
+    title.className = 'collection-card__title';
+    title.textContent = item.title || item.id || 'İçerik';
+
+    const icon = document.createElement('span');
+    icon.className = 'collection-card__icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = '>';
+
+    button.append(title, icon);
+    card.append(button);
+    list.append(card);
+  });
+
+  panel.append(list);
+}
+
+function renderUcAylarContentDetail(panel, monthKey, manifest, item) {
+  const month = UCAYLAR_MONTHS[monthKey];
+  if (!panel || !item) {
+    return;
+  }
+
+  panel.innerHTML = '';
+
+  const headerCard = document.createElement('article');
+  headerCard.className = 'card collection-detail__header';
+
+  const backButton = document.createElement('button');
+  backButton.type = 'button';
+  backButton.className = 'collection-back button-pill secondary';
+  backButton.textContent = 'İçerik listesine dön';
+  backButton.addEventListener('click', () => {
+    renderUcAylarContentList(panel, monthKey, manifest);
+  });
+
+  const title = document.createElement('h3');
+  title.className = 'collection-detail__title';
+  title.textContent = item.title || item.id || (month ? month.label : 'İçerik');
+
+  headerCard.append(backButton, title);
+  panel.append(headerCard);
+
+  const contentCard = document.createElement('article');
+  contentCard.className = 'card collection-detail__content';
+  contentCard.innerHTML = `<div class="loading">İçerik yükleniyor…</div>`;
+  panel.append(contentCard);
+
+  const monthBase = `${UCAYLAR_BASE_PATH}/${monthKey}/`;
+  const markdownPath = item.markdown ? `${monthBase}${item.markdown}` : null;
+
+  if (!markdownPath) {
+    contentCard.innerHTML = `<p>İçerik dosyası bulunamadı.</p>`;
+    return;
+  }
+
+  fetchText(markdownPath)
+    .then(async (markdown) => {
+      renderTesbihat(contentCard, markdown);
+      await ensureNamesLoaded();
+      annotateNames(contentCard);
+      setupCounters(contentCard, `ucaylar-${monthKey}-${item.id || 'item'}`);
+    })
+    .catch((error) => {
+      console.warn('Üç Aylar içeriği yüklenemedi.', error);
+      contentCard.innerHTML = `<p>İçerik yüklenirken bir hata oluştu.</p>`;
+    });
+}
+
+function renderUcAylarTrackerPanel(panel, monthKey) {
+  const month = UCAYLAR_MONTHS[monthKey];
+  if (!panel || !month) {
+    return;
+  }
+
+  const storedDateKey = isValidDateKey(panel.dataset.ucaylarDate) ? panel.dataset.ucaylarDate : null;
+  const todayKey = getTodayKey();
+  const initialManageOpen = panel.dataset.ucaylarManageOpen === 'true';
+
+  panel.dataset.ucaylarManageOpen = initialManageOpen ? 'true' : 'false';
+
+  const root = document.createElement('div');
+  root.className = 'ucaylar-tracker';
+
+  const toolbarCard = document.createElement('article');
+  toolbarCard.className = 'card ucaylar-tracker__toolbar';
+  toolbarCard.innerHTML = `
+    <div class="ucaylar-tracker__toolbar-row">
+      <div class="ucaylar-tracker__heading">
+        <h3>${month.label} çetelesi</h3>
+        <p class="muted">Günlük girişleri kaydedip puanları takip edebilirsiniz.</p>
+        <p class="muted" data-ucaylar-range></p>
+      </div>
+      <div class="ucaylar-tracker__actions">
+        <label class="ucaylar-tracker__date">
+          <span class="ucaylar-tracker__date-label">Tarih</span>
+          <div class="ucaylar-tracker__date-control" role="group" aria-label="Tarih seçimi">
+            <button type="button" class="button-pill secondary ucaylar-date-nav" data-ucaylar-prev aria-label="Önceki gün">‹</button>
+            <input type="date" class="ucaylar-tracker__date-input" data-ucaylar-date>
+            <button type="button" class="button-pill secondary ucaylar-date-nav" data-ucaylar-next aria-label="Sonraki gün">›</button>
+          </div>
+        </label>
+        <button type="button" class="button-pill secondary" data-ucaylar-manage-toggle>Alanları Yönet</button>
+      </div>
+    </div>
+    <div class="ucaylar-tracker__totals">
+      <div class="ucaylar-total">
+        <span class="ucaylar-total__label">Gün toplam puan</span>
+        <strong class="ucaylar-total__value" data-ucaylar-day-total>0</strong>
+      </div>
+      <div class="ucaylar-total">
+        <span class="ucaylar-total__label">Ay toplam puan</span>
+        <strong class="ucaylar-total__value" data-ucaylar-month-total>0</strong>
+      </div>
+    </div>
+  `;
+
+  const managerOverlay = document.createElement('div');
+  managerOverlay.className = 'settings-overlay ucaylar-field-overlay';
+  managerOverlay.hidden = !initialManageOpen;
+  managerOverlay.innerHTML = `
+    <div class="settings-sheet card ucaylar-field-sheet" role="dialog" aria-modal="true" aria-labelledby="ucaylar-fields-title">
+      <header class="settings-sheet__header">
+        <h2 id="ucaylar-fields-title">Alanları yönet</h2>
+        <button type="button" class="settings-close" data-ucaylar-fields-close aria-label="Alan yönetimini kapat">✕</button>
+      </header>
+      <p class="settings-sheet__intro">Etiket, puan, gizleme, tür ve sıralamayı buradan düzenleyin.</p>
+      <div class="settings-sheet__content ucaylar-field-sheet__content">
+        <section class="settings-section">
+          <div class="ucaylar-field-manager__list" data-ucaylar-field-manager-list></div>
+        </section>
+        <section class="settings-section">
+          <div class="ucaylar-field-manager__add">
+            <h3>Yeni alan ekle</h3>
+            <form class="ucaylar-field-manager__form" data-ucaylar-field-form novalidate>
+              <label>
+                <span>Etiket</span>
+                <input type="text" name="label" autocomplete="off" required>
+              </label>
+              <label>
+                <span>Tür</span>
+                <select name="type">
+                  <option value="checkbox">Onay kutusu</option>
+                  <option value="number">Sayı</option>
+                </select>
+              </label>
+              <label>
+                <span>Puan</span>
+                <input type="number" name="points" step="0.1" min="0" value="5">
+              </label>
+              <label>
+                <span>Adım (sayı için)</span>
+                <input type="number" name="step" step="1" min="1" value="1">
+              </label>
+              <button type="submit" class="settings-action-button">Ekle</button>
+            </form>
+          </div>
+        </section>
+      </div>
+      <footer class="ucaylar-field-footer">
+        <p class="settings-hint ucaylar-field-footer__status" data-ucaylar-field-status hidden></p>
+        <div class="ucaylar-field-footer__actions">
+          <button type="button" class="settings-action-button secondary" data-ucaylar-fields-reset disabled>Değişiklikleri Sıfırla</button>
+          <button type="button" class="settings-action-button" data-ucaylar-fields-save disabled>Kaydet</button>
+        </div>
+      </footer>
+      <div class="ucaylar-confirm-overlay" data-ucaylar-confirm hidden>
+        <div class="ucaylar-confirm-sheet card" role="dialog" aria-modal="true" aria-labelledby="ucaylar-confirm-title">
+          <h3 id="ucaylar-confirm-title">Alanı sil</h3>
+          <p>Bu alan silinecek ve geçmiş kayıtlarınızdan kaldırılacak. Emin misiniz?</p>
+          <div class="ucaylar-confirm__actions">
+            <button type="button" class="settings-action-button secondary" data-ucaylar-confirm-cancel>İptal</button>
+            <button type="button" class="settings-action-button" data-ucaylar-confirm-delete>Sil</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const fieldsCard = document.createElement('article');
+  fieldsCard.className = 'card ucaylar-tracker__fields';
+  fieldsCard.innerHTML = `<div class="ucaylar-tracker__fields-inner" data-ucaylar-fields></div>`;
+
+  root.append(toolbarCard, fieldsCard);
+  panel.innerHTML = '';
+  panel.append(root);
+  panel.append(managerOverlay);
+
+  const dateInput = root.querySelector('[data-ucaylar-date]');
+  const prevButton = root.querySelector('[data-ucaylar-prev]');
+  const nextButton = root.querySelector('[data-ucaylar-next]');
+  const manageToggle = root.querySelector('[data-ucaylar-manage-toggle]');
+  const dayTotalEl = root.querySelector('[data-ucaylar-day-total]');
+  const monthTotalEl = root.querySelector('[data-ucaylar-month-total]');
+  const rangeInfoEl = root.querySelector('[data-ucaylar-range]');
+  const fieldsContainer = root.querySelector('[data-ucaylar-fields]');
+  const managerClose = managerOverlay.querySelector('[data-ucaylar-fields-close]');
+  const managerList = managerOverlay.querySelector('[data-ucaylar-field-manager-list]');
+  const managerForm = managerOverlay.querySelector('[data-ucaylar-field-form]');
+  const managerSaveButton = managerOverlay.querySelector('[data-ucaylar-fields-save]');
+  const managerResetButton = managerOverlay.querySelector('[data-ucaylar-fields-reset]');
+  const managerStatus = managerOverlay.querySelector('[data-ucaylar-field-status]');
+  const confirmBox = managerOverlay.querySelector('[data-ucaylar-confirm]');
+  const confirmCancel = managerOverlay.querySelector('[data-ucaylar-confirm-cancel]');
+  const confirmDelete = managerOverlay.querySelector('[data-ucaylar-confirm-delete]');
+
+  let activeDateKey = storedDateKey || todayKey;
+  let activeRange = null;
+  let saveTimer = null;
+
+  const updateRangeInfo = () => {
+    if (!rangeInfoEl) {
+      return;
+    }
+    if (activeRange) {
+      rangeInfoEl.textContent = `Geçerli aralık: ${activeRange.start} → ${activeRange.end}`;
+      return;
+    }
+    const knownRanges = listUcAylarRangesForMonth(monthKey);
+    rangeInfoEl.textContent = knownRanges.length ? 'Bu yıl için tarih aralığı tanımlı değil.' : 'Bu ay için tarih aralığı tanımlı değil.';
+  };
+
+  const applyActiveRange = () => {
+    if (dateInput) {
+      if (activeRange) {
+        dateInput.min = activeRange.start;
+        dateInput.max = activeRange.end;
+        const clamped = clampDateKeyToRange(activeDateKey, activeRange);
+        if (clamped !== activeDateKey) {
+          activeDateKey = clamped;
+        }
+      } else {
+        dateInput.removeAttribute('min');
+        dateInput.removeAttribute('max');
+      }
+      dateInput.value = activeDateKey;
+    }
+    panel.dataset.ucaylarDate = activeDateKey;
+    updateRangeInfo();
+  };
+
+  const resolveRangeForDateKey = (dateKey) => {
+    const contained = getUcAylarRangeForDate(monthKey, dateKey);
+    if (contained) {
+      return contained;
+    }
+    const year = Number.parseInt(dateKey.slice(0, 4), 10);
+    if (!Number.isFinite(year)) {
+      return null;
+    }
+    return getUcAylarRangeForStartYear(monthKey, year);
+  };
+
+  // Üç Aylar ayları için öncelik: bugüne en yakın tanımlı aralık.
+  activeRange = selectClosestUcAylarRange(monthKey, todayKey) || resolveRangeForDateKey(activeDateKey);
+
+  // Varsayılan tarih: (1) daha önce seçili tarih aralık içindeyse onu koru,
+  // (2) bugün aralık içindeyse bugün,
+  // (3) değilse bugünü aralığa clamp ederek en yakın sınır.
+  if (activeRange) {
+    if (storedDateKey && isDateKeyInRange(storedDateKey, activeRange)) {
+      activeDateKey = storedDateKey;
+    } else if (isDateKeyInRange(todayKey, activeRange)) {
+      activeDateKey = todayKey;
+    } else {
+      activeDateKey = clampDateKeyToRange(todayKey, activeRange);
+    }
+  } else {
+    activeDateKey = storedDateKey || todayKey;
+  }
+
+  applyActiveRange();
+
+  if (dateInput) {
+    dateInput.value = activeDateKey;
+    dateInput.addEventListener('change', () => {
+      const next = dateInput.value;
+      if (!isValidDateKey(next)) {
+        dateInput.value = activeDateKey;
+        return;
+      }
+      activeDateKey = next;
+      // Aralık tanımlıysa dışarı çıkan seçimi clamp et.
+      applyActiveRange();
+      if (activeRange && !isDateKeyInRange(activeDateKey, activeRange)) {
+        activeDateKey = clampDateKeyToRange(activeDateKey, activeRange);
+        applyActiveRange();
+      }
+      renderFields();
+      updateTotals();
+      updateNavButtons();
+    });
+  }
+
+  const dayMs = 24 * 60 * 60 * 1000;
+  const updateNavButtons = () => {
+    if (!prevButton && !nextButton) {
+      return;
+    }
+    if (!activeRange) {
+      if (prevButton) prevButton.disabled = false;
+      if (nextButton) nextButton.disabled = false;
+      return;
+    }
+    const currentUtcMs = dateKeyToUtcMs(activeDateKey);
+    if (!Number.isFinite(currentUtcMs)) {
+      if (prevButton) prevButton.disabled = true;
+      if (nextButton) nextButton.disabled = true;
+      return;
+    }
+    if (prevButton) prevButton.disabled = currentUtcMs <= activeRange.startUtcMs;
+    if (nextButton) nextButton.disabled = currentUtcMs >= activeRange.endUtcMs;
+  };
+
+  const shiftActiveDateBy = (deltaDays) => {
+    const currentUtcMs = dateKeyToUtcMs(activeDateKey);
+    if (!Number.isFinite(currentUtcMs)) {
+      return;
+    }
+    const nextKey = utcMsToDateKey(currentUtcMs + deltaDays * dayMs);
+    if (!isValidDateKey(nextKey)) {
+      return;
+    }
+    activeDateKey = nextKey;
+    if (activeRange) {
+      activeDateKey = clampDateKeyToRange(activeDateKey, activeRange);
+    }
+    applyActiveRange();
+    renderFields();
+    updateTotals();
+    updateNavButtons();
+  };
+
+  if (prevButton) {
+    prevButton.addEventListener('click', () => {
+      if (prevButton.disabled) {
+        return;
+      }
+      shiftActiveDateBy(-1);
+    });
+  }
+
+  if (nextButton) {
+    nextButton.addEventListener('click', () => {
+      if (nextButton.disabled) {
+        return;
+      }
+      shiftActiveDateBy(1);
+    });
+  }
+
+  const closeManagerOverlay = () => {
+    closeDeleteConfirm();
+    managerOverlay.hidden = true;
+    panel.dataset.ucaylarManageOpen = 'false';
+  };
+
+  const openManagerOverlay = () => {
+    managerOverlay.hidden = false;
+    panel.dataset.ucaylarManageOpen = 'true';
+    renderManager();
+    const firstInput = managerOverlay.querySelector('input, select, button');
+    if (firstInput && typeof firstInput.focus === 'function') {
+      firstInput.focus();
+    }
+  };
+
+  if (managerClose) {
+    managerClose.addEventListener('click', closeManagerOverlay);
+  }
+
+  managerOverlay.addEventListener('click', (event) => {
+    if (event.target === managerOverlay) {
+      closeManagerOverlay();
+    }
+  });
+
+  managerOverlay.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      if (confirmBox && !confirmBox.hidden) {
+        closeDeleteConfirm();
+        return;
+      }
+      closeManagerOverlay();
+    }
+  });
+
+  if (manageToggle) {
+    manageToggle.addEventListener('click', () => {
+      openManagerOverlay();
+    });
+  }
+
+  const scheduleSave = () => {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+    }
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      saveUcAylarData(state.ucaylar.data);
+    }, 200);
+  };
+
+  const getActiveYear = () => Number.parseInt(activeDateKey.split('-')[0], 10);
+
+  const setManagerStatus = (message) => {
+    if (!managerStatus) {
+      return;
+    }
+    if (!message) {
+      managerStatus.hidden = true;
+      managerStatus.textContent = '';
+      return;
+    }
+    managerStatus.hidden = false;
+    managerStatus.textContent = message;
+  };
+
+  const cloneFields = (fields) => (Array.isArray(fields) ? fields.map((field) => ({ ...field })) : []);
+  const normalizeDraftFields = (fields) => cloneFields(fields).map((field) => normalizeUcAylarField(field)).filter(Boolean);
+
+  const listConfigYears = () => {
+    if (!activeRange) {
+      const year = getActiveYear();
+      return Number.isFinite(year) ? [year] : [];
+    }
+    const years = new Set();
+    iterateDateKeysInRange(activeRange).forEach((dateKey) => {
+      const year = Number.parseInt(dateKey.slice(0, 4), 10);
+      if (Number.isFinite(year)) {
+        years.add(year);
+      }
+    });
+    return Array.from(years).sort((a, b) => a - b);
+  };
+
+  const baseConfigYear = activeRange ? Number.parseInt(activeRange.start.slice(0, 4), 10) : getActiveYear();
+  const persistedConfigTracker = Number.isFinite(baseConfigYear) ? ensureDefaultUcAylarTracker(baseConfigYear, monthKey) : ensureDefaultUcAylarTracker(getActiveYear(), monthKey);
+
+  let persistedFieldsSnapshot = cloneFields(persistedConfigTracker.fields);
+  let persistedRemovedDefaultsSnapshot = normalizeUcAylarRemovedDefaultFieldIds(persistedConfigTracker.removedDefaultFieldIds);
+  let draftFields = cloneFields(persistedFieldsSnapshot);
+  let draftRemovedDefaults = new Set(persistedRemovedDefaultsSnapshot);
+  let draftDirty = false;
+  let pendingDeleteFieldId = null;
+
+  const setDraftDirty = (dirty) => {
+    draftDirty = Boolean(dirty);
+    if (managerSaveButton) {
+      managerSaveButton.disabled = !draftDirty;
+    }
+    if (managerResetButton) {
+      managerResetButton.disabled = !draftDirty;
+    }
+  };
+
+  const getFieldPoints = (field) => (field && field.type === 'checkbox' ? field.pointsWhenDone : field.pointsPerUnit);
+  const setFieldPoints = (field, points) => {
+    const normalizedPoints = Number.isFinite(Number(points)) ? Math.max(0, Number(points)) : 0;
+    if (!field) {
+      return;
+    }
+    if (field.type === 'checkbox') {
+      field.pointsWhenDone = normalizedPoints;
+      return;
+    }
+    field.pointsPerUnit = normalizedPoints;
+    if (!Number.isFinite(Number(field.step)) || Number(field.step) < 1) {
+      field.step = 1;
+    }
+  };
+
+  const closeDeleteConfirm = () => {
+    pendingDeleteFieldId = null;
+    if (confirmBox) {
+      confirmBox.hidden = true;
+    }
+  };
+
+  const openDeleteConfirm = (fieldId) => {
+    pendingDeleteFieldId = fieldId;
+    if (confirmBox) {
+      confirmBox.hidden = false;
+    }
+  };
+
+  if (confirmCancel) {
+    confirmCancel.addEventListener('click', closeDeleteConfirm);
+  }
+
+  if (confirmDelete) {
+    confirmDelete.addEventListener('click', () => {
+      const fieldId = pendingDeleteFieldId;
+      closeDeleteConfirm();
+      if (!fieldId) {
+        return;
+      }
+      const remaining = draftFields.filter((field) => field && field.id !== fieldId);
+      if (remaining.length === draftFields.length) {
+        return;
+      }
+      draftFields = remaining;
+      if (monthKey === 'ramazan' && fieldId === UCAYLAR_RAMAZAN_DEFAULT_FIELD_ID) {
+        draftRemovedDefaults.add(UCAYLAR_RAMAZAN_DEFAULT_FIELD_ID);
+      }
+      setDraftDirty(true);
+      renderManager();
+      setManagerStatus('Silme işlemi kaydedilmek üzere hazır.');
+    });
+  }
+
+  if (managerResetButton) {
+    managerResetButton.addEventListener('click', () => {
+      draftFields = cloneFields(persistedFieldsSnapshot);
+      draftRemovedDefaults = new Set(persistedRemovedDefaultsSnapshot);
+      setDraftDirty(false);
+      closeDeleteConfirm();
+      renderManager();
+      setManagerStatus('Değişiklikler sıfırlandı.');
+      window.setTimeout(() => setManagerStatus(''), 2000);
+    });
+  }
+
+  const applyDraftToTrackers = () => {
+    const years = listConfigYears();
+    if (!years.length) {
+      return;
+    }
+
+    const nextFields = normalizeDraftFields(draftFields);
+    const nextFieldMap = new Map(nextFields.map((field) => [field.id, field]));
+
+    years.forEach((year) => {
+      const tracker = ensureDefaultUcAylarTracker(year, monthKey);
+      const beforeFields = Array.isArray(tracker.fields) ? tracker.fields.map((field) => normalizeUcAylarField(field)).filter(Boolean) : [];
+      const beforeFieldMap = new Map(beforeFields.map((field) => [field.id, field]));
+
+      // Silinen alanlar: entry.values'tan temizle
+      beforeFields.forEach((field) => {
+        if (!field || !field.id) {
+          return;
+        }
+        if (!nextFieldMap.has(field.id)) {
+          removeFieldFromEntries(tracker.entries, field.id);
+        }
+      });
+
+      // Tür değişimi: entry.values içinde değerleri dönüştür
+      nextFields.forEach((field) => {
+        const previous = beforeFieldMap.get(field.id);
+        if (!previous) {
+          return;
+        }
+        if (previous.type !== field.type) {
+          convertFieldValuesForTypeChange(tracker.entries, field.id, previous.type, field.type);
+        }
+      });
+
+      // Alanları override et
+      tracker.fields = cloneFields(nextFields);
+      tracker.removedDefaultFieldIds = Array.from(draftRemovedDefaults).sort();
+
+      // Alan tiplerine göre değerleri normalize et + artık kullanılmayan fieldId'leri düşür
+      const currentFieldMap = new Map(tracker.fields.map((field) => [field.id, field]));
+      Object.values(tracker.entries || {}).forEach((entry) => {
+        if (!entry || typeof entry !== 'object') {
+          return;
+        }
+        const values = entry.values && typeof entry.values === 'object' ? entry.values : {};
+        entry.values = normalizeUcAylarEntryValues(values, currentFieldMap);
+      });
+    });
+
+    saveUcAylarData(state.ucaylar.data);
+    // Kaydettikten sonra snapshot güncelle
+    const refreshed = Number.isFinite(baseConfigYear) ? ensureDefaultUcAylarTracker(baseConfigYear, monthKey) : ensureDefaultUcAylarTracker(getActiveYear(), monthKey);
+    persistedFieldsSnapshot = cloneFields(refreshed.fields);
+    persistedRemovedDefaultsSnapshot = normalizeUcAylarRemovedDefaultFieldIds(refreshed.removedDefaultFieldIds);
+    draftFields = cloneFields(persistedFieldsSnapshot);
+    draftRemovedDefaults = new Set(persistedRemovedDefaultsSnapshot);
+    setDraftDirty(false);
+    closeDeleteConfirm();
+    renderFields();
+    updateTotals();
+  };
+
+  if (managerSaveButton) {
+    managerSaveButton.addEventListener('click', () => {
+      if (!draftDirty) {
+        return;
+      }
+      applyDraftToTrackers();
+      renderManager();
+      setManagerStatus('Değişiklikler kaydedildi.');
+      window.setTimeout(() => setManagerStatus(''), 2500);
+    });
+  }
+
+  const renderFields = () => {
+    if (!fieldsContainer) {
+      return;
+    }
+
+    const year = getActiveYear();
+    const tracker = ensureDefaultUcAylarTracker(year, monthKey);
+    const entry = ensureUcAylarEntry(tracker, activeDateKey);
+    const visibleFields = tracker.fields.filter((field) => !field.hidden);
+
+    fieldsContainer.innerHTML = '';
+
+    if (!visibleFields.length) {
+      fieldsContainer.innerHTML = `<p class="muted">Görüntülenecek alan yok. “Alanları Yönet” bölümünden alan ekleyebilirsiniz.</p>`;
+      return;
+    }
+
+    visibleFields.forEach((field) => {
+      const row = document.createElement('div');
+      row.className = 'ucaylar-field';
+      row.dataset.fieldId = field.id;
+
+      const label = document.createElement('div');
+      label.className = 'ucaylar-field__label';
+      label.textContent = field.label;
+
+      const inputWrap = document.createElement('div');
+      inputWrap.className = 'ucaylar-field__input';
+
+      const pointsWrap = document.createElement('div');
+      pointsWrap.className = 'ucaylar-field__points';
+
+      const pointsBadge = document.createElement('span');
+      pointsBadge.className = 'points-badge';
+      pointsBadge.textContent = formatUcAylarPoints(0);
+      pointsWrap.append(pointsBadge);
+
+      if (field.type === 'checkbox') {
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = Boolean(entry.values[field.id]);
+        input.addEventListener('change', () => {
+          entry.values[field.id] = input.checked;
+          pointsBadge.textContent = formatUcAylarPoints(calculateFieldPoints(field, input.checked));
+          updateTotals();
+          scheduleSave();
+        });
+        inputWrap.append(input);
+        pointsBadge.textContent = formatUcAylarPoints(calculateFieldPoints(field, input.checked));
+      } else {
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.min = '0';
+        input.step = String(field.step || 1);
+        const rawValue = entry.values[field.id];
+        const numericValue = typeof rawValue === 'number' && Number.isFinite(rawValue) ? rawValue : 0;
+        input.value = numericValue ? String(numericValue) : '';
+        input.addEventListener('input', () => {
+          const parsed = Number.parseFloat(input.value);
+          const nextValue = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+          entry.values[field.id] = nextValue;
+          pointsBadge.textContent = formatUcAylarPoints(calculateFieldPoints(field, nextValue));
+          updateTotals();
+          scheduleSave();
+        });
+        inputWrap.append(input);
+        pointsBadge.textContent = formatUcAylarPoints(calculateFieldPoints(field, numericValue));
+      }
+
+      row.append(label, inputWrap, pointsWrap);
+      fieldsContainer.append(row);
+    });
+  };
+
+  const renderManager = () => {
+    if (!managerList) {
+      return;
+    }
+    managerList.innerHTML = '';
+    closeDeleteConfirm();
+    setManagerStatus(draftDirty ? 'Kaydedilmemiş değişiklikler var.' : '');
+
+    draftFields.forEach((field, index) => {
+      const item = document.createElement('div');
+      item.className = 'ucaylar-field-edit';
+      item.dataset.fieldId = field.id;
+
+      const labelInput = document.createElement('input');
+      labelInput.type = 'text';
+      labelInput.value = field.label;
+      labelInput.className = 'ucaylar-field-edit__label';
+      labelInput.addEventListener('input', () => {
+        const nextLabel = labelInput.value.trim();
+        field.label = nextLabel || field.label;
+        setDraftDirty(true);
+      });
+
+      const typeSelect = document.createElement('select');
+      typeSelect.className = 'ucaylar-field-edit__type';
+      typeSelect.innerHTML = `
+        <option value="checkbox">Onay</option>
+        <option value="number">Sayı</option>
+      `;
+      typeSelect.value = field.type === 'number' ? 'number' : 'checkbox';
+      typeSelect.addEventListener('change', () => {
+        const nextType = typeSelect.value === 'number' ? 'number' : 'checkbox';
+        const previousType = field.type === 'number' ? 'number' : 'checkbox';
+        if (previousType === nextType) {
+          return;
+        }
+        const points = getFieldPoints(field);
+        field.type = nextType;
+        setFieldPoints(field, points);
+        setDraftDirty(true);
+        renderManager();
+      });
+
+      const pointsInput = document.createElement('input');
+      pointsInput.type = 'number';
+      pointsInput.min = '0';
+      pointsInput.step = '0.1';
+      pointsInput.value = String(getFieldPoints(field));
+      pointsInput.className = 'ucaylar-field-edit__points';
+      pointsInput.addEventListener('input', () => {
+        const parsed = Number.parseFloat(pointsInput.value);
+        const nextPoints = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+        setFieldPoints(field, nextPoints);
+        setDraftDirty(true);
+      });
+
+      const hiddenToggle = document.createElement('label');
+      hiddenToggle.className = 'ucaylar-field-edit__hidden';
+      hiddenToggle.innerHTML = `<input type="checkbox"> <span>Gizle</span>`;
+      const hiddenInput = hiddenToggle.querySelector('input');
+      if (hiddenInput) {
+        hiddenInput.checked = Boolean(field.hidden);
+        hiddenInput.addEventListener('change', () => {
+          field.hidden = hiddenInput.checked;
+          setDraftDirty(true);
+        });
+      }
+
+      const moveUp = document.createElement('button');
+      moveUp.type = 'button';
+      moveUp.className = 'button-pill secondary';
+      moveUp.textContent = '↑';
+      moveUp.disabled = index === 0;
+      moveUp.addEventListener('click', () => {
+        if (index <= 0) return;
+        const next = draftFields.slice();
+        const temp = next[index - 1];
+        next[index - 1] = next[index];
+        next[index] = temp;
+        draftFields = next;
+        setDraftDirty(true);
+        renderManager();
+      });
+
+      const moveDown = document.createElement('button');
+      moveDown.type = 'button';
+      moveDown.className = 'button-pill secondary';
+      moveDown.textContent = '↓';
+      moveDown.disabled = index === draftFields.length - 1;
+      moveDown.addEventListener('click', () => {
+        if (index >= draftFields.length - 1) return;
+        const next = draftFields.slice();
+        const temp = next[index + 1];
+        next[index + 1] = next[index];
+        next[index] = temp;
+        draftFields = next;
+        setDraftDirty(true);
+        renderManager();
+      });
+
+      const deleteButton = document.createElement('button');
+      deleteButton.type = 'button';
+      deleteButton.className = 'button-pill secondary ucaylar-field-edit__delete';
+      deleteButton.textContent = '🗑️';
+      deleteButton.setAttribute('aria-label', 'Alanı sil');
+      deleteButton.addEventListener('click', () => openDeleteConfirm(field.id));
+
+      const meta = document.createElement('div');
+      meta.className = 'ucaylar-field-edit__meta';
+      meta.append(typeSelect, pointsInput, hiddenToggle, moveUp, moveDown, deleteButton);
+
+      item.append(labelInput, meta);
+      managerList.append(item);
+    });
+  };
+
+  const updateTotals = () => {
+    const year = getActiveYear();
+    const tracker = ensureDefaultUcAylarTracker(year, monthKey);
+    const entry = ensureUcAylarEntry(tracker, activeDateKey);
+    const dayPoints = calculateDayPoints(tracker.fields, entry.values);
+    if (dayTotalEl) dayTotalEl.textContent = formatUcAylarPoints(dayPoints);
+
+    try {
+      const monthPoints = activeRange ? calculateUcAylarRangePoints(monthKey, activeRange) : calculateMonthPoints(tracker, year);
+      if (monthTotalEl) monthTotalEl.textContent = formatUcAylarPoints(monthPoints);
+    } catch (error) {
+      console.warn('Üç Aylar toplam puan hesaplanamadı.', error);
+      if (monthTotalEl) monthTotalEl.textContent = '0';
+    }
+  };
+
+  if (managerForm) {
+    managerForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const formData = new FormData(form);
+      const label = String(formData.get('label') || '').trim();
+      const type = String(formData.get('type') || 'checkbox');
+      const points = Number.parseFloat(String(formData.get('points') || '5'));
+      const step = Number.parseInt(String(formData.get('step') || '1'), 10);
+
+      if (!label) {
+        return;
+      }
+
+      const field = createUcAylarField({
+        label,
+        type: type === 'number' ? 'number' : 'checkbox',
+        points: Number.isFinite(points) ? Math.max(0, points) : 0,
+        step: Number.isFinite(step) ? Math.max(1, step) : 1,
+      });
+
+      draftFields.push(field);
+      setDraftDirty(true);
+
+      form.reset();
+      const labelInput = form.querySelector('input[name="label"]');
+      if (labelInput) {
+        labelInput.focus();
+      }
+
+      renderManager();
+      setManagerStatus('Yeni alan eklendi (kaydetmek için Kaydet’e basın).');
+    });
+  }
+
+  renderFields();
+  if (initialManageOpen) {
+    renderManager();
+  }
+  updateTotals();
+  updateNavButtons();
+}
+
+function loadUcAylarData() {
+  const empty = { version: UCAYLAR_TRACKER_STORAGE_VERSION, trackers: {} };
+  try {
+    const raw = localStorage.getItem(UCAYLAR_TRACKER_STORAGE_KEY);
+    if (!raw) {
+      return empty;
+    }
+    const parsed = JSON.parse(raw);
+    return migrateUcAylarData(parsed);
+  } catch (error) {
+    console.warn('Üç Aylar çetele verisi okunamadı, sıfırlanacak.', error);
+    return empty;
+  }
+}
+
+function saveUcAylarData(data) {
+  if (!data || typeof data !== 'object') {
+    return;
+  }
+  try {
+    localStorage.setItem(UCAYLAR_TRACKER_STORAGE_KEY, JSON.stringify(data));
+  } catch (error) {
+    console.warn('Üç Aylar çetele verisi kaydedilemedi.', error);
+  }
+}
+
+function migrateUcAylarData(data, options = {}) {
+  const source = options && options.source === 'import' ? 'import' : 'local';
+  const empty = { version: UCAYLAR_TRACKER_STORAGE_VERSION, trackers: {} };
+  if (!data || typeof data !== 'object') {
+    return empty;
+  }
+
+  const version = Number.isFinite(Number(data.version)) ? Number(data.version) : 0;
+  const trackers = data.trackers && typeof data.trackers === 'object' ? data.trackers : {};
+
+  if (version === UCAYLAR_TRACKER_STORAGE_VERSION) {
+    const normalized = { version: UCAYLAR_TRACKER_STORAGE_VERSION, trackers: {} };
+    Object.entries(trackers).forEach(([key, tracker]) => {
+      const monthKey = extractUcAylarMonthKeyFromTrackerKey(key);
+      const normalizedTracker = normalizeUcAylarTracker(tracker);
+      applyUcAylarMonthDefaults(normalizedTracker, monthKey, { source });
+      normalized.trackers[key] = normalizedTracker;
+    });
+    return normalized;
+  }
+
+  if (version === 0) {
+    const normalized = { version: UCAYLAR_TRACKER_STORAGE_VERSION, trackers: {} };
+    Object.entries(trackers).forEach(([key, tracker]) => {
+      const monthKey = extractUcAylarMonthKeyFromTrackerKey(key);
+      const normalizedTracker = normalizeUcAylarTracker(tracker);
+      applyUcAylarMonthDefaults(normalizedTracker, monthKey, { source });
+      normalized.trackers[key] = normalizedTracker;
+    });
+    return normalized;
+  }
+
+  return empty;
+}
+
+function extractUcAylarMonthKeyFromTrackerKey(key) {
+  if (typeof key !== 'string') {
+    return '';
+  }
+  const separatorIndex = key.indexOf('-');
+  if (separatorIndex <= 0) {
+    return '';
+  }
+  return key.slice(separatorIndex + 1);
+}
+
+function normalizeUcAylarRemovedDefaultFieldIds(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const cleaned = value
+    .filter((entry) => typeof entry === 'string')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  return Array.from(new Set(cleaned)).sort();
+}
+
+function applyUcAylarMonthDefaults(tracker, monthKey, options = {}) {
+  if (!tracker || typeof tracker !== 'object') {
+    return;
+  }
+
+  if (options.source !== 'import') {
+    const currentVersion = Number.isFinite(Number(tracker.defaultsVersion)) ? Number(tracker.defaultsVersion) : 0;
+    if (currentVersion < UCAYLAR_DEFAULTS_VERSION) {
+      upgradeUcAylarDefaultsV2(tracker);
+      tracker.defaultsVersion = UCAYLAR_DEFAULTS_VERSION;
+    }
+  }
+
+  if (!Array.isArray(tracker.removedDefaultFieldIds)) {
+    tracker.removedDefaultFieldIds = normalizeUcAylarRemovedDefaultFieldIds(tracker.removedDefaultFieldIds);
+  } else {
+    tracker.removedDefaultFieldIds = normalizeUcAylarRemovedDefaultFieldIds(tracker.removedDefaultFieldIds);
+  }
+
+  if (monthKey !== 'ramazan') {
+    return;
+  }
+
+  const dismissed = new Set(tracker.removedDefaultFieldIds);
+  const hasTeravih = Array.isArray(tracker.fields) && tracker.fields.some((field) => field && field.id === UCAYLAR_RAMAZAN_DEFAULT_FIELD_ID);
+  if (hasTeravih || dismissed.has(UCAYLAR_RAMAZAN_DEFAULT_FIELD_ID)) {
+    return;
+  }
+
+  // Import sırasında alanlar "override" edilir: dosyada Teravih yoksa otomatik eklemeyelim.
+  if (options.source === 'import') {
+    tracker.removedDefaultFieldIds = Array.from(new Set([...tracker.removedDefaultFieldIds, UCAYLAR_RAMAZAN_DEFAULT_FIELD_ID])).sort();
+    return;
+  }
+
+  if (!Array.isArray(tracker.fields)) {
+    tracker.fields = createDefaultUcAylarFields();
+  }
+  tracker.fields.push({
+    id: UCAYLAR_RAMAZAN_DEFAULT_FIELD_ID,
+    label: 'Teravih',
+    type: 'checkbox',
+    hidden: false,
+    pointsWhenDone: 100,
+  });
+}
+
+function upgradeUcAylarDefaultsV2(tracker) {
+  if (!tracker || typeof tracker !== 'object' || !Array.isArray(tracker.fields)) {
+    return;
+  }
+
+  const fieldsById = new Map(tracker.fields.map((field) => [field && field.id, field]));
+
+  const updateLabel = (fieldId, nextLabel) => {
+    const field = fieldsById.get(fieldId);
+    if (!field || typeof field !== 'object') {
+      return;
+    }
+    field.label = nextLabel;
+  };
+
+  const updateTypeToNumber = (fieldId) => {
+    const field = fieldsById.get(fieldId);
+    if (!field || typeof field !== 'object') {
+      return;
+    }
+    const fromType = field.type === 'number' ? 'number' : 'checkbox';
+    if (fromType === 'number') {
+      field.type = 'number';
+      field.step = Number.isFinite(Number(field.step)) ? Math.max(1, Number(field.step)) : 1;
+      return;
+    }
+
+    const carriedPoints = Number.isFinite(Number(field.pointsWhenDone)) ? Math.max(0, Number(field.pointsWhenDone)) : 0;
+    field.type = 'number';
+    field.pointsPerUnit = carriedPoints;
+    field.step = Number.isFinite(Number(field.step)) ? Math.max(1, Number(field.step)) : 1;
+
+    if (tracker.entries && typeof tracker.entries === 'object') {
+      convertFieldValuesForTypeChange(tracker.entries, fieldId, 'checkbox', 'number');
+    }
+  };
+
+  // Etiket düzeltmeleri
+  updateLabel('kuran', 'Kur’an-ı Kerim');
+  updateLabel('zikir', 'Zikir');
+  updateLabel('kucuk-cevsen', 'Küçük Cevşen (Bab)');
+
+  // Tip değişimleri (varsayılanı sayı yapmak istediklerimiz)
+  updateTypeToNumber('kucuk-cevsen');
+  updateTypeToNumber('tesbihat');
+  updateTypeToNumber('tevhidname');
+  updateTypeToNumber('kulubuddaria');
+
+  const zikir = fieldsById.get('zikir');
+  if (zikir && typeof zikir === 'object' && zikir.type === 'number') {
+    if (!Number.isFinite(Number(zikir.step)) || Number(zikir.step) < 1) {
+      zikir.step = 100;
+    }
+  }
+}
+
+function normalizeUcAylarTracker(tracker) {
+  const normalized = {
+    fields: createDefaultUcAylarFields(),
+    entries: {},
+    removedDefaultFieldIds: [],
+  };
+
+  if (!tracker || typeof tracker !== 'object') {
+    return normalized;
+  }
+
+  normalized.removedDefaultFieldIds = normalizeUcAylarRemovedDefaultFieldIds(tracker.removedDefaultFieldIds);
+  normalized.defaultsVersion = Number.isFinite(Number(tracker.defaultsVersion)) ? Number(tracker.defaultsVersion) : 0;
+
+  if (Array.isArray(tracker.fields) && tracker.fields.length) {
+    normalized.fields = tracker.fields.map((field) => normalizeUcAylarField(field)).filter(Boolean);
+    if (!normalized.fields.length) {
+      normalized.fields = createDefaultUcAylarFields();
+    }
+  }
+
+  const fieldMap = new Map(normalized.fields.map((field) => [field.id, field]));
+
+  if (tracker.entries && typeof tracker.entries === 'object') {
+    Object.entries(tracker.entries).forEach(([dateKey, entry]) => {
+      if (!isValidDateKey(dateKey) || !entry || typeof entry !== 'object') {
+        return;
+      }
+      const values = entry.values && typeof entry.values === 'object' ? entry.values : {};
+      normalized.entries[dateKey] = { values: normalizeUcAylarEntryValues(values, fieldMap) };
+    });
+  }
+
+  return normalized;
+}
+
+function normalizeUcAylarEntryValues(values, fieldMap) {
+  const normalized = {};
+  if (!values || typeof values !== 'object' || !(fieldMap instanceof Map)) {
+    return normalized;
+  }
+  Object.entries(values).forEach(([fieldId, rawValue]) => {
+    const field = fieldMap.get(fieldId);
+    if (!field) {
+      return;
+    }
+    const normalizedValue = normalizeUcAylarValueForField(field, rawValue);
+    if (typeof normalizedValue === 'undefined') {
+      return;
+    }
+    normalized[fieldId] = normalizedValue;
+  });
+  return normalized;
+}
+
+function normalizeUcAylarValueForField(field, value) {
+  if (!field) {
+    return undefined;
+  }
+  if (field.type === 'checkbox') {
+    if (value === true) return true;
+    if (value === false) return false;
+    if (typeof value === 'number') return value > 0;
+    if (typeof value === 'string') {
+      const lowered = value.trim().toLowerCase();
+      return lowered === 'true' || lowered === '1' || lowered === 'on' || lowered === 'yes';
+    }
+    return Boolean(value);
+  }
+
+  const parsed = typeof value === 'number' ? value : Number.parseFloat(String(value));
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 0;
+  }
+  return parsed;
+}
+
+function normalizeUcAylarField(field) {
+  if (!field || typeof field !== 'object') {
+    return null;
+  }
+  const type = field.type === 'number' ? 'number' : 'checkbox';
+  const id = typeof field.id === 'string' && field.id.trim() ? field.id.trim() : createUcAylarFieldId(field.label || 'alan');
+  const label = typeof field.label === 'string' && field.label.trim() ? field.label.trim() : 'Alan';
+  const hidden = Boolean(field.hidden);
+  const step = type === 'number' && Number.isFinite(Number(field.step)) ? Math.max(1, Number(field.step)) : 1;
+
+  if (type === 'checkbox') {
+    const pointsWhenDone = Number.isFinite(Number(field.pointsWhenDone)) ? Math.max(0, Number(field.pointsWhenDone)) : 5;
+    return { id, label, type, hidden, pointsWhenDone };
+  }
+
+  const pointsPerUnit = Number.isFinite(Number(field.pointsPerUnit)) ? Math.max(0, Number(field.pointsPerUnit)) : 1;
+  return { id, label, type, hidden, pointsPerUnit, step };
+}
+
+function getUcAylarTrackerKey(year, monthKey) {
+  return `${year}-${monthKey}`;
+}
+
+function ensureDefaultUcAylarTracker(year, monthKey) {
+  const data = state.ucaylar.data || { version: UCAYLAR_TRACKER_STORAGE_VERSION, trackers: {} };
+  if (!state.ucaylar.data) {
+    state.ucaylar.data = data;
+  }
+  if (!data.trackers || typeof data.trackers !== 'object') {
+    data.trackers = {};
+  }
+
+  const key = getUcAylarTrackerKey(year, monthKey);
+  let tracker = data.trackers[key];
+  if (!tracker || typeof tracker !== 'object') {
+    tracker = {
+      fields: createDefaultUcAylarFields(),
+      entries: {},
+      removedDefaultFieldIds: [],
+      defaultsVersion: UCAYLAR_DEFAULTS_VERSION,
+    };
+    applyUcAylarMonthDefaults(tracker, monthKey, { source: 'local' });
+    data.trackers[key] = tracker;
+    saveUcAylarData(data);
+    return tracker;
+  }
+
+  // Önemli: Burada tracker objesini her çağrıda "clone" etmiyoruz.
+  // Aksi halde UI event handler'larının kapattığı referanslar (entry/field) güncellenmez
+  // ve toplamlar doğru hesaplanamaz.
+  if (!Array.isArray(tracker.fields) || tracker.fields.length === 0) {
+    tracker.fields = createDefaultUcAylarFields();
+  }
+  if (!tracker.entries || typeof tracker.entries !== 'object') {
+    tracker.entries = {};
+  } else {
+    Object.values(tracker.entries).forEach((entry) => {
+      if (!entry || typeof entry !== 'object') {
+        return;
+      }
+      if (!entry.values || typeof entry.values !== 'object') {
+        entry.values = {};
+      }
+    });
+  }
+
+  applyUcAylarMonthDefaults(tracker, monthKey, { source: 'local' });
+  data.trackers[key] = tracker;
+  return tracker;
+}
+
+function ensureUcAylarEntry(tracker, dateKey) {
+  if (!tracker.entries || typeof tracker.entries !== 'object') {
+    tracker.entries = {};
+  }
+  let entry = tracker.entries[dateKey];
+  if (!entry || typeof entry !== 'object') {
+    entry = { values: {} };
+    tracker.entries[dateKey] = entry;
+    return entry;
+  }
+  if (!entry.values || typeof entry.values !== 'object') {
+    entry.values = {};
+  }
+  return entry;
+}
+
+function calculateFieldPoints(field, value) {
+  if (!field) {
+    return 0;
+  }
+  if (field.type === 'checkbox') {
+    return value ? Number(field.pointsWhenDone) || 0 : 0;
+  }
+  const numeric = typeof value === 'number' && Number.isFinite(value) ? value : 0;
+  return numeric * (Number(field.pointsPerUnit) || 0);
+}
+
+function calculateDayPoints(fields, values) {
+  if (!Array.isArray(fields) || !values || typeof values !== 'object') {
+    return 0;
+  }
+  return fields.reduce((total, field) => total + calculateFieldPoints(field, values[field.id]), 0);
+}
+
+function calculateUcAylarRangePoints(monthKey, range, options = {}) {
+  const normalized = normalizeUcAylarRange(range);
+  if (!normalized) {
+    return 0;
+  }
+
+  const createMissing = options.createMissing !== false;
+
+  // Storage şeması değişmeden (yıl bazlı tracker) range toplamı:
+  // Range içindeki her gün için ilgili takvimin yıl tracker'ından puanı ekle.
+  const byYearCache = new Map();
+  let total = 0;
+  iterateDateKeysInRange(normalized).forEach((dateKey) => {
+    const year = Number.parseInt(dateKey.slice(0, 4), 10);
+    if (!Number.isFinite(year)) {
+      return;
+    }
+    let tracker = byYearCache.get(year);
+    if (!tracker) {
+      if (createMissing) {
+        tracker = ensureDefaultUcAylarTracker(year, monthKey);
+      } else {
+        const key = getUcAylarTrackerKey(year, monthKey);
+        const candidate = state.ucaylar && state.ucaylar.data && state.ucaylar.data.trackers ? state.ucaylar.data.trackers[key] : null;
+        tracker = candidate && typeof candidate === 'object' ? normalizeUcAylarTracker(candidate) : null;
+      }
+      byYearCache.set(year, tracker);
+    }
+    if (!tracker) {
+      return;
+    }
+    const entry = tracker && tracker.entries ? tracker.entries[dateKey] : null;
+    if (!entry || typeof entry !== 'object') {
+      return;
+    }
+    const values = entry.values && typeof entry.values === 'object' ? entry.values : {};
+    total += calculateDayPoints(tracker.fields, values);
+  });
+  return total;
+}
+
+function calculateMonthPoints(tracker, year) {
+  if (!tracker || !tracker.entries || typeof tracker.entries !== 'object') {
+    return 0;
+  }
+  const prefix = `${year}-`;
+  return Object.entries(tracker.entries).reduce((total, [dateKey, entry]) => {
+    if (!dateKey.startsWith(prefix) || !entry || typeof entry !== 'object') {
+      return total;
+    }
+    const values = entry.values && typeof entry.values === 'object' ? entry.values : {};
+    return total + calculateDayPoints(tracker.fields, values);
+  }, 0);
+}
+
+function convertFieldValuesForTypeChange(entriesByDate, fieldId, fromType, toType) {
+  if (!entriesByDate || typeof entriesByDate !== 'object' || !fieldId) {
+    return;
+  }
+  if (fromType === toType) {
+    return;
+  }
+
+  Object.values(entriesByDate).forEach((entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return;
+    }
+    if (!entry.values || typeof entry.values !== 'object') {
+      entry.values = {};
+    }
+
+    const raw = entry.values[fieldId];
+    const numeric = typeof raw === 'number' ? raw : Number.parseFloat(String(raw));
+    const normalizedNumber = Number.isFinite(numeric) ? Math.max(0, numeric) : 0;
+    const normalizedBoolean = raw === true
+      || raw === 1
+      || raw === '1'
+      || (typeof raw === 'string' && raw.trim().toLowerCase() === 'true');
+
+    if (fromType === 'checkbox' && toType === 'number') {
+      if (normalizedBoolean) {
+        entry.values[fieldId] = 1;
+      } else {
+        delete entry.values[fieldId];
+      }
+      return;
+    }
+
+    if (fromType === 'number' && toType === 'checkbox') {
+      if (normalizedNumber > 0) {
+        entry.values[fieldId] = true;
+      } else {
+        delete entry.values[fieldId];
+      }
+      return;
+    }
+
+    // Fallback: normalize by target type.
+    if (toType === 'checkbox') {
+      entry.values[fieldId] = normalizedNumber > 0;
+      if (!entry.values[fieldId]) {
+        delete entry.values[fieldId];
+      }
+      return;
+    }
+
+    if (toType === 'number') {
+      if (normalizedNumber > 0) {
+        entry.values[fieldId] = normalizedNumber;
+      } else {
+        delete entry.values[fieldId];
+      }
+    }
+  });
+}
+
+function removeFieldFromEntries(entriesByDate, fieldId) {
+  if (!entriesByDate || typeof entriesByDate !== 'object' || !fieldId) {
+    return;
+  }
+  Object.values(entriesByDate).forEach((entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return;
+    }
+    if (!entry.values || typeof entry.values !== 'object') {
+      return;
+    }
+    delete entry.values[fieldId];
+  });
+}
+
+function formatUcAylarPoints(points) {
+  const value = Number.isFinite(Number(points)) ? Number(points) : 0;
+  const rounded = Math.round(value * 10) / 10;
+  if (Math.abs(rounded - Math.round(rounded)) < 0.001) {
+    return String(Math.round(rounded));
+  }
+  return rounded.toFixed(1);
+}
+
+function createUcAylarFieldId(label) {
+  const source = typeof label === 'string' ? label : 'alan';
+  const normalized = source
+    .toLocaleLowerCase('tr-TR')
+    .replace(/ı/g, 'i')
+    .replace(/ğ/g, 'g')
+    .replace(/ü/g, 'u')
+    .replace(/ş/g, 's')
+    .replace(/ö/g, 'o')
+    .replace(/ç/g, 'c')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+  const suffix = Math.random().toString(16).slice(2, 6);
+  return `uc-${normalized || 'alan'}-${suffix}`;
+}
+
+function createUcAylarField({ label, type, points, step }) {
+  const id = createUcAylarFieldId(label);
+  const safeLabel = typeof label === 'string' ? label.trim() : 'Alan';
+  if (type === 'number') {
+    return {
+      id,
+      label: safeLabel || 'Alan',
+      type: 'number',
+      hidden: false,
+      pointsPerUnit: Number.isFinite(points) ? points : 1,
+      step: Number.isFinite(step) ? Math.max(1, step) : 1,
+    };
+  }
+  return {
+    id,
+    label: safeLabel || 'Alan',
+    type: 'checkbox',
+    hidden: false,
+    pointsWhenDone: Number.isFinite(points) ? points : 5,
+  };
+}
+
+function createDefaultUcAylarFields() {
+  return [
+    { id: 'kuran', label: 'Kur’an-ı Kerim', type: 'number', hidden: false, pointsPerUnit: 10, step: 1 },
+    { id: 'meal', label: 'Meal', type: 'number', hidden: false, pointsPerUnit: 1, step: 1 },
+    { id: 'risale', label: 'Risale', type: 'number', hidden: false, pointsPerUnit: 1, step: 1 },
+    { id: 'pirlanta', label: 'Pırlanta', type: 'number', hidden: false, pointsPerUnit: 1, step: 1 },
+    { id: 'buyuk-cevsen', label: 'Büyük Cevşen', type: 'number', hidden: false, pointsPerUnit: 1, step: 1 },
+    { id: 'kucuk-cevsen', label: 'Küçük Cevşen (Bab)', type: 'number', hidden: false, pointsPerUnit: 5, step: 1 },
+    { id: 'duha', label: 'Duha', type: 'checkbox', hidden: false, pointsWhenDone: 5 },
+    { id: 'evvabin', label: 'Evvabin', type: 'checkbox', hidden: false, pointsWhenDone: 5 },
+    { id: 'teheccut', label: 'Teheccüt', type: 'checkbox', hidden: false, pointsWhenDone: 5 },
+    { id: 'hacet', label: 'Hacet', type: 'checkbox', hidden: false, pointsWhenDone: 5 },
+    { id: 'oruc', label: 'Oruç', type: 'checkbox', hidden: false, pointsWhenDone: 10 },
+    { id: 'zikir', label: 'Zikir', type: 'number', hidden: false, pointsPerUnit: 0.05, step: 100 },
+    { id: 'dinleme', label: 'Dinleme', type: 'number', hidden: false, pointsPerUnit: 0.2, step: 5 },
+    { id: 'tesbihat', label: 'Tesbihat', type: 'number', hidden: false, pointsPerUnit: 5, step: 1 },
+    { id: 'tevhidname', label: 'Tevhidname', type: 'number', hidden: false, pointsPerUnit: 5, step: 1 },
+    { id: 'kulubuddaria', label: 'Kulubüddaria', type: 'number', hidden: false, pointsPerUnit: 5, step: 1 },
+  ];
 }
 
 async function renderCevsen(container, config) {
@@ -2370,6 +4119,1910 @@ async function renderHomePage(container) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Ortak Dua (Firebase)
+// ---------------------------------------------------------------------------
+
+function cleanupSharedDuaUI() {
+  const ui = state.sharedDua && state.sharedDua.ui;
+  if (!ui) {
+    return;
+  }
+  if (Array.isArray(ui.unsubscribers)) {
+    ui.unsubscribers.forEach((unsubscribe) => {
+      try {
+        if (typeof unsubscribe === 'function') {
+          unsubscribe();
+        }
+      } catch (_error) {
+        // ignore
+      }
+    });
+  }
+  state.sharedDua.ui = null;
+}
+
+function loadSharedDuaDisplayName() {
+  try {
+    const stored = window.localStorage.getItem(SHARED_DUA_DISPLAY_NAME_STORAGE_KEY);
+    return typeof stored === 'string' ? stored.trim() : '';
+  } catch (_error) {
+    return '';
+  }
+}
+
+function clearSharedDuaDisplayName() {
+  try {
+    window.localStorage.removeItem(SHARED_DUA_DISPLAY_NAME_STORAGE_KEY);
+  } catch (_error) {
+    // ignore
+  }
+}
+
+function storeSharedDuaDisplayName(value) {
+  let name = typeof value === 'string' ? value.trim() : '';
+  if (!name) {
+    return '';
+  }
+  if (name.length > 40) {
+    name = name.slice(0, 40);
+  }
+  try {
+    window.localStorage.setItem(SHARED_DUA_DISPLAY_NAME_STORAGE_KEY, name);
+  } catch (_error) {
+    // ignore
+  }
+  return name;
+}
+
+function normaliseSharedDuaAssignStrategy(value) {
+  if (value === 'same' || value === 'random') {
+    return value;
+  }
+  return 'manual';
+}
+
+function resolveSharedDuaMaxClaims(value) {
+  const parsed = typeof value === 'number' && Number.isFinite(value) ? Math.floor(value) : Number.parseInt(value, 10);
+  if (parsed === 0) {
+    return 0;
+  }
+  if (!Number.isFinite(parsed)) {
+    return 1;
+  }
+  return clamp(parsed, 1, 5);
+}
+
+function formatSharedDuaMaxClaimsLabel(value) {
+  const resolved = resolveSharedDuaMaxClaims(value);
+  return resolved === 0 ? 'Limitsiz' : String(resolved);
+}
+
+function resolveSharedDuaRoundNumber(value) {
+  const resolved = typeof value === 'number' && Number.isFinite(value) ? Math.floor(value) : 1;
+  return resolved > 0 ? resolved : 1;
+}
+
+function getSharedDuaRoomRound(room) {
+  return resolveSharedDuaRoundNumber(room && room.roundNumber);
+}
+
+function getSharedDuaPartRound(part) {
+  return resolveSharedDuaRoundNumber(part && part.roundNumber);
+}
+
+function getSharedDuaPartView(part, currentRound) {
+  const round = resolveSharedDuaRoundNumber(currentRound);
+  const partRound = getSharedDuaPartRound(part);
+
+  if (partRound !== round) {
+    return { state: 'available', claimedByUid: null, claimedByName: null, isStale: true };
+  }
+
+  const stateValue = part && typeof part.state === 'string' ? part.state : 'available';
+  const claimedByUid = part && typeof part.claimedByUid === 'string'
+    ? part.claimedByUid
+    : part && typeof part.claimedBy === 'string'
+      ? part.claimedBy
+      : null;
+  const claimedByName = part && typeof part.claimedByName === 'string' ? part.claimedByName.trim() : '';
+
+  return {
+    state: stateValue,
+    claimedByUid,
+    claimedByName: claimedByName || null,
+    isStale: false,
+  };
+}
+
+function normaliseSharedDuaRoomId(roomId) {
+  if (!roomId || typeof roomId !== 'string') {
+    return null;
+  }
+  const trimmed = roomId.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const compact = trimmed.replace(/\s+/g, '');
+
+  // Preferred: short human-friendly room codes.
+  if (/^[A-Za-z0-9]{6,7}$/.test(compact)) {
+    return compact.toUpperCase();
+  }
+
+  // Backwards compatibility: Firestore auto IDs.
+  if (/^[A-Za-z0-9_-]{8,}$/.test(compact)) {
+    return compact;
+  }
+
+  return null;
+}
+
+function parseSharedDuaRoomIdFromLocation() {
+  if (typeof window === 'undefined' || !window.location) {
+    return null;
+  }
+
+  const hash = typeof window.location.hash === 'string' ? window.location.hash : '';
+  if (hash && hash.startsWith(SHARED_DUA_ROUTE_PREFIX)) {
+    const remainder = hash.slice(SHARED_DUA_ROUTE_PREFIX.length);
+    const firstSegment = remainder.split('/')[0];
+    const decoded = firstSegment ? decodeURIComponent(firstSegment) : '';
+    const normalised = normaliseSharedDuaRoomId(decoded);
+    if (normalised) {
+      return normalised;
+    }
+  }
+
+  try {
+    const params = new URLSearchParams(window.location.search || '');
+    const shared = params.get('shared');
+    const room = params.get('room');
+    if ((shared === '1' || shared === 'true') && room) {
+      const decoded = decodeURIComponent(room);
+      return normaliseSharedDuaRoomId(decoded);
+    }
+  } catch (_error) {
+    // ignore
+  }
+
+  return null;
+}
+
+function getSharedDuaBaseUrl() {
+  if (typeof window === 'undefined' || !window.location) {
+    return '';
+  }
+  const origin = window.location.origin || '';
+  const pathname = window.location.pathname || '/';
+  const basePath = pathname.endsWith('/index.html') ? pathname.slice(0, -'/index.html'.length) : pathname;
+  return `${origin}${basePath}`;
+}
+
+function buildSharedDuaShareLink(roomId) {
+  const base = getSharedDuaBaseUrl();
+  return `${base}${SHARED_DUA_ROUTE_PREFIX}${encodeURIComponent(roomId)}`;
+}
+
+function setSharedDuaHash(roomId) {
+  if (typeof window === 'undefined' || !window.location || !window.history) {
+    return;
+  }
+  const normalised = normaliseSharedDuaRoomId(roomId);
+  if (!normalised) {
+    return;
+  }
+  const nextUrl = `${window.location.pathname}${window.location.search}${SHARED_DUA_ROUTE_PREFIX}${encodeURIComponent(normalised)}`;
+  window.history.replaceState(null, '', nextUrl);
+}
+
+function clearSharedDuaHash() {
+  if (typeof window === 'undefined' || !window.location || !window.history) {
+    return;
+  }
+  if (!window.location.hash || !window.location.hash.startsWith(SHARED_DUA_ROUTE_PREFIX)) {
+    return;
+  }
+  window.history.replaceState(null, '', window.location.pathname + window.location.search);
+}
+
+function generateSharedDuaRoomCode() {
+  const min = SHARED_DUA_ROOM_CODE_MIN_LENGTH;
+  const max = SHARED_DUA_ROOM_CODE_MAX_LENGTH;
+  const length = min === max ? min : min + Math.floor(Math.random() * (max - min + 1));
+
+  let code = '';
+  for (let index = 0; index < length; index += 1) {
+    code += SHARED_DUA_ROOM_CODE_ALPHABET[Math.floor(Math.random() * SHARED_DUA_ROOM_CODE_ALPHABET.length)];
+  }
+  return code;
+}
+
+async function copyTextToClipboard(text) {
+  const payload = typeof text === 'string' ? text : '';
+  if (!payload) {
+    return false;
+  }
+
+  try {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      await navigator.clipboard.writeText(payload);
+      return true;
+    }
+  } catch (_error) {
+    // fallback below
+  }
+
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = payload;
+    textarea.setAttribute('readonly', 'true');
+    textarea.style.position = 'fixed';
+    textarea.style.top = '-9999px';
+    textarea.style.left = '-9999px';
+    document.body.append(textarea);
+    textarea.select();
+    const ok = document.execCommand && document.execCommand('copy');
+    textarea.remove();
+    return Boolean(ok);
+  } catch (_error) {
+    return false;
+  }
+}
+
+function getSharedDuaFirebaseConfig() {
+  const config = typeof window !== 'undefined' ? window.FIREBASE_CONFIG : null;
+  if (!config || typeof config !== 'object') {
+    return null;
+  }
+
+  const required = ['apiKey', 'authDomain', 'projectId', 'appId'];
+  const hasAll = required.every((key) => typeof config[key] === 'string' && config[key].trim());
+  if (!hasAll) {
+    return null;
+  }
+
+  return config;
+}
+
+async function ensureSharedDuaFirebase() {
+  if (sharedDuaFirebasePromise) {
+    return sharedDuaFirebasePromise;
+  }
+
+  sharedDuaFirebasePromise = (async () => {
+    const config = getSharedDuaFirebaseConfig();
+    if (!config) {
+      throw new Error('Firebase yapılandırması bulunamadı. Lütfen firebase-config.js dosyasını doldurun.');
+    }
+
+    const [appModule, authModule, firestoreModule] = await Promise.all([
+      import(`https://www.gstatic.com/firebasejs/${SHARED_DUA_FIREBASE_SDK_VERSION}/firebase-app.js`),
+      import(`https://www.gstatic.com/firebasejs/${SHARED_DUA_FIREBASE_SDK_VERSION}/firebase-auth.js`),
+      import(`https://www.gstatic.com/firebasejs/${SHARED_DUA_FIREBASE_SDK_VERSION}/firebase-firestore.js`),
+    ]);
+
+    const { initializeApp, getApps, getApp } = appModule;
+    const { getAuth, signInAnonymously } = authModule;
+
+    const app = getApps().length ? getApp() : initializeApp(config);
+    const auth = getAuth(app);
+
+    let user = auth.currentUser;
+    if (!user) {
+      const result = await signInAnonymously(auth);
+      user = result.user;
+    }
+    if (!user || !user.uid) {
+      throw new Error('Oturum açılamadı.');
+    }
+
+    const db = firestoreModule.getFirestore(app);
+    return {
+      uid: user.uid,
+      db,
+      fs: firestoreModule,
+    };
+  })();
+
+  return sharedDuaFirebasePromise;
+}
+
+function buildSharedDuaPartsDefinition(roomType, hatimMode, totalParts) {
+  const resolvedTotal = Math.max(0, Math.floor(totalParts || 0));
+  const parts = [];
+
+  if (roomType === 'cevsen') {
+    // 100 bab → 5'li gruplar = 20 parça.
+    for (let index = 1; index <= 20; index += 1) {
+      const start = (index - 1) * 5 + 1;
+      const end = Math.min(index * 5, 100);
+      parts.push({ id: String(index), index, label: `Bab ${start}-${end}` });
+    }
+    return parts;
+  }
+
+  if (roomType === 'hatim' && hatimMode === 'cuz') {
+    for (let index = 1; index <= 30; index += 1) {
+      parts.push({ id: String(index), index, label: `Cüz ${index}` });
+    }
+    return parts;
+  }
+
+  for (let index = 1; index <= resolvedTotal; index += 1) {
+    parts.push({ id: String(index), index, label: `Sayfa ${index}` });
+  }
+  return parts;
+}
+
+async function createSharedDuaRoom(options) {
+  const { db, fs, uid } = await ensureSharedDuaFirebase();
+
+  const roomType = options && options.type === 'cevsen' ? 'cevsen' : 'hatim';
+  const hatimMode = roomType === 'hatim' && options && options.hatimMode === 'page' ? 'page' : 'cuz';
+  const maxClaimsPerUser = resolveSharedDuaMaxClaims(options && options.maxClaimsPerUser);
+  const assignStrategy = normaliseSharedDuaAssignStrategy(options && options.assignStrategy);
+  const name = options && typeof options.name === 'string' ? options.name.trim() : '';
+
+  const totalParts = roomType === 'cevsen'
+    ? 20
+    : hatimMode === 'page'
+      ? Math.max(1, Math.floor(options && options.totalParts ? options.totalParts : 604))
+      : 30;
+
+  let roomRef = null;
+  let roomId = null;
+
+  const roomPayload = {
+    type: roomType,
+    hatimMode: roomType === 'hatim' ? hatimMode : null,
+    totalParts,
+    createdAt: fs.serverTimestamp(),
+    createdBy: uid,
+    name,
+    maxClaimsPerUser,
+    maxPiecesPerUser: maxClaimsPerUser,
+    members: { [uid]: true },
+    claimCounts: { [uid]: 0 },
+    status: 'active',
+    assignStrategy,
+    roundNumber: 1,
+    roundCompletedCount: 0,
+    roundDoneCount: 0,
+    lastResetFromRound: 0,
+  };
+
+  // Collision handling without reading:
+  // - We try to create the doc with a short ID.
+  // - If the ID already exists, this becomes an "update" which is denied by rules,
+  //   so we retry with a new code. This avoids leaking room existence via reads.
+  let lastError = null;
+  for (let attempt = 0; attempt < SHARED_DUA_ROOM_CODE_ATTEMPTS; attempt += 1) {
+    const candidate = generateSharedDuaRoomCode();
+    const candidateRef = fs.doc(db, 'rooms', candidate);
+    try {
+      await fs.setDoc(candidateRef, roomPayload);
+      roomRef = candidateRef;
+      roomId = candidate;
+      lastError = null;
+      break;
+    } catch (error) {
+      lastError = error;
+      const code = error && typeof error.code === 'string' ? error.code : '';
+      if (code === 'permission-denied') {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  if (!roomRef || !roomId) {
+    if (lastError && lastError.code === 'permission-denied') {
+      throw new Error('Oda oluşturulamadı. Firestore kurallarını (rules) yayınladığınızdan emin olun.');
+    }
+    throw new Error('Oda kodu üretilemedi. Lütfen tekrar deneyin.');
+  }
+
+  const parts = buildSharedDuaPartsDefinition(roomType, hatimMode, totalParts);
+  const chunkSize = 450; // Firestore batch limit: 500
+
+  for (let offset = 0; offset < parts.length; offset += chunkSize) {
+    const batch = fs.writeBatch(db);
+    const slice = parts.slice(offset, offset + chunkSize);
+    slice.forEach((part) => {
+      const partRef = fs.doc(fs.collection(db, 'rooms', roomId, 'parts'), part.id);
+      batch.set(partRef, {
+        index: part.index,
+        label: part.label,
+        state: 'available',
+        roundNumber: 1,
+        claimedBy: null,
+        claimedAt: null,
+        doneBy: null,
+        doneAt: null,
+      });
+    });
+    await batch.commit();
+  }
+
+  saveSharedDuaLastRoom({ id: roomId, name, type: roomType, status: 'active' });
+  return roomId;
+}
+
+async function joinSharedDuaRoom(roomId) {
+  const { db, fs, uid } = await ensureSharedDuaFirebase();
+  const normalised = normaliseSharedDuaRoomId(roomId);
+  if (!normalised) {
+    throw new Error('Oda kodu geçersiz.');
+  }
+  const roomRef = fs.doc(db, 'rooms', normalised);
+  try {
+    await fs.updateDoc(roomRef, { [`members.${uid}`]: true });
+  } catch (error) {
+    const code = error && typeof error.code === 'string' ? error.code : '';
+    if (code === 'not-found') {
+      throw new Error('Oda bulunamadı.');
+    }
+    if (code === 'permission-denied') {
+      throw new Error('Odaya katılım izni yok. Firestore Rules yayınlandığından emin olun.');
+    }
+    throw error;
+  }
+  saveSharedDuaLastRoom({ id: normalised });
+  return normalised;
+}
+
+async function syncSharedDuaParticipantDisplayName(roomId) {
+  const name = loadSharedDuaDisplayName();
+  if (!name) {
+    return;
+  }
+  const { db, fs, uid } = await ensureSharedDuaFirebase();
+  const normalised = normaliseSharedDuaRoomId(roomId);
+  if (!normalised) {
+    return;
+  }
+  const participantRef = fs.doc(db, 'rooms', normalised, 'participants', uid);
+  await fs.setDoc(participantRef, { displayName: name, updatedAt: fs.serverTimestamp() }, { merge: true });
+}
+
+async function sharedDuaClaimPart(roomId, partId) {
+  const { db, fs, uid } = await ensureSharedDuaFirebase();
+  const normalised = normaliseSharedDuaRoomId(roomId);
+  const resolvedPartId = String(partId || '').trim();
+  if (!normalised || !resolvedPartId) {
+    throw new Error('Parça bulunamadı.');
+  }
+
+  const roomRef = fs.doc(db, 'rooms', normalised);
+  const partRef = fs.doc(db, 'rooms', normalised, 'parts', resolvedPartId);
+  const participantRef = fs.doc(db, 'rooms', normalised, 'participants', uid);
+  const displayName = loadSharedDuaDisplayName();
+
+  await fs.runTransaction(db, async (transaction) => {
+    const roomSnap = await transaction.get(roomRef);
+    if (!roomSnap.exists()) {
+      throw new Error('Oda bulunamadı.');
+    }
+    const room = roomSnap.data() || {};
+    if (room.status === 'closed') {
+      throw new Error('Bu oda kapatıldı. Yeni parça alınamaz.');
+    }
+    const maxClaims = resolveSharedDuaMaxClaims(room.maxClaimsPerUser ?? room.maxPiecesPerUser ?? 1);
+    const current = room.claimCounts && typeof room.claimCounts[uid] === 'number' ? room.claimCounts[uid] : 0;
+    if (maxClaims > 0 && current >= maxClaims) {
+      throw new Error(`En fazla ${maxClaims} parça alabilirsiniz.`);
+    }
+    const roomRound = getSharedDuaRoomRound(room);
+
+    const partSnap = await transaction.get(partRef);
+    if (!partSnap.exists()) {
+      throw new Error('Parça bulunamadı.');
+    }
+	    const part = partSnap.data() || {};
+	    const partRound = getSharedDuaPartRound(part);
+	    if (partRound === roomRound && part.state !== 'available') {
+	      throw new Error('Bu parça artık uygun değil.');
+	    }
+
+	    const participantSnap = await transaction.get(participantRef);
+	    const participant = participantSnap.exists() ? participantSnap.data() || {} : {};
+	    const existingRound = participant && typeof participant.lastRoundNumber === 'number' ? Math.floor(participant.lastRoundNumber) : 0;
+	    const existingPieces = Array.isArray(participant.lastRoundPieces) ? participant.lastRoundPieces : [];
+
+	    const partUpdate = {
+	      state: 'claimed',
+	      claimedBy: uid,
+	      claimedByUid: uid,
+	      claimedAt: fs.serverTimestamp(),
+	      doneBy: null,
+	      doneAt: null,
+	      roundNumber: roomRound,
+	    };
+	    if (displayName) {
+	      partUpdate.claimedByName = displayName;
+	    } else {
+	      partUpdate.claimedByName = fs.deleteField();
+	    }
+
+	    const indexValue = typeof part.index === 'number' && Number.isFinite(part.index)
+	      ? Math.floor(part.index)
+	      : Number.parseInt(resolvedPartId, 10);
+	    const safeIndex = Number.isFinite(indexValue) ? indexValue : null;
+
+	    const basePieces = existingRound === roomRound
+	      ? existingPieces.filter((value) => typeof value === 'number' && Number.isFinite(value))
+	      : [];
+	    const nextPieces = safeIndex && !basePieces.includes(safeIndex) ? [...basePieces, safeIndex] : basePieces;
+
+	    const participantUpdate = {
+	      lastRoundNumber: roomRound,
+	      lastRoundPieces: nextPieces,
+	      updatedAt: fs.serverTimestamp(),
+	    };
+	    if (displayName) {
+	      participantUpdate.displayName = displayName;
+	    }
+
+	    transaction.update(partRef, partUpdate);
+
+	    transaction.update(roomRef, {
+	      [`claimCounts.${uid}`]: current + 1,
+	    });
+
+	    transaction.set(participantRef, participantUpdate, { merge: true });
+	  });
+	}
+
+async function sharedDuaReleasePart(roomId, partId) {
+  const { db, fs, uid } = await ensureSharedDuaFirebase();
+  const normalised = normaliseSharedDuaRoomId(roomId);
+  const resolvedPartId = String(partId || '').trim();
+  if (!normalised || !resolvedPartId) {
+    throw new Error('Parça bulunamadı.');
+  }
+
+  const roomRef = fs.doc(db, 'rooms', normalised);
+  const partRef = fs.doc(db, 'rooms', normalised, 'parts', resolvedPartId);
+
+  await fs.runTransaction(db, async (transaction) => {
+    const roomSnap = await transaction.get(roomRef);
+    if (!roomSnap.exists()) {
+      throw new Error('Oda bulunamadı.');
+    }
+    const room = roomSnap.data() || {};
+    const isOwner = room && room.createdBy === uid;
+    const partSnap = await transaction.get(partRef);
+    if (!partSnap.exists()) {
+      throw new Error('Parça bulunamadı.');
+    }
+    const part = partSnap.data() || {};
+    if (part.state !== 'claimed') {
+      throw new Error('Bu parça şu anda alınmış değil.');
+    }
+    const claimedBy = part && typeof part.claimedBy === 'string' ? part.claimedBy : null;
+    if (!claimedBy) {
+      throw new Error('Parça bilgisi okunamadı.');
+    }
+    if (!isOwner && claimedBy !== uid) {
+      throw new Error('Bu parçayı yalnızca alan kişi bırakabilir.');
+    }
+
+    transaction.update(partRef, {
+      state: 'available',
+      claimedBy: null,
+      claimedByUid: fs.deleteField(),
+      claimedByName: fs.deleteField(),
+      claimedAt: null,
+      doneBy: null,
+      doneAt: null,
+    });
+
+    const targetUid = isOwner ? claimedBy : uid;
+    const current = room.claimCounts && typeof room.claimCounts[targetUid] === 'number' ? room.claimCounts[targetUid] : 0;
+    transaction.update(roomRef, { [`claimCounts.${targetUid}`]: Math.max(0, current - 1) });
+  });
+}
+
+async function sharedDuaMarkDone(roomId, partId) {
+  const { db, fs, uid } = await ensureSharedDuaFirebase();
+  const normalised = normaliseSharedDuaRoomId(roomId);
+  const resolvedPartId = String(partId || '').trim();
+  if (!normalised || !resolvedPartId) {
+    throw new Error('Parça bulunamadı.');
+  }
+
+  const roomRef = fs.doc(db, 'rooms', normalised);
+  const partRef = fs.doc(db, 'rooms', normalised, 'parts', resolvedPartId);
+
+  await fs.runTransaction(db, async (transaction) => {
+    const roomSnap = await transaction.get(roomRef);
+    if (!roomSnap.exists()) {
+      throw new Error('Oda bulunamadı.');
+    }
+    const room = roomSnap.data() || {};
+    const roomRound = getSharedDuaRoomRound(room);
+    const totalParts = Math.max(0, Math.floor(room.totalParts || 0));
+
+    const partSnap = await transaction.get(partRef);
+    if (!partSnap.exists()) {
+      throw new Error('Parça bulunamadı.');
+    }
+    const part = partSnap.data() || {};
+    const partRound = getSharedDuaPartRound(part);
+    if (part.state !== 'claimed' || part.claimedBy !== uid) {
+      throw new Error('Bu parçayı yalnızca alan kişi tamamlayabilir.');
+    }
+    if (partRound !== roomRound) {
+      throw new Error('Bu parça farklı bir turda bulunuyor. Sayfayı yenileyip tekrar deneyin.');
+    }
+
+    transaction.update(partRef, {
+      state: 'done',
+      doneBy: uid,
+      doneAt: fs.serverTimestamp(),
+    });
+
+    const current = room.claimCounts && typeof room.claimCounts[uid] === 'number' ? room.claimCounts[uid] : 0;
+
+    const currentDone = typeof room.roundDoneCount === 'number' && Number.isFinite(room.roundDoneCount)
+      ? Math.max(0, Math.floor(room.roundDoneCount))
+      : 0;
+    const nextDone = currentDone + 1;
+    const completedCount = typeof room.roundCompletedCount === 'number' && Number.isFinite(room.roundCompletedCount)
+      ? Math.max(0, Math.floor(room.roundCompletedCount))
+      : 0;
+    const lastResetFromRound = typeof room.lastResetFromRound === 'number' && Number.isFinite(room.lastResetFromRound)
+      ? Math.max(0, Math.floor(room.lastResetFromRound))
+      : 0;
+
+    const roomUpdate = {
+      [`claimCounts.${uid}`]: Math.max(0, current - 1),
+      roundDoneCount: nextDone,
+    };
+    if (typeof room.roundNumber !== 'number') {
+      roomUpdate.roundNumber = roomRound;
+    }
+    if (typeof room.roundCompletedCount !== 'number') {
+      roomUpdate.roundCompletedCount = completedCount;
+    }
+
+    // Tur tamamlanınca otomatik reset:
+    // - Tur numarasını artırır.
+    // - Tamamlanma sayısını artırır.
+    // - Yeni tur için done sayacını sıfırlar.
+    // Parçalar tek tek güncellenmez; roundNumber artınca eski tur kayıtları UI'da "u̇ygun" kabul edilir.
+    if (totalParts > 0 && nextDone >= totalParts && lastResetFromRound !== roomRound) {
+      roomUpdate.roundCompletedCount = completedCount + 1;
+      roomUpdate.roundNumber = roomRound + 1;
+      roomUpdate.roundDoneCount = 0;
+      roomUpdate.lastResetFromRound = roomRound;
+      roomUpdate.resetAt = fs.serverTimestamp();
+    }
+
+    transaction.update(roomRef, roomUpdate);
+  });
+}
+
+async function sharedDuaCloseRoom(roomId) {
+  const { db, fs, uid } = await ensureSharedDuaFirebase();
+  const normalised = normaliseSharedDuaRoomId(roomId);
+  if (!normalised) {
+    throw new Error('Oda kodu geçersiz.');
+  }
+  const roomRef = fs.doc(db, 'rooms', normalised);
+  await fs.runTransaction(db, async (transaction) => {
+    const snap = await transaction.get(roomRef);
+    if (!snap.exists()) {
+      throw new Error('Oda bulunamadı.');
+    }
+    const room = snap.data() || {};
+    if (room.createdBy !== uid) {
+      throw new Error('Bu işlem yalnızca oda sahibi tarafından yapılabilir.');
+    }
+    if (room.status === 'closed') {
+      return;
+    }
+    transaction.update(roomRef, { status: 'closed' });
+  });
+}
+
+async function sharedDuaClaimNextAvailable(roomId, parts, currentRound) {
+  const normalised = normaliseSharedDuaRoomId(roomId);
+  if (!normalised) {
+    throw new Error('Oda kodu geçersiz.');
+  }
+
+  const list = Array.isArray(parts) ? parts.slice() : [];
+  list.sort((a, b) => Math.floor(a && a.index ? a.index : 0) - Math.floor(b && b.index ? b.index : 0));
+  const round = resolveSharedDuaRoundNumber(currentRound);
+  const candidates = list.filter((part) => {
+    if (!part || !part.id) {
+      return false;
+    }
+    const view = getSharedDuaPartView(part, round);
+    return view.state === 'available';
+  });
+  if (!candidates.length) {
+    throw new Error('Uygun parça bulunamadı.');
+  }
+
+  let lastError = null;
+  const attempts = Math.min(candidates.length, 6);
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      await sharedDuaClaimPart(normalised, candidates[attempt].id);
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (lastError) {
+    throw lastError;
+  }
+  throw new Error('Parça alınamadı.');
+}
+
+function computeSharedDuaProgress(parts, currentRound) {
+  const list = Array.isArray(parts) ? parts : [];
+  const round = resolveSharedDuaRoundNumber(currentRound);
+  let done = 0;
+  let claimed = 0;
+  let available = 0;
+  list.forEach((part) => {
+    const view = getSharedDuaPartView(part, round);
+    if (view.state === 'done') done += 1;
+    else if (view.state === 'claimed') claimed += 1;
+    else available += 1;
+  });
+  return { done, claimed, available, total: list.length };
+}
+
+function formatSharedDuaPercent(done, total) {
+  const resolvedTotal = Math.max(0, Math.floor(total || 0));
+  if (!resolvedTotal) {
+    return '0';
+  }
+  const resolvedDone = Math.max(0, Math.floor(done || 0));
+  return String(Math.round((resolvedDone / resolvedTotal) * 100));
+}
+
+function shuffleInPlace(list) {
+  for (let index = list.length - 1; index > 0; index -= 1) {
+    const next = Math.floor(Math.random() * (index + 1));
+    [list[index], list[next]] = [list[next], list[index]];
+  }
+  return list;
+}
+
+function formatSharedDuaPartLabel(label, roomType, hatimMode, indexValue) {
+  const raw = typeof label === 'string' ? label.trim() : '';
+  const index = typeof indexValue === 'number' && Number.isFinite(indexValue) ? Math.floor(indexValue) : null;
+
+  if (raw) {
+    const matchCuz = raw.match(/^Cüz\s*(\d+)$/u);
+    if (matchCuz) {
+      return `${matchCuz[1]}.Cüz`;
+    }
+    return raw;
+  }
+
+  if (roomType === 'hatim' && hatimMode === 'cuz' && index) {
+    return `${index}.Cüz`;
+  }
+  if (roomType === 'hatim' && hatimMode === 'page' && index) {
+    return `${index}.Sayfa`;
+  }
+  return index ? `Parça ${index}` : 'Parça';
+}
+
+async function ensureSharedDuaRoomRoundDefaults(roomId, room, parts) {
+  const normalised = normaliseSharedDuaRoomId(roomId);
+  if (!normalised || !room || !Array.isArray(parts)) {
+    return;
+  }
+
+  const patch = {};
+  const round = getSharedDuaRoomRound(room);
+  if (typeof room.roundNumber !== 'number') {
+    patch.roundNumber = round;
+  }
+  if (typeof room.roundCompletedCount !== 'number') {
+    patch.roundCompletedCount = 0;
+  }
+  if (typeof room.roundDoneCount !== 'number') {
+    const progress = computeSharedDuaProgress(parts, round);
+    patch.roundDoneCount = progress.done;
+  }
+  if (typeof room.assignStrategy !== 'string') {
+    patch.assignStrategy = 'manual';
+  }
+  if (typeof room.maxPiecesPerUser !== 'number' && typeof room.maxClaimsPerUser === 'number') {
+    patch.maxPiecesPerUser = clamp(Math.floor(room.maxClaimsPerUser), 1, 5);
+  }
+
+  const keys = Object.keys(patch);
+  if (!keys.length) {
+    return;
+  }
+
+  const { db, fs } = await ensureSharedDuaFirebase();
+  const roomRef = fs.doc(db, 'rooms', normalised);
+  await fs.updateDoc(roomRef, patch);
+}
+
+async function maybeAutoAssignSharedDua(ui) {
+  if (!ui || ui.autoAssignRunning) {
+    return;
+  }
+  const room = ui.room;
+  const parts = Array.isArray(ui.parts) ? ui.parts : null;
+  if (!room || !parts || !ui.uid) {
+    return;
+  }
+
+  const strategy = normaliseSharedDuaAssignStrategy(room.assignStrategy);
+  if (strategy === 'manual') {
+    return;
+  }
+
+  const roomRound = getSharedDuaRoomRound(room);
+  if (ui.autoAssignRound === roomRound) {
+    return;
+  }
+  if (room && room.status === 'closed') {
+    ui.autoAssignRound = roomRound;
+    return;
+  }
+
+  const configuredMaxClaims = resolveSharedDuaMaxClaims(room.maxClaimsPerUser ?? room.maxPiecesPerUser ?? 1);
+  // "same" stratejisinde, limitsiz seçildiyse önceki turdaki tüm parçaları geri atayabilsin.
+  // "random" için limitsiz agresif olacağı için 1 ile sınırlandırıyoruz.
+  const maxClaims = strategy === 'same'
+    ? (configuredMaxClaims === 0 ? Number.POSITIVE_INFINITY : configuredMaxClaims)
+    : (configuredMaxClaims === 0 ? 1 : configuredMaxClaims);
+  const claimedByMe = parts.filter((part) => {
+    const view = getSharedDuaPartView(part, roomRound);
+    return view.state === 'claimed' && view.claimedByUid === ui.uid;
+  });
+  if (claimedByMe.length >= maxClaims) {
+    ui.autoAssignRound = roomRound;
+    return;
+  }
+
+  ui.autoAssignRunning = true;
+  try {
+    if (strategy === 'same') {
+      const previousRound = roomRound - 1;
+      const { db, fs } = await ensureSharedDuaFirebase();
+      const participantRef = fs.doc(db, 'rooms', ui.roomId, 'participants', ui.uid);
+      const snap = await fs.getDoc(participantRef);
+      const participant = snap.exists() ? snap.data() || {} : {};
+      const lastRoundNumber = participant && typeof participant.lastRoundNumber === 'number' ? Math.floor(participant.lastRoundNumber) : 0;
+      const lastPieces = Array.isArray(participant.lastRoundPieces)
+        ? participant.lastRoundPieces.filter((value) => typeof value === 'number' && Number.isFinite(value))
+        : [];
+      if (lastRoundNumber !== previousRound || !lastPieces.length) {
+        return;
+      }
+
+      const targets = lastPieces.slice(0, maxClaims);
+      for (let index = 0; index < targets.length; index += 1) {
+        const partIndex = targets[index];
+        try {
+          await sharedDuaClaimPart(ui.roomId, String(partIndex));
+        } catch (_error) {
+          // ignore collisions
+        }
+      }
+      return;
+    }
+
+    if (strategy === 'random') {
+      const available = parts
+        .filter((part) => {
+          const view = getSharedDuaPartView(part, roomRound);
+          return view.state === 'available' && part && part.id;
+        })
+        .map((part) => part.id);
+      shuffleInPlace(available);
+
+      const targetCount = Math.max(0, maxClaims - claimedByMe.length);
+      let claimed = 0;
+      for (let index = 0; index < available.length && claimed < targetCount; index += 1) {
+        try {
+          await sharedDuaClaimPart(ui.roomId, available[index]);
+          claimed += 1;
+        } catch (_error) {
+          // ignore collisions
+        }
+      }
+    }
+  } finally {
+    ui.autoAssignRound = roomRound;
+    ui.autoAssignRunning = false;
+  }
+}
+
+async function renderSharedDua(container) {
+  hideNameTooltip();
+  cleanupSharedDuaUI();
+  container.innerHTML = '';
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'collection-wrapper shared-dua';
+  container.append(wrapper);
+
+  const pending = state.sharedDua && state.sharedDua.pendingRoomId ? state.sharedDua.pendingRoomId : null;
+  if (pending) {
+    state.sharedDua.pendingRoomId = null;
+    renderSharedDuaRoom(wrapper, pending);
+    return;
+  }
+
+  const fromUrl = parseSharedDuaRoomIdFromLocation();
+  if (fromUrl) {
+    renderSharedDuaRoom(wrapper, fromUrl);
+    return;
+  }
+
+  renderSharedDuaHome(wrapper);
+}
+
+function renderSharedDuaHome(wrapper) {
+  wrapper.innerHTML = '';
+
+  const introCard = document.createElement('article');
+  introCard.className = 'card collection-intro';
+  introCard.innerHTML = `
+    <h2 class="collection-intro__title">Ortak Dua</h2>
+    <p class="collection-intro__description">Ortak hatim veya Cevşen okuma odaları oluşturun ve katılın.</p>
+  `;
+  wrapper.append(introCard);
+
+  const list = document.createElement('div');
+  list.className = 'collection-list';
+
+  const card = (title, description, icon) => {
+    const el = document.createElement('article');
+    el.className = 'card shared-dua-card';
+    el.innerHTML = `
+      <div class="shared-dua-card__header">
+        <div class="shared-dua-card__icon" aria-hidden="true">${icon}</div>
+        <div class="shared-dua-card__title-wrap">
+          <h3 class="shared-dua-card__title">${title}</h3>
+          <p class="shared-dua-card__description muted">${description}</p>
+        </div>
+      </div>
+      <div class="shared-dua-card__actions">
+        <button type="button" class="button-pill" data-shared-create>Yeni Oda Oluştur</button>
+      </div>
+    `;
+    return el;
+  };
+
+  const hatimCard = card('Ortak Hatim', 'Cüz veya sayfa bazında hatim paylaşımı.', '📖');
+  hatimCard.querySelector('[data-shared-create]')?.addEventListener('click', () => {
+    renderSharedDuaCreate(wrapper, 'hatim');
+  });
+  list.append(hatimCard);
+
+  const cevsenCard = card('Ortak Cevşen', 'Cevşen-i Kebîr bablarını 5’li gruplar halinde paylaşın.', '📜');
+  cevsenCard.querySelector('[data-shared-create]')?.addEventListener('click', () => {
+    renderSharedDuaCreate(wrapper, 'cevsen');
+  });
+  list.append(cevsenCard);
+
+  const history = Array.isArray(state.sharedDua && state.sharedDua.roomHistory) ? state.sharedDua.roomHistory : [];
+  if (history.length) {
+    const historyCard = document.createElement('article');
+    historyCard.className = 'card shared-dua-history';
+    historyCard.innerHTML = `
+      <h3>Son odalar</h3>
+      <div class="shared-dua-history__list" data-shared-history-list></div>
+    `;
+    const listEl = historyCard.querySelector('[data-shared-history-list]');
+    if (listEl) {
+      const fragment = document.createDocumentFragment();
+      history.slice(0, 5).forEach((entry) => {
+        const normalised = normaliseSharedDuaRoomId(entry && entry.id ? entry.id : '');
+        if (!normalised) {
+          return;
+        }
+        const type = entry && entry.type === 'cevsen' ? 'cevsen' : entry && entry.type === 'hatim' ? 'hatim' : null;
+        const fallbackName = type === 'cevsen'
+          ? 'Ortak Cevşen odası'
+          : type === 'hatim'
+            ? 'Ortak Hatim odası'
+            : 'Ortak Dua odası';
+        const name = entry && typeof entry.name === 'string' ? entry.name.trim() : '';
+        const status = entry && typeof entry.status === 'string' ? entry.status : null;
+
+        const row = document.createElement('div');
+        row.className = 'shared-dua-history__row';
+        row.tabIndex = 0;
+        row.setAttribute('role', 'button');
+        row.setAttribute('aria-label', `${name || fallbackName} odasına katıl`);
+        row.innerHTML = `
+          <div class="shared-dua-history__meta">
+            <div class="shared-dua-history__title">${escapeHtml(name || fallbackName)}</div>
+            <div class="shared-dua-history__code muted">${escapeHtml(normalised)}</div>
+            ${status && status !== 'active' ? '<div class="shared-dua-history__note muted">Bu oda kapatılmış olabilir.</div>' : ''}
+          </div>
+          <div class="shared-dua-history__actions">
+            <button type="button" class="button-pill secondary shared-dua-history__join" data-room="${escapeHtml(normalised)}">Katıl</button>
+          </div>
+        `;
+
+        const open = () => {
+          setSharedDuaHash(normalised);
+          renderSharedDuaRoom(wrapper, normalised);
+        };
+
+        row.addEventListener('click', (event) => {
+          const target = event.target;
+          if (target && target.closest && target.closest('button')) {
+            return;
+          }
+          open();
+        });
+        row.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            open();
+          }
+        });
+        row.querySelector('[data-room]')?.addEventListener('click', open);
+        fragment.append(row);
+      });
+      listEl.append(fragment);
+    }
+    list.append(historyCard);
+  }
+
+  const joinCard = document.createElement('article');
+  joinCard.className = 'card shared-dua-join';
+  joinCard.innerHTML = `
+    <h3>Odaya Katıl</h3>
+    <p class="muted">Paylaşılan bağlantıyı açabilir veya oda kodunu buraya yapıştırabilirsiniz.</p>
+    <form class="zikir-form shared-dua-join__form" data-shared-join-form>
+      <label class="zikir-form__label">
+        Oda kodu
+        <input type="text" autocomplete="off" inputmode="text" placeholder="Örn: K9F3Q2" data-shared-room-id />
+      </label>
+      <div class="zikir-form__row">
+        <button type="submit" class="button-pill secondary">Katıl</button>
+      </div>
+      <p class="zikir-form__message" data-shared-join-message hidden></p>
+    </form>
+  `;
+
+  const joinForm = joinCard.querySelector('[data-shared-join-form]');
+  const joinInput = joinCard.querySelector('[data-shared-room-id]');
+  const joinMessage = joinCard.querySelector('[data-shared-join-message]');
+
+  const setJoinMessage = (status, message) => {
+    if (!joinMessage) {
+      return;
+    }
+    if (!message) {
+      joinMessage.hidden = true;
+      joinMessage.textContent = '';
+      joinMessage.removeAttribute('data-status');
+      return;
+    }
+    joinMessage.hidden = false;
+    joinMessage.textContent = message;
+    if (status) {
+      joinMessage.dataset.status = status;
+    } else {
+      joinMessage.removeAttribute('data-status');
+    }
+  };
+
+  if (joinForm) {
+    joinForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      setJoinMessage('', '');
+      const value = joinInput && typeof joinInput.value === 'string' ? joinInput.value : '';
+      const roomId = normaliseSharedDuaRoomId(value);
+      if (!roomId) {
+        setJoinMessage('error', 'Lütfen geçerli bir oda kodu girin.');
+        return;
+      }
+      const submitButton = joinForm.querySelector('button[type="submit"]');
+      if (submitButton) {
+        submitButton.disabled = true;
+      }
+      try {
+        setSharedDuaHash(roomId);
+        await joinSharedDuaRoom(roomId);
+        renderSharedDuaRoom(wrapper, roomId);
+      } catch (error) {
+        console.warn('Odaya katılım başarısız.', error);
+        setJoinMessage('error', error && error.message ? error.message : 'Odaya katılırken bir sorun yaşandı.');
+      } finally {
+        if (submitButton) {
+          submitButton.disabled = false;
+        }
+      }
+    });
+  }
+
+  list.append(joinCard);
+
+  const nameCard = document.createElement('article');
+  nameCard.className = 'card shared-dua-profile';
+  const currentName = loadSharedDuaDisplayName();
+  nameCard.innerHTML = `
+    <h3>Görünen isim</h3>
+    <p class="muted">Bu isim, parçaları aldığınızda odada görünecek isimdir.</p>
+    <form class="zikir-form" data-shared-profile-form>
+      <label class="zikir-form__label">
+        İsim (opsiyonel)
+        <input type="text" autocomplete="off" maxlength="40" placeholder="Örn: Ayşe" value="${escapeHtml(currentName)}" data-shared-profile-name />
+      </label>
+      <div class="zikir-form__row">
+        <button type="submit" class="button-pill secondary">Kaydet</button>
+        <button type="button" class="button-pill secondary" data-shared-profile-clear>Temizle</button>
+      </div>
+      <p class="zikir-form__message" data-shared-profile-message hidden></p>
+    </form>
+  `;
+
+  const profileForm = nameCard.querySelector('[data-shared-profile-form]');
+  const profileInput = nameCard.querySelector('[data-shared-profile-name]');
+  const profileClear = nameCard.querySelector('[data-shared-profile-clear]');
+  const profileMessage = nameCard.querySelector('[data-shared-profile-message]');
+  const setProfileMessage = (status, message) => {
+    if (!profileMessage) {
+      return;
+    }
+    if (!message) {
+      profileMessage.hidden = true;
+      profileMessage.textContent = '';
+      profileMessage.removeAttribute('data-status');
+      return;
+    }
+    profileMessage.hidden = false;
+    profileMessage.textContent = message;
+    if (status) {
+      profileMessage.dataset.status = status;
+    } else {
+      profileMessage.removeAttribute('data-status');
+    }
+  };
+
+  if (profileForm) {
+    profileForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      setProfileMessage('', '');
+      const raw = profileInput && typeof profileInput.value === 'string' ? profileInput.value : '';
+      const stored = storeSharedDuaDisplayName(raw);
+      if (!stored) {
+        clearSharedDuaDisplayName();
+        setProfileMessage('success', 'İsim temizlendi.');
+        return;
+      }
+      setProfileMessage('success', 'Kaydedildi.');
+      const last = state.sharedDua && state.sharedDua.lastRoom && state.sharedDua.lastRoom.id ? state.sharedDua.lastRoom.id : '';
+      if (last) {
+        syncSharedDuaParticipantDisplayName(last).catch(() => {});
+      }
+    });
+  }
+
+  if (profileClear) {
+    profileClear.addEventListener('click', () => {
+      clearSharedDuaDisplayName();
+      if (profileInput) {
+        profileInput.value = '';
+      }
+      setProfileMessage('success', 'İsim temizlendi.');
+    });
+  }
+
+  list.append(nameCard);
+  wrapper.append(list);
+}
+
+function renderSharedDuaCreate(wrapper, roomType) {
+  wrapper.innerHTML = '';
+
+  const headerCard = document.createElement('article');
+  headerCard.className = 'card collection-detail__header';
+
+  const backButton = document.createElement('button');
+  backButton.type = 'button';
+  backButton.className = 'collection-back button-pill secondary';
+  backButton.textContent = 'Ortak Dua’ya dön';
+  backButton.addEventListener('click', () => {
+    clearSharedDuaHash();
+    renderSharedDuaHome(wrapper);
+  });
+
+  const title = document.createElement('h3');
+  title.className = 'collection-detail__title';
+  title.textContent = roomType === 'cevsen' ? 'Ortak Cevşen odası oluştur' : 'Ortak Hatim odası oluştur';
+
+  headerCard.append(backButton, title);
+  wrapper.append(headerCard);
+
+  const formCard = document.createElement('article');
+  formCard.className = 'card shared-dua-create';
+
+  const hasFirebaseConfig = Boolean(getSharedDuaFirebaseConfig());
+  if (!hasFirebaseConfig) {
+    const warn = document.createElement('p');
+    warn.className = 'muted';
+    warn.textContent = 'Firebase yapılandırması bulunamadı. Bu özelliği kullanmak için `firebase-config.js` dosyasını doldurun.';
+    formCard.append(warn);
+  }
+
+  const form = document.createElement('form');
+  form.className = 'zikir-form';
+  form.innerHTML = `
+    ${roomType === 'hatim' ? `
+      <label class="zikir-form__label">
+        Hatim türü
+        <select data-shared-hatim-mode>
+          <option value="cuz">Cüzlü Hatim (30)</option>
+          <option value="page">Sayfalı Hatim</option>
+        </select>
+      </label>
+      <label class="zikir-form__label" data-shared-pages-wrap hidden>
+        Toplam sayfa
+        <input type="number" min="1" step="1" value="604" inputmode="numeric" data-shared-total-pages />
+      </label>
+    ` : ''}
+    <label class="zikir-form__label">
+      Oda adı (opsiyonel)
+      <input type="text" autocomplete="off" placeholder="Örn: Sabah hatmi" data-shared-room-name />
+    </label>
+    <label class="zikir-form__label">
+      Kişi başı maksimum parça
+      <select data-shared-max-claims>
+        <option value="0" selected>Limitsiz</option>
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+      </select>
+    </label>
+    <label class="zikir-form__label">
+      Atama yöntemi
+      <select data-shared-assign-strategy>
+        <option value="manual" selected>Manuel</option>
+        <option value="same">Aynı kişiler aynı parçalar</option>
+        <option value="random">Rastgele dağıt</option>
+      </select>
+    </label>
+    <div class="zikir-form__row">
+      <button type="submit" class="button-pill">Odayı Oluştur</button>
+    </div>
+    <p class="zikir-form__message" data-shared-create-message hidden></p>
+  `;
+
+  const modeSelect = form.querySelector('[data-shared-hatim-mode]');
+  const pagesWrap = form.querySelector('[data-shared-pages-wrap]');
+  const totalPagesInput = form.querySelector('[data-shared-total-pages]');
+  const message = form.querySelector('[data-shared-create-message]');
+
+  const setMessage = (status, text) => {
+    if (!message) {
+      return;
+    }
+    if (!text) {
+      message.hidden = true;
+      message.textContent = '';
+      message.removeAttribute('data-status');
+      return;
+    }
+    message.hidden = false;
+    message.textContent = text;
+    if (status) {
+      message.dataset.status = status;
+    } else {
+      message.removeAttribute('data-status');
+    }
+  };
+
+  const syncMode = () => {
+    if (!modeSelect || !pagesWrap) {
+      return;
+    }
+    const isPage = modeSelect.value === 'page';
+    pagesWrap.hidden = !isPage;
+  };
+
+  if (modeSelect) {
+    modeSelect.addEventListener('change', syncMode);
+    syncMode();
+  }
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    setMessage('', '');
+
+    const submitButton = form.querySelector('button[type="submit"]');
+    if (submitButton) {
+      submitButton.disabled = true;
+    }
+
+    try {
+      const nameInput = form.querySelector('[data-shared-room-name]');
+      const maxClaimsSelect = form.querySelector('[data-shared-max-claims]');
+      const assignSelect = form.querySelector('[data-shared-assign-strategy]');
+      const hatimMode = modeSelect && modeSelect.value === 'page' ? 'page' : 'cuz';
+      const maxClaims = maxClaimsSelect ? resolveSharedDuaMaxClaims(maxClaimsSelect.value) : 0;
+      const assignStrategy = assignSelect && typeof assignSelect.value === 'string' ? assignSelect.value : 'manual';
+      const roomName = nameInput && typeof nameInput.value === 'string' ? nameInput.value : '';
+      const totalPages = totalPagesInput ? Number.parseInt(totalPagesInput.value, 10) : 604;
+
+      const roomId = await createSharedDuaRoom({
+        type: roomType,
+        hatimMode,
+        totalParts: hatimMode === 'page' ? totalPages : undefined,
+        name: roomName,
+        maxClaimsPerUser: maxClaims,
+        assignStrategy,
+      });
+
+      setSharedDuaHash(roomId);
+      renderSharedDuaRoom(wrapper, roomId);
+    } catch (error) {
+      console.error('Oda oluşturma başarısız.', error);
+      setMessage('error', error && error.message ? error.message : 'Oda oluşturulamadı. Lütfen tekrar deneyin.');
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
+      }
+    }
+  });
+
+  formCard.append(form);
+  wrapper.append(formCard);
+}
+
+function renderSharedDuaRoom(wrapper, roomId) {
+  const normalised = normaliseSharedDuaRoomId(roomId);
+  if (!normalised) {
+    wrapper.innerHTML = `
+      <article class="card">
+        <h2>Oda bulunamadı</h2>
+        <p class="muted">Bağlantı veya oda kodu geçersiz görünüyor.</p>
+      </article>
+    `;
+    return;
+  }
+
+  wrapper.innerHTML = '';
+
+  const headerCard = document.createElement('article');
+  headerCard.className = 'card collection-detail__header';
+
+  const backButton = document.createElement('button');
+  backButton.type = 'button';
+  backButton.className = 'collection-back button-pill secondary';
+  backButton.textContent = 'Ortak Dua’ya dön';
+  backButton.addEventListener('click', () => {
+    cleanupSharedDuaUI();
+    clearSharedDuaHash();
+    renderSharedDuaHome(wrapper);
+  });
+
+  const title = document.createElement('h3');
+  title.className = 'collection-detail__title';
+  title.textContent = 'Oda yükleniyor…';
+
+  headerCard.append(backButton, title);
+  wrapper.append(headerCard);
+
+  const roomCard = document.createElement('article');
+  roomCard.className = 'card shared-dua-room';
+  roomCard.innerHTML = `<p class="muted">Oturum açılıyor ve oda bilgileri yükleniyor…</p>`;
+  wrapper.append(roomCard);
+
+	  const ui = {
+	    roomId: normalised,
+	    uid: null,
+	    unsubscribers: [],
+	    room: null,
+	    parts: [],
+	    dismissedNamePrompt: false,
+	    autoAssignRound: null,
+	    autoAssignRunning: false,
+	  };
+  state.sharedDua.ui = ui;
+
+  const renderError = (headline, message) => {
+    title.textContent = 'Ortak Dua';
+    roomCard.innerHTML = `
+      <h3>${headline}</h3>
+      <p class="muted">${message}</p>
+    `;
+  };
+
+	  const renderRoom = () => {
+	    const room = ui.room || {};
+	    const parts = Array.isArray(ui.parts) ? ui.parts : [];
+	    const roomRound = getSharedDuaRoomRound(room);
+	    const progress = computeSharedDuaProgress(parts, roomRound);
+	    const roundCompletedCount = typeof room.roundCompletedCount === 'number' && Number.isFinite(room.roundCompletedCount)
+	      ? Math.max(0, Math.floor(room.roundCompletedCount))
+	      : 0;
+
+	    const name = room && typeof room.name === 'string' ? room.name.trim() : '';
+	    const roomType = room && room.type === 'cevsen' ? 'cevsen' : 'hatim';
+	    const roomLabel = roomType === 'cevsen' ? 'Ortak Cevşen' : 'Ortak Hatim';
+	    title.textContent = roomLabel;
+	    const isClosed = room && room.status === 'closed';
+	    const isOwner = room && room.createdBy === ui.uid;
+
+	    const shareLink = buildSharedDuaShareLink(ui.roomId);
+	    const safeRoomId = escapeHtml(ui.roomId);
+
+	    const claimedByMe = parts.filter((part) => {
+	      const view = getSharedDuaPartView(part, roomRound);
+	      return view.state === 'claimed' && view.claimedByUid === ui.uid;
+	    });
+	    const completed = progress.total > 0 && progress.done === progress.total;
+	    const storedDisplayName = loadSharedDuaDisplayName();
+	    const showNamePrompt = !storedDisplayName && !ui.dismissedNamePrompt;
+	    const completionLabel = roomType === 'cevsen' ? 'Bu Cevşen tamamlandı.' : 'Bu Hatim tamamlandı.';
+	    const percentText = `%${formatSharedDuaPercent(progress.done, progress.total)}`;
+	    const progressPercent = progress.total > 0 ? Math.round((Math.max(0, progress.done) / Math.max(1, progress.total)) * 100) : 0;
+	    const roomNameDisplay = name ? name : `${roomLabel} odası`;
+
+	    roomCard.innerHTML = `
+	      <div class="shared-dua-room__top">
+	        <div class="shared-dua-room__meta">
+	          <h4 class="shared-dua-room__name">${escapeHtml(roomNameDisplay)}</h4>
+	          <div class="shared-dua-room__code-row">
+	            <p class="shared-dua-room__code"><strong>Oda kodu:</strong> <span>${safeRoomId}</span></p>
+	            <div class="shared-dua-room__share-actions">
+	              <button type="button" class="button-pill secondary" data-shared-share>Paylaş</button>
+	              ${isOwner && !isClosed ? '<button type="button" class="button-pill secondary shared-dua-room__close" data-shared-close-room>Odayı kapat</button>' : ''}
+	            </div>
+	          </div>
+	          <p class="zikir-form__message" data-shared-share-status hidden></p>
+
+	          <div class="shared-dua-progress" role="group" aria-label="İlerleme">
+	            <div class="shared-dua-progress__numbers">
+	              <span class="shared-dua-progress__count">${progress.done} / ${progress.total}</span>
+	              <span class="shared-dua-progress__percent">${percentText}</span>
+	            </div>
+	            <div class="shared-dua-progress__bar" role="progressbar" aria-valuenow="${progressPercent}" aria-valuemin="0" aria-valuemax="100">
+	              <div class="shared-dua-progress__fill" style="width:${progressPercent}%"></div>
+	            </div>
+	            ${roundCompletedCount > 0 ? `<p class="muted shared-dua-progress__completed">${roundCompletedCount} kez tamamlandı</p>` : ''}
+	          </div>
+
+	          ${completed ? `<p class="shared-dua-room__complete">${completionLabel}</p>` : ''}
+	          ${isClosed ? '<p class="muted shared-dua-room__closed">Bu oda kapatıldı. Yeni parça alınamaz.</p>' : ''}
+	        </div>
+	      </div>
+
+	      ${showNamePrompt ? `
+	        <div class="shared-dua-room__name">
+	          <form class="zikir-form shared-dua-name-form" data-shared-name-form>
+	            <label class="zikir-form__label">
+	              İsim (opsiyonel)
+	              <input type="text" autocomplete="off" maxlength="40" placeholder="Örn: Ayşe" data-shared-name-input />
+	            </label>
+	            <div class="zikir-form__row">
+	              <button type="submit" class="button-pill secondary">Devam</button>
+	              <button type="button" class="button-pill secondary" data-shared-name-skip>Atla</button>
+	            </div>
+	            <p class="zikir-form__message" data-shared-name-message hidden></p>
+	          </form>
+	        </div>
+	      ` : ''}
+
+	      <div class="shared-dua-room__actions">
+	        <button type="button" class="button-pill" data-shared-claim-next>Uygun parçayı al</button>
+	      </div>
+
+      <div class="shared-dua-room__section" data-shared-my-claims>
+        <h4>Benim parçalarım</h4>
+        ${claimedByMe.length ? '' : '<p class="muted">Henüz aldığınız bir parça yok.</p>'}
+        <div class="shared-dua-claims" data-shared-claims-list></div>
+      </div>
+
+      <div class="shared-dua-room__section">
+        <h4>Tüm parçalar</h4>
+        <div class="shared-dua-parts" data-shared-parts></div>
+      </div>
+    `;
+
+    const shareButton = roomCard.querySelector('[data-shared-share]');
+    const shareStatus = roomCard.querySelector('[data-shared-share-status]');
+    const setShareStatus = (status, message) => {
+      if (!shareStatus) {
+        return;
+      }
+      if (!message) {
+        shareStatus.hidden = true;
+        shareStatus.textContent = '';
+        shareStatus.removeAttribute('data-status');
+        return;
+      }
+      shareStatus.hidden = false;
+      shareStatus.textContent = message;
+      if (status) {
+        shareStatus.dataset.status = status;
+      } else {
+        shareStatus.removeAttribute('data-status');
+      }
+    };
+
+	    if (shareButton) {
+	      shareButton.addEventListener('click', async () => {
+	        setShareStatus('', '');
+
+        const shareTitle = name || roomLabel;
+        const shareText = roomType === 'cevsen' ? 'Ortak Cevşen odasına katıl' : 'Ortak hatim odasına katıl';
+
+        if (typeof navigator !== 'undefined' && navigator.share && typeof navigator.share === 'function') {
+          try {
+            await navigator.share({ title: shareTitle, text: shareText, url: shareLink });
+            return;
+          } catch (error) {
+            // User cancellation shouldn't show an error.
+            if (error && (error.name === 'AbortError' || error.name === 'NotAllowedError')) {
+              return;
+            }
+          }
+        }
+
+        const ok = await copyTextToClipboard(shareLink);
+        if (ok) {
+          setShareStatus('success', 'Bağlantı kopyalandı.');
+          window.setTimeout(() => setShareStatus('', ''), 2000);
+        } else {
+          setShareStatus('error', 'Bağlantı kopyalanamadı.');
+        }
+	      });
+	    }
+
+	    const nameForm = roomCard.querySelector('[data-shared-name-form]');
+	    if (nameForm) {
+	      const nameInput = nameForm.querySelector('[data-shared-name-input]');
+	      const skipButton = nameForm.querySelector('[data-shared-name-skip]');
+	      const nameMessage = nameForm.querySelector('[data-shared-name-message]');
+	      const setNameMessage = (status, message) => {
+	        if (!nameMessage) {
+	          return;
+	        }
+	        if (!message) {
+	          nameMessage.hidden = true;
+	          nameMessage.textContent = '';
+	          nameMessage.removeAttribute('data-status');
+	          return;
+	        }
+	        nameMessage.hidden = false;
+	        nameMessage.textContent = message;
+	        if (status) {
+	          nameMessage.dataset.status = status;
+	        } else {
+	          nameMessage.removeAttribute('data-status');
+	        }
+	      };
+
+	      if (skipButton) {
+	        skipButton.addEventListener('click', () => {
+	          ui.dismissedNamePrompt = true;
+	          renderRoom();
+	        });
+	      }
+
+	      nameForm.addEventListener('submit', async (event) => {
+	        event.preventDefault();
+	        setNameMessage('', '');
+	        const raw = nameInput && typeof nameInput.value === 'string' ? nameInput.value : '';
+	        const storedName = storeSharedDuaDisplayName(raw);
+	        if (!storedName) {
+	          setNameMessage('error', 'İsim boş olamaz. İsterseniz “Atla” seçebilirsiniz.');
+	          return;
+	        }
+
+	        const submitButton = nameForm.querySelector('button[type="submit"]');
+	        submitButton && (submitButton.disabled = true);
+	        skipButton && (skipButton.disabled = true);
+	        try {
+	          await syncSharedDuaParticipantDisplayName(ui.roomId);
+	          ui.dismissedNamePrompt = true;
+	          setNameMessage('success', 'Kaydedildi.');
+	          window.setTimeout(() => renderRoom(), 600);
+	        } catch (error) {
+	          console.warn('İsim kaydedilemedi.', error);
+	          setNameMessage('error', error && error.message ? error.message : 'İsim kaydedilemedi.');
+	        } finally {
+	          submitButton && (submitButton.disabled = false);
+	          skipButton && (skipButton.disabled = false);
+	        }
+	      });
+	    }
+
+	    const closeButton = roomCard.querySelector('[data-shared-close-room]');
+	    if (closeButton) {
+	      closeButton.addEventListener('click', async () => {
+	        if (closeButton.disabled) {
+          return;
+        }
+        const confirmed = window.confirm('Odayı kapatmak istiyor musunuz? Bu işlem yeni parça alımını engeller.');
+        if (!confirmed) {
+          return;
+        }
+        closeButton.disabled = true;
+        try {
+          await sharedDuaCloseRoom(ui.roomId);
+          setShareStatus('success', 'Oda kapatıldı.');
+          window.setTimeout(() => setShareStatus('', ''), 2500);
+        } catch (error) {
+          console.warn('Oda kapatılamadı.', error);
+          setShareStatus('error', error && error.message ? error.message : 'Oda kapatılamadı.');
+          window.setTimeout(() => setShareStatus('', ''), 3000);
+        } finally {
+          closeButton.disabled = false;
+        }
+      });
+    }
+
+    const claimNextButton = roomCard.querySelector('[data-shared-claim-next]');
+    if (claimNextButton) {
+      claimNextButton.disabled = completed || isClosed || progress.total === 0;
+      claimNextButton.addEventListener('click', async () => {
+        if (claimNextButton.disabled) {
+          return;
+        }
+        claimNextButton.disabled = true;
+        try {
+          await sharedDuaClaimNextAvailable(ui.roomId, parts, roomRound);
+        } catch (error) {
+          console.warn('Parça alınamadı.', error);
+          setShareStatus('error', error && error.message ? error.message : 'Parça alınamadı.');
+          window.setTimeout(() => setShareStatus('', ''), 2500);
+        } finally {
+          claimNextButton.disabled = completed || isClosed || progress.total === 0;
+        }
+      });
+    }
+
+    const claimsList = roomCard.querySelector('[data-shared-claims-list]');
+    if (claimsList) {
+      claimsList.innerHTML = '';
+      const fragment = document.createDocumentFragment();
+      claimedByMe.forEach((part) => {
+        const row = document.createElement('div');
+        row.className = 'shared-dua-claim';
+        row.innerHTML = `
+          <div class="shared-dua-claim__label">${part.label || `Parça ${part.index}`}</div>
+          <div class="shared-dua-claim__actions">
+            <button type="button" class="button-pill secondary" data-shared-release>Bırak</button>
+            <button type="button" class="button-pill" data-shared-done>Tamamla</button>
+          </div>
+        `;
+        const releaseButton = row.querySelector('[data-shared-release]');
+        const doneButton = row.querySelector('[data-shared-done]');
+        if (releaseButton) {
+          releaseButton.addEventListener('click', async () => {
+            releaseButton.disabled = true;
+            doneButton && (doneButton.disabled = true);
+            try {
+              await sharedDuaReleasePart(ui.roomId, part.id);
+            } catch (error) {
+              console.warn('Parça bırakılamadı.', error);
+              setShareStatus('error', error && error.message ? error.message : 'Parça bırakılamadı.');
+              window.setTimeout(() => setShareStatus('', ''), 2500);
+            } finally {
+              releaseButton.disabled = false;
+              doneButton && (doneButton.disabled = false);
+            }
+          });
+        }
+        if (doneButton) {
+          doneButton.addEventListener('click', async () => {
+            releaseButton && (releaseButton.disabled = true);
+            doneButton.disabled = true;
+            try {
+              await sharedDuaMarkDone(ui.roomId, part.id);
+            } catch (error) {
+              console.warn('Parça tamamlanamadı.', error);
+              setShareStatus('error', error && error.message ? error.message : 'Parça tamamlanamadı.');
+              window.setTimeout(() => setShareStatus('', ''), 2500);
+            } finally {
+              releaseButton && (releaseButton.disabled = false);
+              doneButton.disabled = false;
+            }
+          });
+        }
+        fragment.append(row);
+      });
+      claimsList.append(fragment);
+    }
+
+    const partsContainer = roomCard.querySelector('[data-shared-parts]');
+    if (partsContainer) {
+      partsContainer.innerHTML = '';
+	      const fragment = document.createDocumentFragment();
+
+	      parts.forEach((part) => {
+	        const view = getSharedDuaPartView(part, roomRound);
+	        const stateValue = view.state;
+	        const isMine = stateValue === 'claimed' && view.claimedByUid === ui.uid;
+
+	        const item = document.createElement('div');
+	        item.className = `shared-dua-part shared-dua-part--${stateValue}${isMine ? ' is-mine' : ''}`;
+
+	        const statusLabel = stateValue === 'done' ? 'Tamamlandı' : stateValue === 'claimed' ? 'Alındı' : 'Uygun';
+	        const claimedName = (stateValue === 'claimed' || stateValue === 'done') && view.claimedByName ? escapeHtml(view.claimedByName) : '';
+	        const hatimModeValue = roomType === 'hatim' && room && room.hatimMode === 'page' ? 'page' : 'cuz';
+	        const displayLabel = escapeHtml(formatSharedDuaPartLabel(part.label, roomType, hatimModeValue, part.index));
+
+	        item.innerHTML = `
+	          <div class="shared-dua-part__header">
+	            <div class="shared-dua-part__label">${displayLabel}</div>
+	            <div class="shared-dua-part__status">${statusLabel}</div>
+	          </div>
+	          ${claimedName ? `<div class="shared-dua-part__name muted">${claimedName}</div>` : ''}
+	          <div class="shared-dua-part__actions"></div>
+	        `;
+
+        const actions = item.querySelector('.shared-dua-part__actions');
+        if (actions) {
+          if (stateValue === 'available' && !isClosed && !completed) {
+            const claim = document.createElement('button');
+            claim.type = 'button';
+            claim.className = 'button-pill secondary shared-dua-part__button';
+            claim.textContent = 'Al';
+            claim.addEventListener('click', async () => {
+              claim.disabled = true;
+              try {
+                await sharedDuaClaimPart(ui.roomId, part.id);
+              } catch (error) {
+                console.warn('Parça alınamadı.', error);
+                setShareStatus('error', error && error.message ? error.message : 'Parça alınamadı.');
+                window.setTimeout(() => setShareStatus('', ''), 2500);
+              } finally {
+                claim.disabled = false;
+              }
+            });
+            actions.append(claim);
+          } else if (stateValue === 'claimed' && isMine) {
+            const release = document.createElement('button');
+            release.type = 'button';
+            release.className = 'button-pill secondary shared-dua-part__button';
+            release.textContent = 'Bırak';
+
+            const done = document.createElement('button');
+            done.type = 'button';
+            done.className = 'button-pill shared-dua-part__button';
+            done.textContent = 'Tamamla';
+
+            release.addEventListener('click', async () => {
+              release.disabled = true;
+              done.disabled = true;
+              try {
+                await sharedDuaReleasePart(ui.roomId, part.id);
+              } catch (error) {
+                console.warn('Parça bırakılamadı.', error);
+                setShareStatus('error', error && error.message ? error.message : 'Parça bırakılamadı.');
+                window.setTimeout(() => setShareStatus('', ''), 2500);
+              } finally {
+                release.disabled = false;
+                done.disabled = false;
+              }
+            });
+
+            done.addEventListener('click', async () => {
+              release.disabled = true;
+              done.disabled = true;
+              try {
+                await sharedDuaMarkDone(ui.roomId, part.id);
+              } catch (error) {
+                console.warn('Parça tamamlanamadı.', error);
+                setShareStatus('error', error && error.message ? error.message : 'Parça tamamlanamadı.');
+                window.setTimeout(() => setShareStatus('', ''), 2500);
+              } finally {
+                release.disabled = false;
+                done.disabled = false;
+              }
+            });
+
+            actions.append(release, done);
+          } else if (stateValue === 'claimed' && isOwner) {
+            const release = document.createElement('button');
+            release.type = 'button';
+            release.className = 'button-pill secondary shared-dua-part__button';
+            release.textContent = 'Boşalt';
+            release.addEventListener('click', async () => {
+              release.disabled = true;
+              try {
+                await sharedDuaReleasePart(ui.roomId, part.id);
+              } catch (error) {
+                console.warn('Parça boşaltılamadı.', error);
+                setShareStatus('error', error && error.message ? error.message : 'Parça boşaltılamadı.');
+                window.setTimeout(() => setShareStatus('', ''), 2500);
+              } finally {
+                release.disabled = false;
+              }
+            });
+            actions.append(release);
+          }
+        }
+
+        fragment.append(item);
+      });
+
+      partsContainer.append(fragment);
+    }
+  };
+
+  (async () => {
+    try {
+      const { db, fs, uid } = await ensureSharedDuaFirebase();
+      ui.uid = uid;
+
+      // Odaya katılım (members.<uid>=true) + "son oda" kaydı.
+      await joinSharedDuaRoom(ui.roomId);
+      try {
+        await syncSharedDuaParticipantDisplayName(ui.roomId);
+      } catch (error) {
+        console.warn('Katılımcı ismi senkronize edilemedi.', error);
+      }
+
+      const roomRef = fs.doc(db, 'rooms', ui.roomId);
+      const partsQuery = fs.query(fs.collection(db, 'rooms', ui.roomId, 'parts'), fs.orderBy('index'));
+
+      const unsubRoom = fs.onSnapshot(roomRef, (snapshot) => {
+        if (!snapshot.exists()) {
+          ui.room = null;
+          renderError('Oda bulunamadı', 'Bu oda silinmiş veya erişime kapatılmış olabilir.');
+          return;
+        }
+        const data = snapshot.data() || {};
+        ui.room = { id: snapshot.id, ...data };
+        const storedName = typeof data.name === 'string' ? data.name.trim() : '';
+        const storedType = data && data.type === 'cevsen' ? 'cevsen' : 'hatim';
+        const storedStatus = typeof data.status === 'string' ? data.status : 'active';
+        saveSharedDuaLastRoom({ id: ui.roomId, name: storedName, type: storedType, status: storedStatus });
+        renderRoom();
+        ensureSharedDuaRoomRoundDefaults(ui.roomId, ui.room, ui.parts).catch((error) => {
+          console.warn('Oda tur bilgisi güncellenemedi.', error);
+        });
+        maybeAutoAssignSharedDua(ui).catch((error) => {
+          console.warn('Otomatik atama başarısız.', error);
+        });
+      }, (error) => {
+        console.error('Oda dinleyicisi hatası.', error);
+        renderError('Oda yüklenemedi', error && error.message ? error.message : 'Oda bilgileri alınamadı.');
+      });
+
+      const unsubParts = fs.onSnapshot(partsQuery, (snapshot) => {
+        ui.parts = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        renderRoom();
+        ensureSharedDuaRoomRoundDefaults(ui.roomId, ui.room, ui.parts).catch((error) => {
+          console.warn('Oda tur bilgisi güncellenemedi.', error);
+        });
+        maybeAutoAssignSharedDua(ui).catch((error) => {
+          console.warn('Otomatik atama başarısız.', error);
+        });
+      }, (error) => {
+        console.error('Parça dinleyicisi hatası.', error);
+        renderError('Parçalar yüklenemedi', error && error.message ? error.message : 'Parça listesi alınamadı.');
+      });
+
+      ui.unsubscribers.push(unsubRoom, unsubParts);
+    } catch (error) {
+      console.error('Ortak Dua oda açılışı başarısız.', error);
+      renderError('Ortak Dua kullanılamıyor', error && error.message ? error.message : 'Bu özellik şu anda kullanılamıyor.');
+    }
+  })();
+}
+
 async function renderZikirManager(container) {
   hideNameTooltip();
   container.innerHTML = `<div class="loading">Zikirler yükleniyor…</div>`;
@@ -3255,6 +6908,168 @@ function pruneCompletionRecord(record, retentionDays = COMPLETION_RETENTION_DAYS
 
 function getTodayKey() {
   return formatDateKey(new Date());
+}
+
+function dateKeyToUtcMs(dateKey) {
+  if (!isValidDateKey(dateKey)) {
+    return Number.NaN;
+  }
+  const [year, month, day] = dateKey.split('-').map((part) => Number.parseInt(part, 10));
+  return Date.UTC(year, month - 1, day);
+}
+
+function utcMsToDateKey(utcMs) {
+  const date = new Date(utcMs);
+  if (!Number.isFinite(date.getTime())) {
+    return '';
+  }
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function normalizeUcAylarRange(range) {
+  if (!range || typeof range !== 'object') {
+    return null;
+  }
+  const start = typeof range.start === 'string' ? range.start : '';
+  const end = typeof range.end === 'string' ? range.end : '';
+  if (!isValidDateKey(start) || !isValidDateKey(end)) {
+    return null;
+  }
+  const startUtcMs = dateKeyToUtcMs(start);
+  const endUtcMs = dateKeyToUtcMs(end);
+  if (!Number.isFinite(startUtcMs) || !Number.isFinite(endUtcMs)) {
+    return null;
+  }
+  if (startUtcMs <= endUtcMs) {
+    return { start, end, startUtcMs, endUtcMs };
+  }
+  return { start: end, end: start, startUtcMs: endUtcMs, endUtcMs: startUtcMs };
+}
+
+function isDateKeyInRange(dateKey, range) {
+  const normalized = normalizeUcAylarRange(range);
+  if (!normalized) {
+    return false;
+  }
+  const utcMs = dateKeyToUtcMs(dateKey);
+  if (!Number.isFinite(utcMs)) {
+    return false;
+  }
+  return utcMs >= normalized.startUtcMs && utcMs <= normalized.endUtcMs;
+}
+
+function clampDateKeyToRange(dateKey, range) {
+  const normalized = normalizeUcAylarRange(range);
+  if (!normalized) {
+    return dateKey;
+  }
+  const utcMs = dateKeyToUtcMs(dateKey);
+  if (!Number.isFinite(utcMs)) {
+    return normalized.start;
+  }
+  if (utcMs < normalized.startUtcMs) {
+    return normalized.start;
+  }
+  if (utcMs > normalized.endUtcMs) {
+    return normalized.end;
+  }
+  return dateKey;
+}
+
+function getUcAylarRangeForDate(monthKey, dateKey) {
+  if (!monthKey || !isValidDateKey(dateKey)) {
+    return null;
+  }
+  const utcMs = dateKeyToUtcMs(dateKey);
+  if (!Number.isFinite(utcMs)) {
+    return null;
+  }
+
+  const seasons = UCAYLAR_DATE_RANGES && typeof UCAYLAR_DATE_RANGES === 'object' ? UCAYLAR_DATE_RANGES : {};
+  const seasonEntries = Object.entries(seasons);
+  for (const [seasonYearRaw, season] of seasonEntries) {
+    if (!season || typeof season !== 'object') {
+      continue;
+    }
+    const range = normalizeUcAylarRange(season[monthKey]);
+    if (!range) {
+      continue;
+    }
+    if (utcMs >= range.startUtcMs && utcMs <= range.endUtcMs) {
+      return { ...range, seasonYear: Number.parseInt(seasonYearRaw, 10) || null };
+    }
+  }
+  return null;
+}
+
+function listUcAylarRangesForMonth(monthKey) {
+  const seasons = UCAYLAR_DATE_RANGES && typeof UCAYLAR_DATE_RANGES === 'object' ? UCAYLAR_DATE_RANGES : {};
+  return Object.entries(seasons)
+    .map(([seasonYearRaw, season]) => {
+      if (!season || typeof season !== 'object') {
+        return null;
+      }
+      const range = normalizeUcAylarRange(season[monthKey]);
+      if (!range) {
+        return null;
+      }
+      return { ...range, seasonYear: Number.parseInt(seasonYearRaw, 10) || null };
+    })
+    .filter(Boolean);
+}
+
+function getUcAylarRangeForStartYear(monthKey, year) {
+  if (!monthKey || !Number.isFinite(Number(year))) {
+    return null;
+  }
+  const targetYear = Number(year);
+  const ranges = listUcAylarRangesForMonth(monthKey);
+  const matching = ranges.filter((range) => Number.parseInt(range.start.slice(0, 4), 10) === targetYear);
+  if (!matching.length) {
+    return null;
+  }
+  if (matching.length === 1) {
+    return matching[0];
+  }
+  return matching.sort((a, b) => a.startUtcMs - b.startUtcMs)[0];
+}
+
+function selectClosestUcAylarRange(monthKey, referenceDateKey) {
+  const ranges = listUcAylarRangesForMonth(monthKey);
+  if (!ranges.length) {
+    return null;
+  }
+
+  const referenceUtcMs = dateKeyToUtcMs(isValidDateKey(referenceDateKey) ? referenceDateKey : getTodayKey());
+  if (!Number.isFinite(referenceUtcMs)) {
+    return ranges[0];
+  }
+
+  const upcoming = ranges
+    .filter((range) => range.startUtcMs >= referenceUtcMs)
+    .sort((a, b) => a.startUtcMs - b.startUtcMs);
+  if (upcoming.length) {
+    return upcoming[0];
+  }
+
+  const past = ranges.slice().sort((a, b) => b.endUtcMs - a.endUtcMs);
+  return past[0] || null;
+}
+
+function iterateDateKeysInRange(range) {
+  const normalized = normalizeUcAylarRange(range);
+  if (!normalized) {
+    return [];
+  }
+  const keys = [];
+  const dayMs = 24 * 60 * 60 * 1000;
+  for (let utcMs = normalized.startUtcMs; utcMs <= normalized.endUtcMs; utcMs += dayMs) {
+    keys.push(utcMsToDateKey(utcMs));
+  }
+  return keys;
 }
 
 function formatDateKey(date) {
@@ -5495,6 +9310,137 @@ function loadCounters() {
   }
 }
 
+function loadSharedDuaLastRoom() {
+  try {
+    const raw = localStorage.getItem(SHARED_DUA_LAST_ROOM_STORAGE_KEY);
+    if (!raw || typeof raw !== 'string') {
+      return null;
+    }
+
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    // Backwards compatible: legacy value might be a plain roomId string.
+    if (!trimmed.startsWith('{')) {
+      return { id: trimmed, name: '', type: null, status: null };
+    }
+
+    const parsed = JSON.parse(trimmed);
+    if (!parsed || typeof parsed !== 'object') {
+      return null;
+    }
+
+    // New format: { version, rooms: [...] }
+    if (Array.isArray(parsed.rooms) && parsed.rooms.length) {
+      const first = parsed.rooms[0];
+      if (first && typeof first.id === 'string' && first.id) {
+        return {
+          id: first.id,
+          name: typeof first.name === 'string' ? first.name : '',
+          type: typeof first.type === 'string' ? first.type : null,
+          status: typeof first.status === 'string' ? first.status : null,
+        };
+      }
+    }
+
+    const id = typeof parsed.id === 'string' ? parsed.id : '';
+    if (!id) {
+      return null;
+    }
+    return {
+      id,
+      name: typeof parsed.name === 'string' ? parsed.name : '',
+      type: typeof parsed.type === 'string' ? parsed.type : null,
+      status: typeof parsed.status === 'string' ? parsed.status : null,
+    };
+  } catch (_error) {
+    return null;
+  }
+}
+
+function loadSharedDuaRoomHistory() {
+  try {
+    const raw = localStorage.getItem(SHARED_DUA_LAST_ROOM_STORAGE_KEY);
+    if (!raw || typeof raw !== 'string') {
+      return [];
+    }
+
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      return [];
+    }
+
+    // Legacy: plain roomId string.
+    if (!trimmed.startsWith('{')) {
+      const id = trimmed;
+      return id ? [{ id, name: '', type: null, status: null, updatedAt: Date.now() }] : [];
+    }
+
+    const parsed = JSON.parse(trimmed);
+    if (!parsed || typeof parsed !== 'object') {
+      return [];
+    }
+
+    const rooms = Array.isArray(parsed.rooms) ? parsed.rooms : parsed.id ? [parsed] : [];
+    const seen = new Set();
+    const result = [];
+
+    rooms.forEach((entry) => {
+      if (!entry || typeof entry !== 'object') {
+        return;
+      }
+      const id = typeof entry.id === 'string' ? entry.id : '';
+      if (!id || seen.has(id)) {
+        return;
+      }
+      seen.add(id);
+      result.push({
+        id,
+        name: typeof entry.name === 'string' ? entry.name : '',
+        type: typeof entry.type === 'string' ? entry.type : null,
+        status: typeof entry.status === 'string' ? entry.status : null,
+        updatedAt: typeof entry.updatedAt === 'number' ? entry.updatedAt : Date.now(),
+      });
+    });
+
+    result.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    return result.slice(0, 5);
+  } catch (_error) {
+    return [];
+  }
+}
+
+function saveSharedDuaLastRoom(meta) {
+  if (!meta || typeof meta !== 'object') {
+    return;
+  }
+  const id = typeof meta.id === 'string' ? meta.id : '';
+  if (!id) {
+    return;
+  }
+  const previous = state.sharedDua && state.sharedDua.lastRoom && state.sharedDua.lastRoom.id === id
+    ? state.sharedDua.lastRoom
+    : null;
+  const next = {
+    id,
+    name: typeof meta.name === 'string' ? meta.name : previous ? previous.name : '',
+    type: typeof meta.type === 'string' ? meta.type : previous ? previous.type : null,
+    status: typeof meta.status === 'string' ? meta.status : previous ? previous.status : null,
+  };
+  const previousHistory = Array.isArray(state.sharedDua && state.sharedDua.roomHistory) ? state.sharedDua.roomHistory : [];
+  const nextEntry = { ...next, updatedAt: Date.now() };
+  const updated = [nextEntry, ...previousHistory.filter((room) => room && room.id !== id)].slice(0, 5);
+  state.sharedDua.roomHistory = updated;
+  state.sharedDua.lastRoom = next;
+  try {
+    localStorage.setItem(SHARED_DUA_LAST_ROOM_STORAGE_KEY, JSON.stringify({ version: 1, rooms: updated }));
+  } catch (error) {
+    console.warn('Son oda bilgisi kaydedilemedi.', error);
+  }
+}
+
 function saveCounters() {
   localStorage.setItem(COUNTER_STORAGE_KEY, JSON.stringify(state.counters));
 }
@@ -6872,42 +10818,40 @@ function updateSettingsDuaControls() {
 function attachSettingsActions() {
   const resetButton = document.querySelector('[data-reset-dua]');
   const favoritesResetButton = document.querySelector('[data-reset-dua-favorites]');
-  if (!resetButton) {
-    return;
-  }
+  if (resetButton) {
+    state.duaResetButton = resetButton;
+    updateSettingsDuaControls();
 
-  state.duaResetButton = resetButton;
-  updateSettingsDuaControls();
-
-  resetButton.addEventListener('click', async () => {
-    if (resetButton.disabled) {
-      return;
-    }
-
-    const label = DUA_SOURCES[state.duaSource]?.label || 'seçili dua kaynağı';
-    const confirmed = window.confirm(`${label} okuma ilerlemesini sıfırlamak istiyor musunuz?`);
-    if (!confirmed) {
-      return;
-    }
-
-    resetButton.disabled = true;
-    try {
-      const duas = await loadDuaSourceData(state.duaSource);
-      state.duas = duas;
-      const nextState = resetDuaState(duas.length, state.duaSource, 0);
-      if (nextState.remaining.length > 0) {
-        nextState.current = pickRandomFrom(nextState.remaining);
-        saveDuaState();
-      } else {
-        saveDuaState();
+    resetButton.addEventListener('click', async () => {
+      if (resetButton.disabled) {
+        return;
       }
-      refreshDuaUI();
-    } catch (error) {
-      console.error('Dua ilerlemesi sıfırlanamadı.', error);
-    } finally {
-      resetButton.disabled = false;
-    }
-  });
+
+      const label = DUA_SOURCES[state.duaSource]?.label || 'seçili dua kaynağı';
+      const confirmed = window.confirm(`${label} okuma ilerlemesini sıfırlamak istiyor musunuz?`);
+      if (!confirmed) {
+        return;
+      }
+
+      resetButton.disabled = true;
+      try {
+        const duas = await loadDuaSourceData(state.duaSource);
+        state.duas = duas;
+        const nextState = resetDuaState(duas.length, state.duaSource, 0);
+        if (nextState.remaining.length > 0) {
+          nextState.current = pickRandomFrom(nextState.remaining);
+          saveDuaState();
+        } else {
+          saveDuaState();
+        }
+        refreshDuaUI();
+      } catch (error) {
+        console.error('Dua ilerlemesi sıfırlanamadı.', error);
+      } finally {
+        resetButton.disabled = false;
+      }
+    });
+  }
 
   if (favoritesResetButton) {
     favoritesResetButton.addEventListener('click', () => {
@@ -6922,6 +10866,131 @@ function attachSettingsActions() {
       clearDuaFavorites();
       window.alert('Kaydedilen dualar temizlendi.');
       refreshDuaUI();
+    });
+  }
+
+  attachUcAylarTransferControls();
+}
+
+function attachUcAylarTransferControls() {
+  const exportButton = document.querySelector('[data-ucaylar-export]');
+  const importTrigger = document.querySelector('[data-ucaylar-import-trigger]');
+  const importFile = document.querySelector('[data-ucaylar-import-file]');
+  const status = document.querySelector('[data-ucaylar-transfer-status]');
+
+  const setStatus = (message) => {
+    if (!status) {
+      return;
+    }
+    if (!message) {
+      status.hidden = true;
+      status.textContent = '';
+      return;
+    }
+    status.hidden = false;
+    status.textContent = message;
+  };
+
+  const downloadJson = (filename, payload) => {
+    try {
+      const content = JSON.stringify(payload, null, 2);
+      const blob = new Blob([content], { type: 'application/json' });
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      console.warn('Dosya indirilemedi.', error);
+      setStatus('Dosya indirilemedi. Lütfen tekrar deneyin.');
+    }
+  };
+
+  const formatDateForFilename = (dateKey) => {
+    if (!isValidDateKey(dateKey)) {
+      return '';
+    }
+    return dateKey.split('-').join('');
+  };
+
+  if (exportButton) {
+    exportButton.addEventListener('click', () => {
+      const payload = loadUcAylarData();
+      const todayKey = getTodayKey();
+      const suffix = formatDateForFilename(todayKey) || 'backup';
+      downloadJson(`tesbihat-ucaylar-backup-${suffix}.json`, payload);
+      setStatus('Üç Aylar verisi indirildi.');
+      window.setTimeout(() => setStatus(''), 2500);
+    });
+  }
+
+  const refreshUcAylarIfActive = () => {
+    if (state.currentPrayer !== 'ucaylar') {
+      return;
+    }
+    const content = document.getElementById('content');
+    if (!content) {
+      return;
+    }
+    const monthKey = state.ucaylar && state.ucaylar.activeMonthKey ? state.ucaylar.activeMonthKey : null;
+    const tab = state.ucaylar && state.ucaylar.activeMonthTab ? state.ucaylar.activeMonthTab : null;
+    if (monthKey) {
+      renderUcAylarMonthView(content, monthKey, { parentPrayerId: 'ucaylar', parentConfig: PRAYER_CONFIG.ucaylar, initialTab: tab === 'tracker' ? 'tracker' : 'content' });
+      return;
+    }
+    renderPrayerCollection(content, 'ucaylar', PRAYER_CONFIG.ucaylar);
+  };
+
+  const handleImportFile = async (file) => {
+    if (!file) {
+      return;
+    }
+    setStatus('');
+
+    try {
+      let text = '';
+      if (typeof file.text === 'function') {
+        text = await file.text();
+      } else {
+        text = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ''));
+          reader.onerror = () => reject(reader.error || new Error('Dosya okunamadı.'));
+          reader.readAsText(file);
+        });
+      }
+      const parsed = JSON.parse(text);
+      if (!parsed || typeof parsed !== 'object') {
+        throw new Error('Geçersiz JSON.');
+      }
+      if (typeof parsed.trackers !== 'object' || parsed.trackers === null) {
+        throw new Error('Geçersiz veri: trackers bulunamadı.');
+      }
+      const migrated = migrateUcAylarData(parsed, { source: 'import' });
+      state.ucaylar.data = migrated;
+      saveUcAylarData(migrated);
+      setStatus('Üç Aylar verisi içe aktarıldı.');
+      refreshUcAylarIfActive();
+      window.setTimeout(() => setStatus(''), 3500);
+    } catch (error) {
+      console.warn('Üç Aylar verisi içe aktarılamadı.', error);
+      setStatus('İçe aktarma başarısız. Dosya biçimini kontrol edin.');
+    }
+  };
+
+  if (importTrigger && importFile) {
+    importTrigger.addEventListener('click', () => {
+      setStatus('');
+      importFile.value = '';
+      importFile.click();
+    });
+
+    importFile.addEventListener('change', () => {
+      const file = importFile.files && importFile.files[0] ? importFile.files[0] : null;
+      handleImportFile(file);
     });
   }
 }

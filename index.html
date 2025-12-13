@@ -16,6 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Scheherazade+New:wght@400;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/marked@12.0.1/marked.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js" defer></script>
+    <script src="firebase-config.js" defer></script>
     <script src="main.js" defer></script>
   </head>
   <body>
@@ -50,6 +51,14 @@
           <button type="button" class="hero-link" data-hero-link="dualar" data-prayer="dualar">
             <span class="hero-link__icon" aria-hidden="true">🤲🏼</span>
             <span class="hero-link__label">Dualar</span>
+          </button>
+          <button type="button" class="hero-link" data-hero-link="ucaylar" data-prayer="ucaylar">
+            <span class="hero-link__icon" aria-hidden="true">🌙</span>
+            <span class="hero-link__label">Üç Aylar</span>
+          </button>
+          <button type="button" class="hero-link" data-hero-link="ortakdua" data-prayer="ortakdua">
+            <span class="hero-link__icon" aria-hidden="true">🤝</span>
+            <span class="hero-link__label">Ortak Dua</span>
           </button>
         </div>
         <div class="hero__tabs" role="tablist" aria-label="Tesbihat vakitleri">
@@ -170,6 +179,25 @@
             <div class="settings-group">
               <small class="settings-hint">Günlük tamamlanma kayıtlarını sıfırlamak tüm geçmişi kalıcı olarak siler.</small>
               <button type="button" class="settings-action-button" data-reset-stats>İstatistikleri sıfırla</button>
+            </div>
+          </section>
+          <section class="settings-section">
+            <header class="settings-section__header">
+              <span class="settings-section__icon" aria-hidden="true">🌙</span>
+              <h3>Üç Aylar</h3>
+            </header>
+            <div class="settings-group">
+              <button type="button" class="settings-action-button secondary" data-ucaylar-export>
+                Üç Aylar verisini dışa aktar
+              </button>
+              <div class="settings-inline-actions">
+                <button type="button" class="settings-action-button" data-ucaylar-import-trigger>
+                  Üç Aylar verisini içe aktar
+                </button>
+                <input type="file" accept=".json,application/json" data-ucaylar-import-file hidden>
+              </div>
+              <small class="settings-hint">İçe aktarma mevcut Üç Aylar verisini silip yenisiyle değiştirir.</small>
+              <small class="settings-hint" data-ucaylar-transfer-status hidden></small>
             </div>
           </section>
         </div>
