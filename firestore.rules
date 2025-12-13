@@ -33,10 +33,9 @@ service cloud.firestore {
       // Self-join: only add members.<uid> = true (no other changes).
       allow update: if isSignedIn() && (
         (
-          resource.data.members[uid()] != true
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+          // Allow writing only your own membership flag (idempotent).
+          request.writeFields.hasOnly(['members.' + uid()])
           && request.resource.data.members[uid()] == true
-          && request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([uid()])
         )
         ||
         (
@@ -49,6 +48,20 @@ service cloud.firestore {
           && request.resource.data.claimCounts[uid()] is int
           && request.resource.data.claimCounts[uid()] >= 0
           && request.resource.data.claimCounts[uid()] <= resource.data.maxClaimsPerUser
+        )
+        ||
+        // Owner can adjust claimCounts (e.g. freeing stuck parts).
+        (
+          resource.data.createdBy == uid()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['claimCounts'])
+          && request.resource.data.claimCounts is map
+        )
+        ||
+        // Owner can close the room (readable, but prevents new claims).
+        (
+          resource.data.createdBy == uid()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+          && request.resource.data.status == 'closed'
         )
       );
 
@@ -75,6 +88,7 @@ service cloud.firestore {
         // available -> claimed (only by requester)
         (
           resource.data.state == 'available'
+          && roomDoc(roomId).data.status != 'closed'
           && request.resource.data.state == 'claimed'
           && request.resource.data.index == resource.data.index
           && request.resource.data.label == resource.data.label
@@ -87,7 +101,7 @@ service cloud.firestore {
         // claimed -> available (release; only claimer)
         (
           resource.data.state == 'claimed'
-          && resource.data.claimedBy == uid()
+          && (resource.data.claimedBy == uid() || roomDoc(roomId).data.createdBy == uid())
           && request.resource.data.state == 'available'
           && request.resource.data.index == resource.data.index
           && request.resource.data.label == resource.data.label
