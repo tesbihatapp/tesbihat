@@ -13,6 +13,7 @@ const UCAYLAR_TRACKER_STORAGE_KEY = 'tesbihat:ucaylar-tracker';
 const UCAYLAR_TRACKER_STORAGE_VERSION = 1;
 const SHARED_DUA_LAST_ROOM_STORAGE_KEY = 'tesbihat:shared-dua:last-room';
 const SHARED_DUA_ROUTE_PREFIX = '#/shared/';
+const SHARED_DUA_DISPLAY_NAME_STORAGE_KEY = 'sharedDisplayName';
 const SHARED_DUA_FIREBASE_SDK_VERSION = '10.12.0';
 const SHARED_DUA_ROOM_CODE_ATTEMPTS = 5;
 const SHARED_DUA_ROOM_CODE_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -1127,6 +1128,7 @@ const state = {
   sharedDua: {
     ui: null,
     pendingRoomId: null,
+    roomHistory: loadSharedDuaRoomHistory(),
     lastRoom: loadSharedDuaLastRoom(),
   },
   names: null,
@@ -4140,6 +4142,99 @@ function cleanupSharedDuaUI() {
   state.sharedDua.ui = null;
 }
 
+function loadSharedDuaDisplayName() {
+  try {
+    const stored = window.localStorage.getItem(SHARED_DUA_DISPLAY_NAME_STORAGE_KEY);
+    return typeof stored === 'string' ? stored.trim() : '';
+  } catch (_error) {
+    return '';
+  }
+}
+
+function clearSharedDuaDisplayName() {
+  try {
+    window.localStorage.removeItem(SHARED_DUA_DISPLAY_NAME_STORAGE_KEY);
+  } catch (_error) {
+    // ignore
+  }
+}
+
+function storeSharedDuaDisplayName(value) {
+  let name = typeof value === 'string' ? value.trim() : '';
+  if (!name) {
+    return '';
+  }
+  if (name.length > 40) {
+    name = name.slice(0, 40);
+  }
+  try {
+    window.localStorage.setItem(SHARED_DUA_DISPLAY_NAME_STORAGE_KEY, name);
+  } catch (_error) {
+    // ignore
+  }
+  return name;
+}
+
+function normaliseSharedDuaAssignStrategy(value) {
+  if (value === 'same' || value === 'random') {
+    return value;
+  }
+  return 'manual';
+}
+
+function resolveSharedDuaMaxClaims(value) {
+  const parsed = typeof value === 'number' && Number.isFinite(value) ? Math.floor(value) : Number.parseInt(value, 10);
+  if (parsed === 0) {
+    return 0;
+  }
+  if (!Number.isFinite(parsed)) {
+    return 1;
+  }
+  return clamp(parsed, 1, 5);
+}
+
+function formatSharedDuaMaxClaimsLabel(value) {
+  const resolved = resolveSharedDuaMaxClaims(value);
+  return resolved === 0 ? 'Limitsiz' : String(resolved);
+}
+
+function resolveSharedDuaRoundNumber(value) {
+  const resolved = typeof value === 'number' && Number.isFinite(value) ? Math.floor(value) : 1;
+  return resolved > 0 ? resolved : 1;
+}
+
+function getSharedDuaRoomRound(room) {
+  return resolveSharedDuaRoundNumber(room && room.roundNumber);
+}
+
+function getSharedDuaPartRound(part) {
+  return resolveSharedDuaRoundNumber(part && part.roundNumber);
+}
+
+function getSharedDuaPartView(part, currentRound) {
+  const round = resolveSharedDuaRoundNumber(currentRound);
+  const partRound = getSharedDuaPartRound(part);
+
+  if (partRound !== round) {
+    return { state: 'available', claimedByUid: null, claimedByName: null, isStale: true };
+  }
+
+  const stateValue = part && typeof part.state === 'string' ? part.state : 'available';
+  const claimedByUid = part && typeof part.claimedByUid === 'string'
+    ? part.claimedByUid
+    : part && typeof part.claimedBy === 'string'
+      ? part.claimedBy
+      : null;
+  const claimedByName = part && typeof part.claimedByName === 'string' ? part.claimedByName.trim() : '';
+
+  return {
+    state: stateValue,
+    claimedByUid,
+    claimedByName: claimedByName || null,
+    isStale: false,
+  };
+}
+
 function normaliseSharedDuaRoomId(roomId) {
   if (!roomId || typeof roomId !== 'string') {
     return null;
@@ -4365,7 +4460,8 @@ async function createSharedDuaRoom(options) {
 
   const roomType = options && options.type === 'cevsen' ? 'cevsen' : 'hatim';
   const hatimMode = roomType === 'hatim' && options && options.hatimMode === 'page' ? 'page' : 'cuz';
-  const maxClaimsPerUser = clamp(Math.floor(options && options.maxClaimsPerUser ? options.maxClaimsPerUser : 1), 1, 5);
+  const maxClaimsPerUser = resolveSharedDuaMaxClaims(options && options.maxClaimsPerUser);
+  const assignStrategy = normaliseSharedDuaAssignStrategy(options && options.assignStrategy);
   const name = options && typeof options.name === 'string' ? options.name.trim() : '';
 
   const totalParts = roomType === 'cevsen'
@@ -4385,9 +4481,15 @@ async function createSharedDuaRoom(options) {
     createdBy: uid,
     name,
     maxClaimsPerUser,
+    maxPiecesPerUser: maxClaimsPerUser,
     members: { [uid]: true },
     claimCounts: { [uid]: 0 },
     status: 'active',
+    assignStrategy,
+    roundNumber: 1,
+    roundCompletedCount: 0,
+    roundDoneCount: 0,
+    lastResetFromRound: 0,
   };
 
   // Collision handling without reading:
@@ -4433,6 +4535,7 @@ async function createSharedDuaRoom(options) {
         index: part.index,
         label: part.label,
         state: 'available',
+        roundNumber: 1,
         claimedBy: null,
         claimedAt: null,
         doneBy: null,
@@ -4469,6 +4572,20 @@ async function joinSharedDuaRoom(roomId) {
   return normalised;
 }
 
+async function syncSharedDuaParticipantDisplayName(roomId) {
+  const name = loadSharedDuaDisplayName();
+  if (!name) {
+    return;
+  }
+  const { db, fs, uid } = await ensureSharedDuaFirebase();
+  const normalised = normaliseSharedDuaRoomId(roomId);
+  if (!normalised) {
+    return;
+  }
+  const participantRef = fs.doc(db, 'rooms', normalised, 'participants', uid);
+  await fs.setDoc(participantRef, { displayName: name, updatedAt: fs.serverTimestamp() }, { merge: true });
+}
+
 async function sharedDuaClaimPart(roomId, partId) {
   const { db, fs, uid } = await ensureSharedDuaFirebase();
   const normalised = normaliseSharedDuaRoomId(roomId);
@@ -4479,6 +4596,8 @@ async function sharedDuaClaimPart(roomId, partId) {
 
   const roomRef = fs.doc(db, 'rooms', normalised);
   const partRef = fs.doc(db, 'rooms', normalised, 'parts', resolvedPartId);
+  const participantRef = fs.doc(db, 'rooms', normalised, 'participants', uid);
+  const displayName = loadSharedDuaDisplayName();
 
   await fs.runTransaction(db, async (transaction) => {
     const roomSnap = await transaction.get(roomRef);
@@ -4489,34 +4608,71 @@ async function sharedDuaClaimPart(roomId, partId) {
     if (room.status === 'closed') {
       throw new Error('Bu oda kapatıldı. Yeni parça alınamaz.');
     }
-    const maxClaims = clamp(Math.floor(room.maxClaimsPerUser || 1), 1, 5);
+    const maxClaims = resolveSharedDuaMaxClaims(room.maxClaimsPerUser ?? room.maxPiecesPerUser ?? 1);
     const current = room.claimCounts && typeof room.claimCounts[uid] === 'number' ? room.claimCounts[uid] : 0;
-    if (current >= maxClaims) {
+    if (maxClaims > 0 && current >= maxClaims) {
       throw new Error(`En fazla ${maxClaims} parça alabilirsiniz.`);
     }
+    const roomRound = getSharedDuaRoomRound(room);
 
     const partSnap = await transaction.get(partRef);
     if (!partSnap.exists()) {
       throw new Error('Parça bulunamadı.');
     }
-    const part = partSnap.data() || {};
-    if (part.state !== 'available') {
-      throw new Error('Bu parça artık uygun değil.');
-    }
+	    const part = partSnap.data() || {};
+	    const partRound = getSharedDuaPartRound(part);
+	    if (partRound === roomRound && part.state !== 'available') {
+	      throw new Error('Bu parça artık uygun değil.');
+	    }
 
-    transaction.update(partRef, {
-      state: 'claimed',
-      claimedBy: uid,
-      claimedAt: fs.serverTimestamp(),
-      doneBy: null,
-      doneAt: null,
-    });
+	    const participantSnap = await transaction.get(participantRef);
+	    const participant = participantSnap.exists() ? participantSnap.data() || {} : {};
+	    const existingRound = participant && typeof participant.lastRoundNumber === 'number' ? Math.floor(participant.lastRoundNumber) : 0;
+	    const existingPieces = Array.isArray(participant.lastRoundPieces) ? participant.lastRoundPieces : [];
 
-    transaction.update(roomRef, {
-      [`claimCounts.${uid}`]: current + 1,
-    });
-  });
-}
+	    const partUpdate = {
+	      state: 'claimed',
+	      claimedBy: uid,
+	      claimedByUid: uid,
+	      claimedAt: fs.serverTimestamp(),
+	      doneBy: null,
+	      doneAt: null,
+	      roundNumber: roomRound,
+	    };
+	    if (displayName) {
+	      partUpdate.claimedByName = displayName;
+	    } else {
+	      partUpdate.claimedByName = fs.deleteField();
+	    }
+
+	    const indexValue = typeof part.index === 'number' && Number.isFinite(part.index)
+	      ? Math.floor(part.index)
+	      : Number.parseInt(resolvedPartId, 10);
+	    const safeIndex = Number.isFinite(indexValue) ? indexValue : null;
+
+	    const basePieces = existingRound === roomRound
+	      ? existingPieces.filter((value) => typeof value === 'number' && Number.isFinite(value))
+	      : [];
+	    const nextPieces = safeIndex && !basePieces.includes(safeIndex) ? [...basePieces, safeIndex] : basePieces;
+
+	    const participantUpdate = {
+	      lastRoundNumber: roomRound,
+	      lastRoundPieces: nextPieces,
+	      updatedAt: fs.serverTimestamp(),
+	    };
+	    if (displayName) {
+	      participantUpdate.displayName = displayName;
+	    }
+
+	    transaction.update(partRef, partUpdate);
+
+	    transaction.update(roomRef, {
+	      [`claimCounts.${uid}`]: current + 1,
+	    });
+
+	    transaction.set(participantRef, participantUpdate, { merge: true });
+	  });
+	}
 
 async function sharedDuaReleasePart(roomId, partId) {
   const { db, fs, uid } = await ensureSharedDuaFirebase();
@@ -4555,6 +4711,8 @@ async function sharedDuaReleasePart(roomId, partId) {
     transaction.update(partRef, {
       state: 'available',
       claimedBy: null,
+      claimedByUid: fs.deleteField(),
+      claimedByName: fs.deleteField(),
       claimedAt: null,
       doneBy: null,
       doneAt: null,
@@ -4582,13 +4740,21 @@ async function sharedDuaMarkDone(roomId, partId) {
     if (!roomSnap.exists()) {
       throw new Error('Oda bulunamadı.');
     }
+    const room = roomSnap.data() || {};
+    const roomRound = getSharedDuaRoomRound(room);
+    const totalParts = Math.max(0, Math.floor(room.totalParts || 0));
+
     const partSnap = await transaction.get(partRef);
     if (!partSnap.exists()) {
       throw new Error('Parça bulunamadı.');
     }
     const part = partSnap.data() || {};
+    const partRound = getSharedDuaPartRound(part);
     if (part.state !== 'claimed' || part.claimedBy !== uid) {
       throw new Error('Bu parçayı yalnızca alan kişi tamamlayabilir.');
+    }
+    if (partRound !== roomRound) {
+      throw new Error('Bu parça farklı bir turda bulunuyor. Sayfayı yenileyip tekrar deneyin.');
     }
 
     transaction.update(partRef, {
@@ -4597,9 +4763,44 @@ async function sharedDuaMarkDone(roomId, partId) {
       doneAt: fs.serverTimestamp(),
     });
 
-    const room = roomSnap.data() || {};
     const current = room.claimCounts && typeof room.claimCounts[uid] === 'number' ? room.claimCounts[uid] : 0;
-    transaction.update(roomRef, { [`claimCounts.${uid}`]: Math.max(0, current - 1) });
+
+    const currentDone = typeof room.roundDoneCount === 'number' && Number.isFinite(room.roundDoneCount)
+      ? Math.max(0, Math.floor(room.roundDoneCount))
+      : 0;
+    const nextDone = currentDone + 1;
+    const completedCount = typeof room.roundCompletedCount === 'number' && Number.isFinite(room.roundCompletedCount)
+      ? Math.max(0, Math.floor(room.roundCompletedCount))
+      : 0;
+    const lastResetFromRound = typeof room.lastResetFromRound === 'number' && Number.isFinite(room.lastResetFromRound)
+      ? Math.max(0, Math.floor(room.lastResetFromRound))
+      : 0;
+
+    const roomUpdate = {
+      [`claimCounts.${uid}`]: Math.max(0, current - 1),
+      roundDoneCount: nextDone,
+    };
+    if (typeof room.roundNumber !== 'number') {
+      roomUpdate.roundNumber = roomRound;
+    }
+    if (typeof room.roundCompletedCount !== 'number') {
+      roomUpdate.roundCompletedCount = completedCount;
+    }
+
+    // Tur tamamlanınca otomatik reset:
+    // - Tur numarasını artırır.
+    // - Tamamlanma sayısını artırır.
+    // - Yeni tur için done sayacını sıfırlar.
+    // Parçalar tek tek güncellenmez; roundNumber artınca eski tur kayıtları UI'da "u̇ygun" kabul edilir.
+    if (totalParts > 0 && nextDone >= totalParts && lastResetFromRound !== roomRound) {
+      roomUpdate.roundCompletedCount = completedCount + 1;
+      roomUpdate.roundNumber = roomRound + 1;
+      roomUpdate.roundDoneCount = 0;
+      roomUpdate.lastResetFromRound = roomRound;
+      roomUpdate.resetAt = fs.serverTimestamp();
+    }
+
+    transaction.update(roomRef, roomUpdate);
   });
 }
 
@@ -4626,7 +4827,7 @@ async function sharedDuaCloseRoom(roomId) {
   });
 }
 
-async function sharedDuaClaimNextAvailable(roomId, parts) {
+async function sharedDuaClaimNextAvailable(roomId, parts, currentRound) {
   const normalised = normaliseSharedDuaRoomId(roomId);
   if (!normalised) {
     throw new Error('Oda kodu geçersiz.');
@@ -4634,7 +4835,14 @@ async function sharedDuaClaimNextAvailable(roomId, parts) {
 
   const list = Array.isArray(parts) ? parts.slice() : [];
   list.sort((a, b) => Math.floor(a && a.index ? a.index : 0) - Math.floor(b && b.index ? b.index : 0));
-  const candidates = list.filter((part) => part && part.state === 'available' && part.id);
+  const round = resolveSharedDuaRoundNumber(currentRound);
+  const candidates = list.filter((part) => {
+    if (!part || !part.id) {
+      return false;
+    }
+    const view = getSharedDuaPartView(part, round);
+    return view.state === 'available';
+  });
   if (!candidates.length) {
     throw new Error('Uygun parça bulunamadı.');
   }
@@ -4656,15 +4864,16 @@ async function sharedDuaClaimNextAvailable(roomId, parts) {
   throw new Error('Parça alınamadı.');
 }
 
-function computeSharedDuaProgress(parts) {
+function computeSharedDuaProgress(parts, currentRound) {
   const list = Array.isArray(parts) ? parts : [];
+  const round = resolveSharedDuaRoundNumber(currentRound);
   let done = 0;
   let claimed = 0;
   let available = 0;
   list.forEach((part) => {
-    const state = part && typeof part.state === 'string' ? part.state : 'available';
-    if (state === 'done') done += 1;
-    else if (state === 'claimed') claimed += 1;
+    const view = getSharedDuaPartView(part, round);
+    if (view.state === 'done') done += 1;
+    else if (view.state === 'claimed') claimed += 1;
     else available += 1;
   });
   return { done, claimed, available, total: list.length };
@@ -4677,6 +4886,163 @@ function formatSharedDuaPercent(done, total) {
   }
   const resolvedDone = Math.max(0, Math.floor(done || 0));
   return String(Math.round((resolvedDone / resolvedTotal) * 100));
+}
+
+function shuffleInPlace(list) {
+  for (let index = list.length - 1; index > 0; index -= 1) {
+    const next = Math.floor(Math.random() * (index + 1));
+    [list[index], list[next]] = [list[next], list[index]];
+  }
+  return list;
+}
+
+function formatSharedDuaPartLabel(label, roomType, hatimMode, indexValue) {
+  const raw = typeof label === 'string' ? label.trim() : '';
+  const index = typeof indexValue === 'number' && Number.isFinite(indexValue) ? Math.floor(indexValue) : null;
+
+  if (raw) {
+    const matchCuz = raw.match(/^Cüz\s*(\d+)$/u);
+    if (matchCuz) {
+      return `${matchCuz[1]}.Cüz`;
+    }
+    return raw;
+  }
+
+  if (roomType === 'hatim' && hatimMode === 'cuz' && index) {
+    return `${index}.Cüz`;
+  }
+  if (roomType === 'hatim' && hatimMode === 'page' && index) {
+    return `${index}.Sayfa`;
+  }
+  return index ? `Parça ${index}` : 'Parça';
+}
+
+async function ensureSharedDuaRoomRoundDefaults(roomId, room, parts) {
+  const normalised = normaliseSharedDuaRoomId(roomId);
+  if (!normalised || !room || !Array.isArray(parts)) {
+    return;
+  }
+
+  const patch = {};
+  const round = getSharedDuaRoomRound(room);
+  if (typeof room.roundNumber !== 'number') {
+    patch.roundNumber = round;
+  }
+  if (typeof room.roundCompletedCount !== 'number') {
+    patch.roundCompletedCount = 0;
+  }
+  if (typeof room.roundDoneCount !== 'number') {
+    const progress = computeSharedDuaProgress(parts, round);
+    patch.roundDoneCount = progress.done;
+  }
+  if (typeof room.assignStrategy !== 'string') {
+    patch.assignStrategy = 'manual';
+  }
+  if (typeof room.maxPiecesPerUser !== 'number' && typeof room.maxClaimsPerUser === 'number') {
+    patch.maxPiecesPerUser = clamp(Math.floor(room.maxClaimsPerUser), 1, 5);
+  }
+
+  const keys = Object.keys(patch);
+  if (!keys.length) {
+    return;
+  }
+
+  const { db, fs } = await ensureSharedDuaFirebase();
+  const roomRef = fs.doc(db, 'rooms', normalised);
+  await fs.updateDoc(roomRef, patch);
+}
+
+async function maybeAutoAssignSharedDua(ui) {
+  if (!ui || ui.autoAssignRunning) {
+    return;
+  }
+  const room = ui.room;
+  const parts = Array.isArray(ui.parts) ? ui.parts : null;
+  if (!room || !parts || !ui.uid) {
+    return;
+  }
+
+  const strategy = normaliseSharedDuaAssignStrategy(room.assignStrategy);
+  if (strategy === 'manual') {
+    return;
+  }
+
+  const roomRound = getSharedDuaRoomRound(room);
+  if (ui.autoAssignRound === roomRound) {
+    return;
+  }
+  if (room && room.status === 'closed') {
+    ui.autoAssignRound = roomRound;
+    return;
+  }
+
+  const configuredMaxClaims = resolveSharedDuaMaxClaims(room.maxClaimsPerUser ?? room.maxPiecesPerUser ?? 1);
+  // "same" stratejisinde, limitsiz seçildiyse önceki turdaki tüm parçaları geri atayabilsin.
+  // "random" için limitsiz agresif olacağı için 1 ile sınırlandırıyoruz.
+  const maxClaims = strategy === 'same'
+    ? (configuredMaxClaims === 0 ? Number.POSITIVE_INFINITY : configuredMaxClaims)
+    : (configuredMaxClaims === 0 ? 1 : configuredMaxClaims);
+  const claimedByMe = parts.filter((part) => {
+    const view = getSharedDuaPartView(part, roomRound);
+    return view.state === 'claimed' && view.claimedByUid === ui.uid;
+  });
+  if (claimedByMe.length >= maxClaims) {
+    ui.autoAssignRound = roomRound;
+    return;
+  }
+
+  ui.autoAssignRunning = true;
+  try {
+    if (strategy === 'same') {
+      const previousRound = roomRound - 1;
+      const { db, fs } = await ensureSharedDuaFirebase();
+      const participantRef = fs.doc(db, 'rooms', ui.roomId, 'participants', ui.uid);
+      const snap = await fs.getDoc(participantRef);
+      const participant = snap.exists() ? snap.data() || {} : {};
+      const lastRoundNumber = participant && typeof participant.lastRoundNumber === 'number' ? Math.floor(participant.lastRoundNumber) : 0;
+      const lastPieces = Array.isArray(participant.lastRoundPieces)
+        ? participant.lastRoundPieces.filter((value) => typeof value === 'number' && Number.isFinite(value))
+        : [];
+      if (lastRoundNumber !== previousRound || !lastPieces.length) {
+        return;
+      }
+
+      const targets = lastPieces.slice(0, maxClaims);
+      for (let index = 0; index < targets.length; index += 1) {
+        const partIndex = targets[index];
+        try {
+          await sharedDuaClaimPart(ui.roomId, String(partIndex));
+        } catch (_error) {
+          // ignore collisions
+        }
+      }
+      return;
+    }
+
+    if (strategy === 'random') {
+      const available = parts
+        .filter((part) => {
+          const view = getSharedDuaPartView(part, roomRound);
+          return view.state === 'available' && part && part.id;
+        })
+        .map((part) => part.id);
+      shuffleInPlace(available);
+
+      const targetCount = Math.max(0, maxClaims - claimedByMe.length);
+      let claimed = 0;
+      for (let index = 0; index < available.length && claimed < targetCount; index += 1) {
+        try {
+          await sharedDuaClaimPart(ui.roomId, available[index]);
+          claimed += 1;
+        } catch (_error) {
+          // ignore collisions
+        }
+      }
+    }
+  } finally {
+    ui.autoAssignRound = roomRound;
+    ui.autoAssignRunning = false;
+  }
 }
 
 async function renderSharedDua(container) {
@@ -4748,6 +5114,73 @@ function renderSharedDuaHome(wrapper) {
   });
   list.append(cevsenCard);
 
+  const history = Array.isArray(state.sharedDua && state.sharedDua.roomHistory) ? state.sharedDua.roomHistory : [];
+  if (history.length) {
+    const historyCard = document.createElement('article');
+    historyCard.className = 'card shared-dua-history';
+    historyCard.innerHTML = `
+      <h3>Son odalar</h3>
+      <div class="shared-dua-history__list" data-shared-history-list></div>
+    `;
+    const listEl = historyCard.querySelector('[data-shared-history-list]');
+    if (listEl) {
+      const fragment = document.createDocumentFragment();
+      history.slice(0, 5).forEach((entry) => {
+        const normalised = normaliseSharedDuaRoomId(entry && entry.id ? entry.id : '');
+        if (!normalised) {
+          return;
+        }
+        const type = entry && entry.type === 'cevsen' ? 'cevsen' : entry && entry.type === 'hatim' ? 'hatim' : null;
+        const fallbackName = type === 'cevsen'
+          ? 'Ortak Cevşen odası'
+          : type === 'hatim'
+            ? 'Ortak Hatim odası'
+            : 'Ortak Dua odası';
+        const name = entry && typeof entry.name === 'string' ? entry.name.trim() : '';
+        const status = entry && typeof entry.status === 'string' ? entry.status : null;
+
+        const row = document.createElement('div');
+        row.className = 'shared-dua-history__row';
+        row.tabIndex = 0;
+        row.setAttribute('role', 'button');
+        row.setAttribute('aria-label', `${name || fallbackName} odasına katıl`);
+        row.innerHTML = `
+          <div class="shared-dua-history__meta">
+            <div class="shared-dua-history__title">${escapeHtml(name || fallbackName)}</div>
+            <div class="shared-dua-history__code muted">${escapeHtml(normalised)}</div>
+            ${status && status !== 'active' ? '<div class="shared-dua-history__note muted">Bu oda kapatılmış olabilir.</div>' : ''}
+          </div>
+          <div class="shared-dua-history__actions">
+            <button type="button" class="button-pill secondary shared-dua-history__join" data-room="${escapeHtml(normalised)}">Katıl</button>
+          </div>
+        `;
+
+        const open = () => {
+          setSharedDuaHash(normalised);
+          renderSharedDuaRoom(wrapper, normalised);
+        };
+
+        row.addEventListener('click', (event) => {
+          const target = event.target;
+          if (target && target.closest && target.closest('button')) {
+            return;
+          }
+          open();
+        });
+        row.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            open();
+          }
+        });
+        row.querySelector('[data-room]')?.addEventListener('click', open);
+        fragment.append(row);
+      });
+      listEl.append(fragment);
+    }
+    list.append(historyCard);
+  }
+
   const joinCard = document.createElement('article');
   joinCard.className = 'card shared-dua-join';
   joinCard.innerHTML = `
@@ -4817,56 +5250,80 @@ function renderSharedDuaHome(wrapper) {
     });
   }
 
-  const lastRoom = state.sharedDua && state.sharedDua.lastRoom ? state.sharedDua.lastRoom : null;
-  if (lastRoom && lastRoom.id) {
-    const last = normaliseSharedDuaRoomId(lastRoom.id);
-    if (last) {
-      const roomType = lastRoom && lastRoom.type === 'cevsen' ? 'cevsen' : lastRoom && lastRoom.type === 'hatim' ? 'hatim' : null;
-      const fallbackName = roomType === 'cevsen'
-        ? 'Ortak Cevşen odası'
-        : roomType === 'hatim'
-          ? 'Ortak Hatim odası'
-          : 'Ortak Dua odası';
-      const roomName = lastRoom && typeof lastRoom.name === 'string' ? lastRoom.name.trim() : '';
-      const status = lastRoom && typeof lastRoom.status === 'string' ? lastRoom.status : null;
+  list.append(joinCard);
 
-      const lastCard = document.createElement('article');
-      lastCard.className = 'card shared-dua-last';
+  const nameCard = document.createElement('article');
+  nameCard.className = 'card shared-dua-profile';
+  const currentName = loadSharedDuaDisplayName();
+  nameCard.innerHTML = `
+    <h3>Görünen isim</h3>
+    <p class="muted">Bu isim, parçaları aldığınızda odada görünecek isimdir.</p>
+    <form class="zikir-form" data-shared-profile-form>
+      <label class="zikir-form__label">
+        İsim (opsiyonel)
+        <input type="text" autocomplete="off" maxlength="40" placeholder="Örn: Ayşe" value="${escapeHtml(currentName)}" data-shared-profile-name />
+      </label>
+      <div class="zikir-form__row">
+        <button type="submit" class="button-pill secondary">Kaydet</button>
+        <button type="button" class="button-pill secondary" data-shared-profile-clear>Temizle</button>
+      </div>
+      <p class="zikir-form__message" data-shared-profile-message hidden></p>
+    </form>
+  `;
 
-      const heading = document.createElement('h3');
-      heading.textContent = 'Son oda';
-
-      const nameEl = document.createElement('p');
-      nameEl.className = 'shared-dua-last__name';
-      nameEl.textContent = roomName || fallbackName;
-
-      const codeEl = document.createElement('p');
-      codeEl.className = 'muted shared-dua-last__code';
-      codeEl.textContent = `Oda kodu: ${last}`;
-
-      const noteEl = document.createElement('p');
-      noteEl.className = 'muted shared-dua-last__note';
-      noteEl.textContent = 'Bu oda kapatılmış olabilir.';
-      noteEl.hidden = status === 'active';
-
-      const actions = document.createElement('div');
-      actions.className = 'shared-dua-card__actions';
-      const openButton = document.createElement('button');
-      openButton.type = 'button';
-      openButton.className = 'button-pill secondary';
-      openButton.textContent = 'Odayı Aç';
-      openButton.addEventListener('click', () => {
-        setSharedDuaHash(last);
-        renderSharedDuaRoom(wrapper, last);
-      });
-      actions.append(openButton);
-
-      lastCard.append(heading, nameEl, codeEl, noteEl, actions);
-      list.append(lastCard);
+  const profileForm = nameCard.querySelector('[data-shared-profile-form]');
+  const profileInput = nameCard.querySelector('[data-shared-profile-name]');
+  const profileClear = nameCard.querySelector('[data-shared-profile-clear]');
+  const profileMessage = nameCard.querySelector('[data-shared-profile-message]');
+  const setProfileMessage = (status, message) => {
+    if (!profileMessage) {
+      return;
     }
+    if (!message) {
+      profileMessage.hidden = true;
+      profileMessage.textContent = '';
+      profileMessage.removeAttribute('data-status');
+      return;
+    }
+    profileMessage.hidden = false;
+    profileMessage.textContent = message;
+    if (status) {
+      profileMessage.dataset.status = status;
+    } else {
+      profileMessage.removeAttribute('data-status');
+    }
+  };
+
+  if (profileForm) {
+    profileForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      setProfileMessage('', '');
+      const raw = profileInput && typeof profileInput.value === 'string' ? profileInput.value : '';
+      const stored = storeSharedDuaDisplayName(raw);
+      if (!stored) {
+        clearSharedDuaDisplayName();
+        setProfileMessage('success', 'İsim temizlendi.');
+        return;
+      }
+      setProfileMessage('success', 'Kaydedildi.');
+      const last = state.sharedDua && state.sharedDua.lastRoom && state.sharedDua.lastRoom.id ? state.sharedDua.lastRoom.id : '';
+      if (last) {
+        syncSharedDuaParticipantDisplayName(last).catch(() => {});
+      }
+    });
   }
 
-  list.append(joinCard);
+  if (profileClear) {
+    profileClear.addEventListener('click', () => {
+      clearSharedDuaDisplayName();
+      if (profileInput) {
+        profileInput.value = '';
+      }
+      setProfileMessage('success', 'İsim temizlendi.');
+    });
+  }
+
+  list.append(nameCard);
   wrapper.append(list);
 }
 
@@ -4926,11 +5383,20 @@ function renderSharedDuaCreate(wrapper, roomType) {
     <label class="zikir-form__label">
       Kişi başı maksimum parça
       <select data-shared-max-claims>
-        <option value="1" selected>1</option>
+        <option value="0" selected>Limitsiz</option>
+        <option value="1">1</option>
         <option value="2">2</option>
         <option value="3">3</option>
         <option value="4">4</option>
         <option value="5">5</option>
+      </select>
+    </label>
+    <label class="zikir-form__label">
+      Atama yöntemi
+      <select data-shared-assign-strategy>
+        <option value="manual" selected>Manuel</option>
+        <option value="same">Aynı kişiler aynı parçalar</option>
+        <option value="random">Rastgele dağıt</option>
       </select>
     </label>
     <div class="zikir-form__row">
@@ -4988,8 +5454,10 @@ function renderSharedDuaCreate(wrapper, roomType) {
     try {
       const nameInput = form.querySelector('[data-shared-room-name]');
       const maxClaimsSelect = form.querySelector('[data-shared-max-claims]');
+      const assignSelect = form.querySelector('[data-shared-assign-strategy]');
       const hatimMode = modeSelect && modeSelect.value === 'page' ? 'page' : 'cuz';
-      const maxClaims = maxClaimsSelect ? Number.parseInt(maxClaimsSelect.value, 10) : 1;
+      const maxClaims = maxClaimsSelect ? resolveSharedDuaMaxClaims(maxClaimsSelect.value) : 0;
+      const assignStrategy = assignSelect && typeof assignSelect.value === 'string' ? assignSelect.value : 'manual';
       const roomName = nameInput && typeof nameInput.value === 'string' ? nameInput.value : '';
       const totalPages = totalPagesInput ? Number.parseInt(totalPagesInput.value, 10) : 604;
 
@@ -4999,6 +5467,7 @@ function renderSharedDuaCreate(wrapper, roomType) {
         totalParts: hatimMode === 'page' ? totalPages : undefined,
         name: roomName,
         maxClaimsPerUser: maxClaims,
+        assignStrategy,
       });
 
       setSharedDuaHash(roomId);
@@ -5056,13 +5525,16 @@ function renderSharedDuaRoom(wrapper, roomId) {
   roomCard.innerHTML = `<p class="muted">Oturum açılıyor ve oda bilgileri yükleniyor…</p>`;
   wrapper.append(roomCard);
 
-  const ui = {
-    roomId: normalised,
-    uid: null,
-    unsubscribers: [],
-    room: null,
-    parts: [],
-  };
+	  const ui = {
+	    roomId: normalised,
+	    uid: null,
+	    unsubscribers: [],
+	    room: null,
+	    parts: [],
+	    dismissedNamePrompt: false,
+	    autoAssignRound: null,
+	    autoAssignRunning: false,
+	  };
   state.sharedDua.ui = ui;
 
   const renderError = (headline, message) => {
@@ -5073,44 +5545,85 @@ function renderSharedDuaRoom(wrapper, roomId) {
     `;
   };
 
-  const renderRoom = () => {
-    const room = ui.room || {};
-    const parts = Array.isArray(ui.parts) ? ui.parts : [];
-    const progress = computeSharedDuaProgress(parts);
+	  const renderRoom = () => {
+	    const room = ui.room || {};
+	    const parts = Array.isArray(ui.parts) ? ui.parts : [];
+	    const roomRound = getSharedDuaRoomRound(room);
+	    const progress = computeSharedDuaProgress(parts, roomRound);
+	    const roundCompletedCount = typeof room.roundCompletedCount === 'number' && Number.isFinite(room.roundCompletedCount)
+	      ? Math.max(0, Math.floor(room.roundCompletedCount))
+	      : 0;
 
-    const name = room && typeof room.name === 'string' ? room.name.trim() : '';
-    const roomType = room && room.type === 'cevsen' ? 'cevsen' : 'hatim';
-    const roomLabel = roomType === 'cevsen' ? 'Ortak Cevşen' : 'Ortak Hatim';
-    title.textContent = name ? name : `${roomLabel} odası`;
-    const isClosed = room && room.status === 'closed';
-    const isOwner = room && room.createdBy === ui.uid;
+	    const name = room && typeof room.name === 'string' ? room.name.trim() : '';
+	    const roomType = room && room.type === 'cevsen' ? 'cevsen' : 'hatim';
+	    const roomLabel = roomType === 'cevsen' ? 'Ortak Cevşen' : 'Ortak Hatim';
+	    title.textContent = roomLabel;
+	    const isClosed = room && room.status === 'closed';
+	    const isOwner = room && room.createdBy === ui.uid;
 
-    const shareLink = buildSharedDuaShareLink(ui.roomId);
-    const safeRoomId = escapeHtml(ui.roomId);
+	    const shareLink = buildSharedDuaShareLink(ui.roomId);
+	    const safeRoomId = escapeHtml(ui.roomId);
 
-    const claimedByMe = parts.filter((part) => part && part.state === 'claimed' && part.claimedBy === ui.uid);
-    const completed = progress.total > 0 && progress.done === progress.total;
+	    const claimedByMe = parts.filter((part) => {
+	      const view = getSharedDuaPartView(part, roomRound);
+	      return view.state === 'claimed' && view.claimedByUid === ui.uid;
+	    });
+	    const completed = progress.total > 0 && progress.done === progress.total;
+	    const storedDisplayName = loadSharedDuaDisplayName();
+	    const showNamePrompt = !storedDisplayName && !ui.dismissedNamePrompt;
+	    const completionLabel = roomType === 'cevsen' ? 'Bu Cevşen tamamlandı.' : 'Bu Hatim tamamlandı.';
+	    const percentText = `%${formatSharedDuaPercent(progress.done, progress.total)}`;
+	    const progressPercent = progress.total > 0 ? Math.round((Math.max(0, progress.done) / Math.max(1, progress.total)) * 100) : 0;
+	    const roomNameDisplay = name ? name : `${roomLabel} odası`;
 
-    roomCard.innerHTML = `
-      <div class="shared-dua-room__top">
-        <div class="shared-dua-room__meta">
-          <p class="shared-dua-room__code"><strong>Oda kodu:</strong> <span>${safeRoomId}</span></p>
-          <p class="shared-dua-room__progress">${progress.done} / ${progress.total} tamamlandı (%${formatSharedDuaPercent(progress.done, progress.total)})</p>
-          ${completed ? '<p class="shared-dua-room__complete">Bu oda tamamlandı.</p>' : ''}
-          ${isClosed ? '<p class="muted shared-dua-room__closed">Bu oda kapatıldı. Yeni parça alınamaz.</p>' : ''}
-        </div>
-        <div class="shared-dua-room__share">
-          <div class="shared-dua-room__share-actions">
-            <button type="button" class="button-pill secondary" data-shared-share>Paylaş</button>
-            ${isOwner && !isClosed ? '<button type="button" class="button-pill secondary shared-dua-room__close" data-shared-close-room>Odayı kapat</button>' : ''}
-          </div>
-          <p class="zikir-form__message" data-shared-share-status hidden></p>
-        </div>
-      </div>
+	    roomCard.innerHTML = `
+	      <div class="shared-dua-room__top">
+	        <div class="shared-dua-room__meta">
+	          <h4 class="shared-dua-room__name">${escapeHtml(roomNameDisplay)}</h4>
+	          <div class="shared-dua-room__code-row">
+	            <p class="shared-dua-room__code"><strong>Oda kodu:</strong> <span>${safeRoomId}</span></p>
+	            <div class="shared-dua-room__share-actions">
+	              <button type="button" class="button-pill secondary" data-shared-share>Paylaş</button>
+	              ${isOwner && !isClosed ? '<button type="button" class="button-pill secondary shared-dua-room__close" data-shared-close-room>Odayı kapat</button>' : ''}
+	            </div>
+	          </div>
+	          <p class="zikir-form__message" data-shared-share-status hidden></p>
 
-      <div class="shared-dua-room__actions">
-        <button type="button" class="button-pill" data-shared-claim-next>Uygun parçayı al</button>
-      </div>
+	          <div class="shared-dua-progress" role="group" aria-label="İlerleme">
+	            <div class="shared-dua-progress__numbers">
+	              <span class="shared-dua-progress__count">${progress.done} / ${progress.total}</span>
+	              <span class="shared-dua-progress__percent">${percentText}</span>
+	            </div>
+	            <div class="shared-dua-progress__bar" role="progressbar" aria-valuenow="${progressPercent}" aria-valuemin="0" aria-valuemax="100">
+	              <div class="shared-dua-progress__fill" style="width:${progressPercent}%"></div>
+	            </div>
+	            ${roundCompletedCount > 0 ? `<p class="muted shared-dua-progress__completed">${roundCompletedCount} kez tamamlandı</p>` : ''}
+	          </div>
+
+	          ${completed ? `<p class="shared-dua-room__complete">${completionLabel}</p>` : ''}
+	          ${isClosed ? '<p class="muted shared-dua-room__closed">Bu oda kapatıldı. Yeni parça alınamaz.</p>' : ''}
+	        </div>
+	      </div>
+
+	      ${showNamePrompt ? `
+	        <div class="shared-dua-room__name">
+	          <form class="zikir-form shared-dua-name-form" data-shared-name-form>
+	            <label class="zikir-form__label">
+	              İsim (opsiyonel)
+	              <input type="text" autocomplete="off" maxlength="40" placeholder="Örn: Ayşe" data-shared-name-input />
+	            </label>
+	            <div class="zikir-form__row">
+	              <button type="submit" class="button-pill secondary">Devam</button>
+	              <button type="button" class="button-pill secondary" data-shared-name-skip>Atla</button>
+	            </div>
+	            <p class="zikir-form__message" data-shared-name-message hidden></p>
+	          </form>
+	        </div>
+	      ` : ''}
+
+	      <div class="shared-dua-room__actions">
+	        <button type="button" class="button-pill" data-shared-claim-next>Uygun parçayı al</button>
+	      </div>
 
       <div class="shared-dua-room__section" data-shared-my-claims>
         <h4>Benim parçalarım</h4>
@@ -5145,9 +5658,9 @@ function renderSharedDuaRoom(wrapper, roomId) {
       }
     };
 
-    if (shareButton) {
-      shareButton.addEventListener('click', async () => {
-        setShareStatus('', '');
+	    if (shareButton) {
+	      shareButton.addEventListener('click', async () => {
+	        setShareStatus('', '');
 
         const shareTitle = name || roomLabel;
         const shareText = roomType === 'cevsen' ? 'Ortak Cevşen odasına katıl' : 'Ortak hatim odasına katıl';
@@ -5171,13 +5684,72 @@ function renderSharedDuaRoom(wrapper, roomId) {
         } else {
           setShareStatus('error', 'Bağlantı kopyalanamadı.');
         }
-      });
-    }
+	      });
+	    }
 
-    const closeButton = roomCard.querySelector('[data-shared-close-room]');
-    if (closeButton) {
-      closeButton.addEventListener('click', async () => {
-        if (closeButton.disabled) {
+	    const nameForm = roomCard.querySelector('[data-shared-name-form]');
+	    if (nameForm) {
+	      const nameInput = nameForm.querySelector('[data-shared-name-input]');
+	      const skipButton = nameForm.querySelector('[data-shared-name-skip]');
+	      const nameMessage = nameForm.querySelector('[data-shared-name-message]');
+	      const setNameMessage = (status, message) => {
+	        if (!nameMessage) {
+	          return;
+	        }
+	        if (!message) {
+	          nameMessage.hidden = true;
+	          nameMessage.textContent = '';
+	          nameMessage.removeAttribute('data-status');
+	          return;
+	        }
+	        nameMessage.hidden = false;
+	        nameMessage.textContent = message;
+	        if (status) {
+	          nameMessage.dataset.status = status;
+	        } else {
+	          nameMessage.removeAttribute('data-status');
+	        }
+	      };
+
+	      if (skipButton) {
+	        skipButton.addEventListener('click', () => {
+	          ui.dismissedNamePrompt = true;
+	          renderRoom();
+	        });
+	      }
+
+	      nameForm.addEventListener('submit', async (event) => {
+	        event.preventDefault();
+	        setNameMessage('', '');
+	        const raw = nameInput && typeof nameInput.value === 'string' ? nameInput.value : '';
+	        const storedName = storeSharedDuaDisplayName(raw);
+	        if (!storedName) {
+	          setNameMessage('error', 'İsim boş olamaz. İsterseniz “Atla” seçebilirsiniz.');
+	          return;
+	        }
+
+	        const submitButton = nameForm.querySelector('button[type="submit"]');
+	        submitButton && (submitButton.disabled = true);
+	        skipButton && (skipButton.disabled = true);
+	        try {
+	          await syncSharedDuaParticipantDisplayName(ui.roomId);
+	          ui.dismissedNamePrompt = true;
+	          setNameMessage('success', 'Kaydedildi.');
+	          window.setTimeout(() => renderRoom(), 600);
+	        } catch (error) {
+	          console.warn('İsim kaydedilemedi.', error);
+	          setNameMessage('error', error && error.message ? error.message : 'İsim kaydedilemedi.');
+	        } finally {
+	          submitButton && (submitButton.disabled = false);
+	          skipButton && (skipButton.disabled = false);
+	        }
+	      });
+	    }
+
+	    const closeButton = roomCard.querySelector('[data-shared-close-room]');
+	    if (closeButton) {
+	      closeButton.addEventListener('click', async () => {
+	        if (closeButton.disabled) {
           return;
         }
         const confirmed = window.confirm('Odayı kapatmak istiyor musunuz? Bu işlem yeni parça alımını engeller.');
@@ -5208,7 +5780,7 @@ function renderSharedDuaRoom(wrapper, roomId) {
         }
         claimNextButton.disabled = true;
         try {
-          await sharedDuaClaimNextAvailable(ui.roomId, parts);
+          await sharedDuaClaimNextAvailable(ui.roomId, parts, roomRound);
         } catch (error) {
           console.warn('Parça alınamadı.', error);
           setShareStatus('error', error && error.message ? error.message : 'Parça alınamadı.');
@@ -5275,24 +5847,29 @@ function renderSharedDuaRoom(wrapper, roomId) {
     const partsContainer = roomCard.querySelector('[data-shared-parts]');
     if (partsContainer) {
       partsContainer.innerHTML = '';
-      const fragment = document.createDocumentFragment();
+	      const fragment = document.createDocumentFragment();
 
-      parts.forEach((part) => {
-        const stateValue = part && typeof part.state === 'string' ? part.state : 'available';
-        const isMine = stateValue === 'claimed' && part.claimedBy === ui.uid;
+	      parts.forEach((part) => {
+	        const view = getSharedDuaPartView(part, roomRound);
+	        const stateValue = view.state;
+	        const isMine = stateValue === 'claimed' && view.claimedByUid === ui.uid;
 
-        const item = document.createElement('div');
-        item.className = `shared-dua-part shared-dua-part--${stateValue}${isMine ? ' is-mine' : ''}`;
+	        const item = document.createElement('div');
+	        item.className = `shared-dua-part shared-dua-part--${stateValue}${isMine ? ' is-mine' : ''}`;
 
-        const statusLabel = stateValue === 'done' ? 'Tamamlandı' : stateValue === 'claimed' ? 'Alındı' : 'Uygun';
+	        const statusLabel = stateValue === 'done' ? 'Tamamlandı' : stateValue === 'claimed' ? 'Alındı' : 'Uygun';
+	        const claimedName = (stateValue === 'claimed' || stateValue === 'done') && view.claimedByName ? escapeHtml(view.claimedByName) : '';
+	        const hatimModeValue = roomType === 'hatim' && room && room.hatimMode === 'page' ? 'page' : 'cuz';
+	        const displayLabel = escapeHtml(formatSharedDuaPartLabel(part.label, roomType, hatimModeValue, part.index));
 
-        item.innerHTML = `
-          <div class="shared-dua-part__header">
-            <div class="shared-dua-part__label">${part.label || `Parça ${part.index}`}</div>
-            <div class="shared-dua-part__status">${statusLabel}</div>
-          </div>
-          <div class="shared-dua-part__actions"></div>
-        `;
+	        item.innerHTML = `
+	          <div class="shared-dua-part__header">
+	            <div class="shared-dua-part__label">${displayLabel}</div>
+	            <div class="shared-dua-part__status">${statusLabel}</div>
+	          </div>
+	          ${claimedName ? `<div class="shared-dua-part__name muted">${claimedName}</div>` : ''}
+	          <div class="shared-dua-part__actions"></div>
+	        `;
 
         const actions = item.querySelector('.shared-dua-part__actions');
         if (actions) {
@@ -5391,6 +5968,11 @@ function renderSharedDuaRoom(wrapper, roomId) {
 
       // Odaya katılım (members.<uid>=true) + "son oda" kaydı.
       await joinSharedDuaRoom(ui.roomId);
+      try {
+        await syncSharedDuaParticipantDisplayName(ui.roomId);
+      } catch (error) {
+        console.warn('Katılımcı ismi senkronize edilemedi.', error);
+      }
 
       const roomRef = fs.doc(db, 'rooms', ui.roomId);
       const partsQuery = fs.query(fs.collection(db, 'rooms', ui.roomId, 'parts'), fs.orderBy('index'));
@@ -5408,6 +5990,12 @@ function renderSharedDuaRoom(wrapper, roomId) {
         const storedStatus = typeof data.status === 'string' ? data.status : 'active';
         saveSharedDuaLastRoom({ id: ui.roomId, name: storedName, type: storedType, status: storedStatus });
         renderRoom();
+        ensureSharedDuaRoomRoundDefaults(ui.roomId, ui.room, ui.parts).catch((error) => {
+          console.warn('Oda tur bilgisi güncellenemedi.', error);
+        });
+        maybeAutoAssignSharedDua(ui).catch((error) => {
+          console.warn('Otomatik atama başarısız.', error);
+        });
       }, (error) => {
         console.error('Oda dinleyicisi hatası.', error);
         renderError('Oda yüklenemedi', error && error.message ? error.message : 'Oda bilgileri alınamadı.');
@@ -5416,6 +6004,12 @@ function renderSharedDuaRoom(wrapper, roomId) {
       const unsubParts = fs.onSnapshot(partsQuery, (snapshot) => {
         ui.parts = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
         renderRoom();
+        ensureSharedDuaRoomRoundDefaults(ui.roomId, ui.room, ui.parts).catch((error) => {
+          console.warn('Oda tur bilgisi güncellenemedi.', error);
+        });
+        maybeAutoAssignSharedDua(ui).catch((error) => {
+          console.warn('Otomatik atama başarısız.', error);
+        });
       }, (error) => {
         console.error('Parça dinleyicisi hatası.', error);
         renderError('Parçalar yüklenemedi', error && error.message ? error.message : 'Parça listesi alınamadı.');
@@ -8737,6 +9331,20 @@ function loadSharedDuaLastRoom() {
     if (!parsed || typeof parsed !== 'object') {
       return null;
     }
+
+    // New format: { version, rooms: [...] }
+    if (Array.isArray(parsed.rooms) && parsed.rooms.length) {
+      const first = parsed.rooms[0];
+      if (first && typeof first.id === 'string' && first.id) {
+        return {
+          id: first.id,
+          name: typeof first.name === 'string' ? first.name : '',
+          type: typeof first.type === 'string' ? first.type : null,
+          status: typeof first.status === 'string' ? first.status : null,
+        };
+      }
+    }
+
     const id = typeof parsed.id === 'string' ? parsed.id : '';
     if (!id) {
       return null;
@@ -8749,6 +9357,58 @@ function loadSharedDuaLastRoom() {
     };
   } catch (_error) {
     return null;
+  }
+}
+
+function loadSharedDuaRoomHistory() {
+  try {
+    const raw = localStorage.getItem(SHARED_DUA_LAST_ROOM_STORAGE_KEY);
+    if (!raw || typeof raw !== 'string') {
+      return [];
+    }
+
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      return [];
+    }
+
+    // Legacy: plain roomId string.
+    if (!trimmed.startsWith('{')) {
+      const id = trimmed;
+      return id ? [{ id, name: '', type: null, status: null, updatedAt: Date.now() }] : [];
+    }
+
+    const parsed = JSON.parse(trimmed);
+    if (!parsed || typeof parsed !== 'object') {
+      return [];
+    }
+
+    const rooms = Array.isArray(parsed.rooms) ? parsed.rooms : parsed.id ? [parsed] : [];
+    const seen = new Set();
+    const result = [];
+
+    rooms.forEach((entry) => {
+      if (!entry || typeof entry !== 'object') {
+        return;
+      }
+      const id = typeof entry.id === 'string' ? entry.id : '';
+      if (!id || seen.has(id)) {
+        return;
+      }
+      seen.add(id);
+      result.push({
+        id,
+        name: typeof entry.name === 'string' ? entry.name : '',
+        type: typeof entry.type === 'string' ? entry.type : null,
+        status: typeof entry.status === 'string' ? entry.status : null,
+        updatedAt: typeof entry.updatedAt === 'number' ? entry.updatedAt : Date.now(),
+      });
+    });
+
+    result.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    return result.slice(0, 5);
+  } catch (_error) {
+    return [];
   }
 }
 
@@ -8769,9 +9429,13 @@ function saveSharedDuaLastRoom(meta) {
     type: typeof meta.type === 'string' ? meta.type : previous ? previous.type : null,
     status: typeof meta.status === 'string' ? meta.status : previous ? previous.status : null,
   };
+  const previousHistory = Array.isArray(state.sharedDua && state.sharedDua.roomHistory) ? state.sharedDua.roomHistory : [];
+  const nextEntry = { ...next, updatedAt: Date.now() };
+  const updated = [nextEntry, ...previousHistory.filter((room) => room && room.id !== id)].slice(0, 5);
+  state.sharedDua.roomHistory = updated;
   state.sharedDua.lastRoom = next;
   try {
-    localStorage.setItem(SHARED_DUA_LAST_ROOM_STORAGE_KEY, JSON.stringify(next));
+    localStorage.setItem(SHARED_DUA_LAST_ROOM_STORAGE_KEY, JSON.stringify({ version: 1, rooms: updated }));
   } catch (error) {
     console.warn('Son oda bilgisi kaydedilemedi.', error);
   }
