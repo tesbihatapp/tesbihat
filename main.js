@@ -1,4 +1,5 @@
 const COUNTER_STORAGE_KEY = 'tesbihat:counters';
+const COUNTER_STORAGE_VERSION = 2;
 const DUA_STORAGE_KEY = 'tesbihat:duas';
 const DUA_STORAGE_VERSION = 2;
 const THEME_STORAGE_KEY = 'tesbihat:theme';
@@ -54,6 +55,7 @@ const DEFAULT_SHOW_TRANSLATIONS = false;
 const DEFAULT_ZIKIR_VIEW = 'list';
 const TRACKED_PRAYERS = ['sabah', 'ogle', 'ikindi', 'aksam', 'yatsi'];
 const TRACKED_PRAYER_SET = new Set(TRACKED_PRAYERS);
+const CONTENT_LANGUAGE_TOGGLE_PRAYERS = new Set(TRACKED_PRAYERS);
 const LANGUAGE_OPTIONS = ['tr', 'ar'];
 let duaRepository = null;
 let zikirDefaultsPromise = null;
@@ -67,8 +69,8 @@ const UCAYLAR_MONTHS = {
   ramazan: { key: 'ramazan', label: 'Ramazan', manifestPath: `${UCAYLAR_BASE_PATH}/ramazan/manifest.json` },
 };
 
-const UCAYLAR_RAMAZAN_DEFAULT_FIELD_ID = 'teravih';
-const UCAYLAR_DEFAULTS_VERSION = 2;
+const UCAYLAR_RAMAZAN_DEFAULT_FIELD_IDS = ['mukabele', 'teravih', 'itikaf'];
+const UCAYLAR_DEFAULTS_VERSION = 5;
 
 // Üç Aylar (Hijri) tarih aralıkları.
 // Not: Bu aralıklar Gregoryen (YYYY-MM-DD) olarak tutulur ve aylar yıl sınırını aşabilir.
@@ -785,6 +787,18 @@ const CEVSEN_PART_MAP = new Map(CEVSEN_PARTS.map((part) => [part.id, part]));
 
 const HOME_QUICK_LINKS = [
   {
+    id: 'ucaylar',
+    label: 'Üç Aylar',
+    description: 'İçerikler ve çetele takibi',
+    icon: '🌙',
+  },
+  {
+    id: 'ortakdua',
+    label: 'Ortak Dua',
+    description: 'Ortak hatim ve Cevşen',
+    icon: '🤝',
+  },
+  {
     id: 'cevsen',
     label: 'Cevşen',
     description: 'Bablar ve dua metni',
@@ -801,18 +815,6 @@ const HOME_QUICK_LINKS = [
     label: 'Dualar',
     description: 'Dua arşivine göz at',
     icon: '🤲🏼',
-  },
-  {
-    id: 'ucaylar',
-    label: 'Üç Aylar',
-    description: 'İçerikler ve çetele takibi',
-    icon: '🌙',
-  },
-  {
-    id: 'ortakdua',
-    label: 'Ortak Dua',
-    description: 'Ortak hatim ve Cevşen',
-    icon: '🤝',
   },
 ];
 
@@ -1099,9 +1101,12 @@ const MANUAL_NAME_KEYS = {
   "essaburu": "Es-Sabûr"
 };
 
+const initialCounterStorage = loadCounterStorage();
+
 const state = {
   appRoot: null,
-  counters: loadCounters(),
+  counters: initialCounterStorage.values,
+  counterCompletions: initialCounterStorage.completions,
   themeSelection: loadThemeSelection(),
   currentPrayer: 'home',
   duaSource: loadSelectedDuaSource(),
@@ -1463,10 +1468,6 @@ function buildUcAylarSummaryCard() {
   const title = document.createElement('h3');
   title.textContent = 'Üç Aylar Tablosu';
 
-  const description = document.createElement('p');
-  description.className = 'muted';
-  description.textContent = 'Sezon aralıklarına göre hesaplanan toplam puanlar.';
-
   const todayKey = getTodayKey();
   const recepRange = selectClosestUcAylarRange('recep', todayKey);
   const sabanRange = selectClosestUcAylarRange('saban', todayKey);
@@ -1496,14 +1497,30 @@ function buildUcAylarSummaryCard() {
   tfoot.innerHTML = `<tr><th scope="row">Toplam Üç Aylar</th><td>${formatUcAylarPoints(grandTotal)}</td></tr>`;
   table.append(tfoot);
 
-  const hint = document.createElement('p');
-  hint.className = 'stats-hint';
-  const recepText = recepRange ? `${recepRange.start} → ${recepRange.end}` : 'tanımsız';
-  const sabanText = sabanRange ? `${sabanRange.start} → ${sabanRange.end}` : 'tanımsız';
-  const ramazanText = ramazanRange ? `${ramazanRange.start} → ${ramazanRange.end}` : 'tanımsız';
-  hint.textContent = `Aralıklar: Recep ${recepText} • Şaban ${sabanText} • Ramazan ${ramazanText}`;
+  const ranges = document.createElement('div');
+  ranges.className = 'stats-hint ucaylar-summary__ranges';
 
-  card.append(title, description, table, hint);
+  const buildRangeRow = (labelText, range) => {
+    const row = document.createElement('div');
+    row.className = 'ucaylar-summary__range';
+
+    const label = document.createElement('strong');
+    label.textContent = `${labelText}:`;
+
+    const value = document.createElement('span');
+    value.textContent = range ? `${range.start} → ${range.end}` : 'tanımsız';
+
+    row.append(label, document.createTextNode(' '), value);
+    return row;
+  };
+
+  ranges.append(
+    buildRangeRow('Recep aralığı', recepRange),
+    buildRangeRow('Şaban aralığı', sabanRange),
+    buildRangeRow('Ramazan aralığı', ramazanRange),
+  );
+
+  card.append(title, table, ranges);
   return card;
 }
 
@@ -2239,8 +2256,8 @@ function renderUcAylarTrackerPanel(panel, monthKey) {
         return;
       }
       draftFields = remaining;
-      if (monthKey === 'ramazan' && fieldId === UCAYLAR_RAMAZAN_DEFAULT_FIELD_ID) {
-        draftRemovedDefaults.add(UCAYLAR_RAMAZAN_DEFAULT_FIELD_ID);
+      if (monthKey === 'ramazan' && UCAYLAR_RAMAZAN_DEFAULT_FIELD_IDS.includes(fieldId)) {
+        draftRemovedDefaults.add(fieldId);
       }
       setDraftDirty(true);
       renderManager();
@@ -2675,7 +2692,18 @@ function applyUcAylarMonthDefaults(tracker, monthKey, options = {}) {
   if (options.source !== 'import') {
     const currentVersion = Number.isFinite(Number(tracker.defaultsVersion)) ? Number(tracker.defaultsVersion) : 0;
     if (currentVersion < UCAYLAR_DEFAULTS_VERSION) {
-      upgradeUcAylarDefaultsV2(tracker);
+      if (currentVersion < 2) {
+        upgradeUcAylarDefaultsV2(tracker);
+      }
+      if (currentVersion < 3) {
+        upgradeUcAylarDefaultsV3(tracker);
+      }
+      if (currentVersion < 4) {
+        upgradeUcAylarDefaultsV4(tracker);
+      }
+      if (currentVersion < 5) {
+        upgradeUcAylarDefaultsV5(tracker);
+      }
       tracker.defaultsVersion = UCAYLAR_DEFAULTS_VERSION;
     }
   }
@@ -2691,26 +2719,64 @@ function applyUcAylarMonthDefaults(tracker, monthKey, options = {}) {
   }
 
   const dismissed = new Set(tracker.removedDefaultFieldIds);
-  const hasTeravih = Array.isArray(tracker.fields) && tracker.fields.some((field) => field && field.id === UCAYLAR_RAMAZAN_DEFAULT_FIELD_ID);
-  if (hasTeravih || dismissed.has(UCAYLAR_RAMAZAN_DEFAULT_FIELD_ID)) {
+  const ramazanDefaults = {
+    mukabele: { id: 'mukabele', label: 'Mukabele', type: 'checkbox', hidden: false, pointsWhenDone: 8 },
+    teravih: { id: 'teravih', label: 'Teravih', type: 'checkbox', hidden: false, pointsWhenDone: 9 },
+    itikaf: { id: 'itikaf', label: 'İtikaf', type: 'checkbox', hidden: false, pointsWhenDone: 9 },
+  };
+
+  // Import sırasında alanlar override edilir; puan/tipleri değiştirmeyelim.
+  if (options.source !== 'import' && Array.isArray(tracker.fields)) {
+    tracker.fields.forEach((field) => {
+      if (!field || typeof field !== 'object' || !field.id) {
+        return;
+      }
+      if (dismissed.has(field.id)) {
+        return;
+      }
+      const template = ramazanDefaults[field.id];
+      if (!template) {
+        return;
+      }
+
+      const previousType = field.type === 'number' ? 'number' : 'checkbox';
+      const nextType = template.type;
+
+      field.label = template.label;
+      field.type = nextType;
+      field.hidden = Boolean(field.hidden);
+      field.pointsWhenDone = template.pointsWhenDone;
+      delete field.pointsPerUnit;
+      delete field.step;
+
+      if (tracker.entries && typeof tracker.entries === 'object' && previousType !== nextType) {
+        convertFieldValuesForTypeChange(tracker.entries, field.id, previousType, nextType);
+      }
+    });
+  }
+
+  const existingIds = new Set((Array.isArray(tracker.fields) ? tracker.fields : []).map((field) => field && field.id).filter(Boolean));
+  const missingDefaults = UCAYLAR_RAMAZAN_DEFAULT_FIELD_IDS.filter((fieldId) => fieldId && !existingIds.has(fieldId) && !dismissed.has(fieldId));
+
+  if (!missingDefaults.length) {
     return;
   }
 
-  // Import sırasında alanlar "override" edilir: dosyada Teravih yoksa otomatik eklemeyelim.
+  // Import sırasında alanlar "override" edilir: dosyada bu alanlar yoksa otomatik eklemeyelim.
   if (options.source === 'import') {
-    tracker.removedDefaultFieldIds = Array.from(new Set([...tracker.removedDefaultFieldIds, UCAYLAR_RAMAZAN_DEFAULT_FIELD_ID])).sort();
+    tracker.removedDefaultFieldIds = Array.from(new Set([...tracker.removedDefaultFieldIds, ...missingDefaults])).sort();
     return;
   }
 
   if (!Array.isArray(tracker.fields)) {
     tracker.fields = createDefaultUcAylarFields();
   }
-  tracker.fields.push({
-    id: UCAYLAR_RAMAZAN_DEFAULT_FIELD_ID,
-    label: 'Teravih',
-    type: 'checkbox',
-    hidden: false,
-    pointsWhenDone: 100,
+
+  missingDefaults.forEach((fieldId) => {
+    const template = ramazanDefaults[fieldId];
+    if (template) {
+      tracker.fields.push({ ...template });
+    }
   });
 }
 
@@ -2767,6 +2833,114 @@ function upgradeUcAylarDefaultsV2(tracker) {
     if (!Number.isFinite(Number(zikir.step)) || Number(zikir.step) < 1) {
       zikir.step = 100;
     }
+  }
+}
+
+function upgradeUcAylarDefaultsV3(tracker) {
+  if (!tracker || typeof tracker !== 'object' || !Array.isArray(tracker.fields)) {
+    return;
+  }
+
+  const desired = createDefaultUcAylarFields();
+  const desiredById = new Map(desired.map((field) => [field.id, field]));
+
+  const existingById = new Map();
+  tracker.fields.forEach((field) => {
+    if (!field || typeof field !== 'object' || !field.id) {
+      return;
+    }
+    if (!existingById.has(field.id)) {
+      existingById.set(field.id, field);
+    }
+  });
+
+  // Update existing known defaults in-place (preserve hidden state if user changed it).
+  desiredById.forEach((template, fieldId) => {
+    const field = existingById.get(fieldId);
+    if (!field || typeof field !== 'object') {
+      return;
+    }
+
+    const previousType = field.type === 'number' ? 'number' : 'checkbox';
+    const nextType = template.type;
+
+    field.label = template.label;
+    field.type = nextType;
+
+    if (nextType === 'number') {
+      field.pointsPerUnit = template.pointsPerUnit;
+      field.step = template.step;
+      delete field.pointsWhenDone;
+    } else {
+      field.pointsWhenDone = template.pointsWhenDone;
+      delete field.pointsPerUnit;
+      delete field.step;
+    }
+
+    if (tracker.entries && typeof tracker.entries === 'object' && previousType !== nextType) {
+      convertFieldValuesForTypeChange(tracker.entries, fieldId, previousType, nextType);
+    }
+  });
+
+  // Reorder: desired defaults first (ensuring missing ones are created), then keep any extra fields.
+  const nextFields = [];
+  const seen = new Set();
+
+  desired.forEach((template) => {
+    const existing = existingById.get(template.id);
+    if (existing) {
+      nextFields.push(existing);
+    } else {
+      nextFields.push({ ...template });
+    }
+    seen.add(template.id);
+  });
+
+  tracker.fields.forEach((field) => {
+    if (!field || typeof field !== 'object' || !field.id) {
+      return;
+    }
+    if (seen.has(field.id)) {
+      return;
+    }
+    nextFields.push(field);
+    seen.add(field.id);
+  });
+
+  tracker.fields = nextFields;
+}
+
+function upgradeUcAylarDefaultsV4(tracker) {
+  if (!tracker || typeof tracker !== 'object') {
+    return;
+  }
+
+  if (Array.isArray(tracker.fields)) {
+    const nextFields = tracker.fields.filter((field) => !(field && field.id === 'zikir'));
+    if (nextFields.length !== tracker.fields.length) {
+      tracker.fields = nextFields;
+    }
+  }
+
+  if (tracker.entries && typeof tracker.entries === 'object') {
+    removeFieldFromEntries(tracker.entries, 'zikir');
+  }
+}
+
+function upgradeUcAylarDefaultsV5(tracker) {
+  if (!tracker || typeof tracker !== 'object' || !Array.isArray(tracker.fields)) {
+    return;
+  }
+
+  const meal = tracker.fields.find((field) => field && field.id === 'meal');
+  if (!meal || typeof meal !== 'object' || meal.type !== 'number') {
+    return;
+  }
+
+  const current = Number(meal.pointsPerUnit);
+  // Sadece önceki varsayılan değer (6) kullanılıyorsa 8'e yükselt.
+  if (Number.isFinite(current) && Math.abs(current - 6) < 0.0001) {
+    meal.pointsPerUnit = 8;
   }
 }
 
@@ -3085,11 +3259,13 @@ function removeFieldFromEntries(entriesByDate, fieldId) {
 
 function formatUcAylarPoints(points) {
   const value = Number.isFinite(Number(points)) ? Number(points) : 0;
-  const rounded = Math.round(value * 10) / 10;
-  if (Math.abs(rounded - Math.round(rounded)) < 0.001) {
+  const rounded = Math.round(value * 100) / 100;
+  if (Math.abs(rounded - Math.round(rounded)) < 0.0001) {
     return String(Math.round(rounded));
   }
-  return rounded.toFixed(1);
+  const fixed = rounded.toFixed(2);
+  // Keep at most 2 decimals, but avoid trailing zeros like "0.50".
+  return fixed.replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
 }
 
 function createUcAylarFieldId(label) {
@@ -3134,21 +3310,22 @@ function createUcAylarField({ label, type, points, step }) {
 function createDefaultUcAylarFields() {
   return [
     { id: 'kuran', label: 'Kur’an-ı Kerim', type: 'number', hidden: false, pointsPerUnit: 10, step: 1 },
-    { id: 'meal', label: 'Meal', type: 'number', hidden: false, pointsPerUnit: 1, step: 1 },
-    { id: 'risale', label: 'Risale', type: 'number', hidden: false, pointsPerUnit: 1, step: 1 },
-    { id: 'pirlanta', label: 'Pırlanta', type: 'number', hidden: false, pointsPerUnit: 1, step: 1 },
-    { id: 'buyuk-cevsen', label: 'Büyük Cevşen', type: 'number', hidden: false, pointsPerUnit: 1, step: 1 },
-    { id: 'kucuk-cevsen', label: 'Küçük Cevşen (Bab)', type: 'number', hidden: false, pointsPerUnit: 5, step: 1 },
+    { id: 'meal', label: 'Meal', type: 'number', hidden: false, pointsPerUnit: 8, step: 1 },
+    { id: 'risale', label: 'Risale', type: 'number', hidden: false, pointsPerUnit: 8, step: 1 },
+    { id: 'pirlanta', label: 'Pırlanta', type: 'number', hidden: false, pointsPerUnit: 7, step: 1 },
+    { id: 'normal-kitap', label: 'Normal Kitap', type: 'number', hidden: false, pointsPerUnit: 5, step: 1 },
+    { id: 'kucuk-cevsen', label: 'Küçük Cevşen (Bab)', type: 'number', hidden: false, pointsPerUnit: 2, step: 1 },
+    { id: 'buyuk-cevsen', label: 'Büyük Cevşen', type: 'number', hidden: false, pointsPerUnit: 7, step: 1 },
+    { id: 'tesbihat', label: 'Tesbihat', type: 'number', hidden: false, pointsPerUnit: 5, step: 1 },
+    { id: 'dinleme', label: 'Dinleme (Dk)', type: 'number', hidden: false, pointsPerUnit: 0.5, step: 1 },
+    { id: 'tevhidname', label: 'Tevhidname', type: 'number', hidden: false, pointsPerUnit: 0.25, step: 1 },
+    { id: 'kulubuddaria', label: 'Kulubüddaria', type: 'number', hidden: false, pointsPerUnit: 7, step: 1 },
+    { id: 'gunluk-zikir', label: 'Günlük Zikir', type: 'checkbox', hidden: false, pointsWhenDone: 10 },
     { id: 'duha', label: 'Duha', type: 'checkbox', hidden: false, pointsWhenDone: 5 },
     { id: 'evvabin', label: 'Evvabin', type: 'checkbox', hidden: false, pointsWhenDone: 5 },
-    { id: 'teheccut', label: 'Teheccüt', type: 'checkbox', hidden: false, pointsWhenDone: 5 },
     { id: 'hacet', label: 'Hacet', type: 'checkbox', hidden: false, pointsWhenDone: 5 },
-    { id: 'oruc', label: 'Oruç', type: 'checkbox', hidden: false, pointsWhenDone: 10 },
-    { id: 'zikir', label: 'Zikir', type: 'number', hidden: false, pointsPerUnit: 0.05, step: 100 },
-    { id: 'dinleme', label: 'Dinleme', type: 'number', hidden: false, pointsPerUnit: 0.2, step: 5 },
-    { id: 'tesbihat', label: 'Tesbihat', type: 'number', hidden: false, pointsPerUnit: 5, step: 1 },
-    { id: 'tevhidname', label: 'Tevhidname', type: 'number', hidden: false, pointsPerUnit: 5, step: 1 },
-    { id: 'kulubuddaria', label: 'Kulubüddaria', type: 'number', hidden: false, pointsPerUnit: 5, step: 1 },
+    { id: 'teheccut', label: 'Teheccüt', type: 'checkbox', hidden: false, pointsWhenDone: 8 },
+    { id: 'oruc', label: 'Oruç', type: 'checkbox', hidden: false, pointsWhenDone: 8 },
   ];
 }
 
@@ -7411,13 +7588,56 @@ function renderTesbihat(container, markdownText) {
   const hasTranslations = Boolean(temp.querySelector('[data-translation-block]'));
   container.innerHTML = '';
 
-  const toolbar = createContentToolbar({ hasTranslations });
+  const showLanguageToggle = CONTENT_LANGUAGE_TOGGLE_PRAYERS.has(state.currentPrayer);
+  const toolbar = createContentToolbar({ hasTranslations, showLanguageToggle });
   if (toolbar) {
     container.append(toolbar);
   }
 
-  while (temp.firstChild) {
-    container.append(temp.firstChild);
+  const shouldSegment = Boolean(temp.querySelector('hr')) && Boolean(temp.querySelector('.counter-placeholder'));
+  container.classList.toggle('content-segmented', shouldSegment);
+
+  if (shouldSegment) {
+    const segments = [];
+    let current = [];
+
+    const flush = () => {
+      const hasMeaningful = current.some((node) => {
+        if (!node) {
+          return false;
+        }
+        if (node.nodeType === Node.TEXT_NODE) {
+          return Boolean(node.textContent && node.textContent.trim());
+        }
+        return true;
+      });
+      if (!hasMeaningful) {
+        current = [];
+        return;
+      }
+      segments.push(current);
+      current = [];
+    };
+
+    Array.from(temp.childNodes).forEach((node) => {
+      if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'HR') {
+        flush();
+        return;
+      }
+      current.push(node);
+    });
+    flush();
+
+    segments.forEach((nodes) => {
+      const card = document.createElement('article');
+      card.className = 'card tesbih-segment';
+      nodes.forEach((node) => card.append(node));
+      container.append(card);
+    });
+  } else {
+    while (temp.firstChild) {
+      container.append(temp.firstChild);
+    }
   }
 
   enhanceArabicText(container);
@@ -7502,7 +7722,14 @@ function processTranslationBlocks(root) {
   }
 }
 
-function createContentToolbar({ hasTranslations } = {}) {
+function createContentToolbar({ hasTranslations, showLanguageToggle } = {}) {
+  const shouldRenderToolbar = Boolean(showLanguageToggle) || Boolean(hasTranslations);
+  if (!shouldRenderToolbar) {
+    state.contentToolbar = null;
+    state.translationToggle = null;
+    return null;
+  }
+
   const toolbar = document.createElement('div');
   toolbar.className = 'content-toolbar';
   toolbar.dataset.contentToolbar = 'true';
@@ -7510,29 +7737,33 @@ function createContentToolbar({ hasTranslations } = {}) {
   const card = document.createElement('div');
   card.className = 'content-toolbar__card';
 
-  const segmented = document.createElement('div');
-  segmented.className = 'content-toolbar__segmented';
-  segmented.setAttribute('role', 'group');
-  segmented.setAttribute('aria-label', 'Metin dili');
+  if (showLanguageToggle) {
+    const segmented = document.createElement('div');
+    segmented.className = 'content-toolbar__segmented';
+    segmented.setAttribute('role', 'group');
+    segmented.setAttribute('aria-label', 'Metin dili');
 
-  const trButton = createContentToolbarLanguageButton('tr', 'Türkçe');
-  const arButton = createContentToolbarLanguageButton('ar', 'Arapça');
+    const trButton = createContentToolbarLanguageButton('tr', 'Türkçe');
+    const arButton = createContentToolbarLanguageButton('ar', 'Arapça');
 
-  segmented.append(trButton, arButton);
-  card.append(segmented);
+    segmented.append(trButton, arButton);
+    card.append(segmented);
 
-  state.contentToolbar = {
-    root: toolbar,
-    languageButtons: new Map([
-      ['tr', trButton],
-      ['ar', arButton],
-    ]),
-  };
+    state.contentToolbar = {
+      root: toolbar,
+      languageButtons: new Map([
+        ['tr', trButton],
+        ['ar', arButton],
+      ]),
+    };
 
-  trButton.addEventListener('click', () => changeLanguage('tr'));
-  arButton.addEventListener('click', () => changeLanguage('ar'));
+    trButton.addEventListener('click', () => changeLanguage('tr'));
+    arButton.addEventListener('click', () => changeLanguage('ar'));
 
-  updateContentToolbarLanguageUI();
+    updateContentToolbarLanguageUI();
+  } else {
+    state.contentToolbar = null;
+  }
 
   if (hasTranslations) {
     createTranslationAction(card);
@@ -7862,6 +8093,8 @@ function setupCounters(container, prayerId) {
     const counterKey = customKey || `${prayerId}-${index + 1}`;
     const savedValue = Number.isFinite(state.counters[counterKey]) ? state.counters[counterKey] : 0;
     state.counters[counterKey] = savedValue;
+    const savedCompletions = Number.isFinite(state.counterCompletions[counterKey]) ? state.counterCompletions[counterKey] : 0;
+    state.counterCompletions[counterKey] = savedCompletions;
 
     const wrapper = document.createElement('article');
     wrapper.className = 'card counter-card';
@@ -7891,7 +8124,10 @@ function setupCounters(container, prayerId) {
     actions.className = 'counter-actions';
     actions.append(progress, resetButton);
 
-    wrapper.append(headerRow, actions);
+    const completion = document.createElement('div');
+    completion.className = 'counter-completions muted';
+
+    wrapper.append(headerRow, actions, completion);
 
     const parentBlock = node.parentElement;
     if (parentBlock && ['P', 'LI', 'DIV'].includes(parentBlock.tagName)) {
@@ -7907,19 +8143,21 @@ function setupCounters(container, prayerId) {
     let currentValue = savedValue;
     updateCounterUI(wrapper, currentValue, target);
 
-    const applyValue = (nextValue) => {
-      currentValue = nextValue;
-      state.counters[counterKey] = currentValue;
-      saveCounters();
-      updateCounterUI(wrapper, currentValue, target);
-    };
-
     const increment = () => {
       if (target > 0 && currentValue >= target) {
         return;
       }
       const nextValue = currentValue + 1;
-      applyValue(nextValue);
+      const reachedTarget = target > 0 && currentValue < target && nextValue >= target;
+
+      currentValue = nextValue;
+      state.counters[counterKey] = currentValue;
+      if (reachedTarget) {
+        state.counterCompletions[counterKey] = (state.counterCompletions[counterKey] || 0) + 1;
+      }
+      saveCounters();
+      updateCounterUI(wrapper, currentValue, target);
+
       const hapticType = target > 0 && nextValue >= target ? 'complete' : 'increment';
       triggerCounterHaptic(hapticType);
     };
@@ -7929,7 +8167,10 @@ function setupCounters(container, prayerId) {
         triggerCounterHaptic('soft');
         return;
       }
-      applyValue(0);
+      currentValue = 0;
+      state.counters[counterKey] = currentValue;
+      saveCounters();
+      updateCounterUI(wrapper, currentValue, target);
       triggerCounterHaptic('reset');
     };
 
@@ -8002,6 +8243,7 @@ function updateCounterUI(wrapper, value, target) {
   const display = wrapper.querySelector('.counter-display');
   const progress = wrapper.querySelector('.counter-progress');
   const resetButton = wrapper.querySelector('.counter-reset');
+  const completions = wrapper.querySelector('.counter-completions');
 
   if (display) {
     display.textContent = value;
@@ -8022,6 +8264,17 @@ function updateCounterUI(wrapper, value, target) {
 
   if (resetButton) {
     resetButton.disabled = value === 0;
+  }
+
+  if (completions) {
+    const counterId = wrapper.dataset.counterId;
+    const completedCount = counterId && Number.isFinite(state.counterCompletions[counterId]) ? state.counterCompletions[counterId] : 0;
+    completions.hidden = !(target > 0);
+    if (target > 0) {
+      completions.textContent = `${formatNumber(completedCount)} kez tamamlandı`;
+    } else {
+      completions.textContent = '';
+    }
   }
 }
 
@@ -9300,13 +9553,59 @@ function persistDuaRepository() {
   }
 }
 
-function loadCounters() {
+function loadCounterStorage() {
+  const empty = { version: COUNTER_STORAGE_VERSION, values: {}, completions: {} };
+
   try {
     const raw = localStorage.getItem(COUNTER_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
+    if (!raw) {
+      return empty;
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') {
+      return empty;
+    }
+
+    // v2: { version, values, completions }
+    if (parsed.version === COUNTER_STORAGE_VERSION && parsed.values && typeof parsed.values === 'object') {
+      const values = {};
+      Object.entries(parsed.values).forEach(([key, value]) => {
+        if (typeof key !== 'string' || !key) {
+          return;
+        }
+        const numberValue = Number.parseInt(value, 10);
+        values[key] = Number.isFinite(numberValue) && numberValue >= 0 ? numberValue : 0;
+      });
+
+      const completions = {};
+      if (parsed.completions && typeof parsed.completions === 'object') {
+        Object.entries(parsed.completions).forEach(([key, value]) => {
+          if (typeof key !== 'string' || !key) {
+            return;
+          }
+          const numberValue = Number.parseInt(value, 10);
+          completions[key] = Number.isFinite(numberValue) && numberValue >= 0 ? numberValue : 0;
+        });
+      }
+
+      return { version: COUNTER_STORAGE_VERSION, values, completions };
+    }
+
+    // Legacy: plain object { [counterKey]: number }
+    const legacyValues = {};
+    Object.entries(parsed).forEach(([key, value]) => {
+      if (typeof key !== 'string' || !key) {
+        return;
+      }
+      const numberValue = Number.parseInt(value, 10);
+      legacyValues[key] = Number.isFinite(numberValue) && numberValue >= 0 ? numberValue : 0;
+    });
+
+    return { version: COUNTER_STORAGE_VERSION, values: legacyValues, completions: {} };
   } catch (error) {
     console.warn('Sayaçlar yüklenemedi, sıfırlanacak.', error);
-    return {};
+    return empty;
   }
 }
 
@@ -9442,7 +9741,11 @@ function saveSharedDuaLastRoom(meta) {
 }
 
 function saveCounters() {
-  localStorage.setItem(COUNTER_STORAGE_KEY, JSON.stringify(state.counters));
+  localStorage.setItem(COUNTER_STORAGE_KEY, JSON.stringify({
+    version: COUNTER_STORAGE_VERSION,
+    values: state.counters,
+    completions: state.counterCompletions,
+  }));
 }
 
 function saveDuaState() {
