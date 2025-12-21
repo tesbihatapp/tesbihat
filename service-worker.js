@@ -7,7 +7,7 @@
    =================================================================== */
 
 /* Versiyon numarasını her “önemli” değişimde artır ki eski cache temizlensin. */
-const CACHE_VERSION = 'v21';
+const CACHE_VERSION = 'v56';
 
 /* Scope → /tesbihat/  veya  /tesbihat/staging/  tespiti */
 const SCOPE_URL = self.registration && self.registration.scope ? new URL(self.registration.scope) : new URL('/', self.location.origin);
@@ -24,6 +24,10 @@ const RAW_ASSETS = [
   'index.html',
   'styles.css',
   'main.js',
+  'storage.js',
+  'auth.js',
+  'sync.js',
+  'firebase-config.js',
   'manifest.webmanifest',
 
   // içerikler
@@ -47,6 +51,17 @@ const RAW_ASSETS = [
   'zikir-defaults.json',
   'names.json',
 
+  // Üç Aylar
+  'uc-aylar/recep/manifest.json',
+  'uc-aylar/recep/content/genel.md',
+  'uc-aylar/recep/content/tesbihler.md',
+  'uc-aylar/saban/manifest.json',
+  'uc-aylar/saban/content/genel.md',
+  'uc-aylar/saban/content/tesbihler.md',
+  'uc-aylar/ramazan/manifest.json',
+  'uc-aylar/ramazan/content/genel.md',
+  'uc-aylar/ramazan/content/tesbihler.md',
+
   // ikonlar
   'icons/icon-180.png',
   'icons/icon-192.png',
@@ -61,11 +76,29 @@ const ASSETS = RAW_ASSETS.map(p => BASE_PATH + p);
 
 /* ---------------------------------------------------- Install (precache) */
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(ASSETS))
-      .then(() => self.skipWaiting())
-  );
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    const results = await Promise.allSettled(
+      ASSETS.map((assetPath) =>
+        cache.add(assetPath).catch((error) => {
+          console.warn('[SW] Precache atlandı:', assetPath, error);
+          throw error;
+        })
+      )
+    );
+
+    const failedAssets = [];
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        failedAssets.push(ASSETS[index]);
+      }
+    });
+    if (failedAssets.length > 0) {
+      console.warn('[SW] Önbelleğe alınamayan dosyalar:', failedAssets);
+    }
+
+    await self.skipWaiting();
+  })());
 });
 
 /* --------------------------------------- Activate (eski cache’leri sil) */

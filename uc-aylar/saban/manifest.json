@@ -1,0 +1,7 @@
+{
+  "title": "Şaban",
+  "items": [
+    { "id": "genel", "title": "Genel Bilgi", "markdown": "content/genel.md" },
+    { "id": "tesbihler", "title": "Tesbihler", "markdown": "content/tesbihler.md" }
+  ]
+}

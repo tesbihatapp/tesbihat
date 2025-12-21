@@ -16,6 +16,15 @@
     <link href="https://fonts.googleapis.com/css2?family=Scheherazade+New:wght@400;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/marked@12.0.1/marked.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js" defer></script>
+    <script>
+      window.__ENV__ = window.location.pathname.startsWith('/staging')
+        ? 'staging'
+        : 'prod';
+    </script>
+    <script src="firebase-config.js" defer></script>
+    <script src="storage.js" defer></script>
+    <script src="auth.js" defer></script>
+    <script src="sync.js" defer></script>
     <script src="main.js" defer></script>
   </head>
   <body>
@@ -38,15 +47,53 @@
             </button>
           </div>
         </div>
-        <p class="hero__subtitle">Seçmek istediğiniz vakti aşağıdan işaretleyin.</p>
-        <div class="prayer-tabs" role="tablist" aria-label="Tesbihat vakitleri">
-          <button class="prayer-tab is-active" role="tab" aria-selected="true" data-prayer="sabah">Sabah</button>
-          <button class="prayer-tab" role="tab" aria-selected="false" data-prayer="ogle">Öğle</button>
-          <button class="prayer-tab" role="tab" aria-selected="false" data-prayer="ikindi">İkindi</button>
-          <button class="prayer-tab" role="tab" aria-selected="false" data-prayer="aksam">Akşam</button>
-          <button class="prayer-tab" role="tab" aria-selected="false" data-prayer="yatsi">Yatsı</button>
-          <button class="prayer-tab" role="tab" aria-selected="false" data-prayer="zikirler">Zikirler</button>
-          <button class="prayer-tab" role="tab" aria-selected="false" data-prayer="dualar">Dualar</button>
+        <div class="hero__links" role="group" aria-label="Hızlı bağlantılar">
+          <button type="button" class="hero-link" data-hero-link="ucaylar" data-prayer="ucaylar">
+            <span class="hero-link__icon" aria-hidden="true">🌙</span>
+            <span class="hero-link__label">Üç Aylar</span>
+          </button>
+          <button type="button" class="hero-link" data-hero-link="ortakdua" data-prayer="ortakdua">
+            <span class="hero-link__icon" aria-hidden="true">🤝</span>
+            <span class="hero-link__label">Ortak Dua</span>
+          </button>
+          <button type="button" class="hero-link" data-hero-link="cevsen" data-prayer="cevsen">
+            <span class="hero-link__icon" aria-hidden="true">📜</span>
+            <span class="hero-link__label">Cevşen</span>
+          </button>
+          <button type="button" class="hero-link" data-hero-link="zikirler" data-prayer="zikirler">
+            <span class="hero-link__icon" aria-hidden="true">📿</span>
+            <span class="hero-link__label">Zikirler</span>
+          </button>
+          <button type="button" class="hero-link" data-hero-link="dualar" data-prayer="dualar">
+            <span class="hero-link__icon" aria-hidden="true">🤲🏼</span>
+            <span class="hero-link__label">Dualar</span>
+          </button>
+        </div>
+        <div class="hero__tabs" role="tablist" aria-label="Tesbihat vakitleri">
+          <button class="prayer-tab prayer-tab--home" type="button" role="tab" aria-selected="false" data-prayer="home" aria-label="Ana sayfa">
+            <span class="prayer-tab__icon" aria-hidden="true">🏠</span>
+            <span class="sr-only">Ana sayfa</span>
+          </button>
+          <button class="prayer-tab is-active" type="button" role="tab" aria-selected="true" data-prayer="sabah">
+            <span class="prayer-tab__icon" aria-hidden="true">🌅</span>
+            <span class="prayer-tab__label">Sabah</span>
+          </button>
+          <button class="prayer-tab" type="button" role="tab" aria-selected="false" data-prayer="ogle">
+            <span class="prayer-tab__icon" aria-hidden="true">☀️</span>
+            <span class="prayer-tab__label">Öğle</span>
+          </button>
+          <button class="prayer-tab" type="button" role="tab" aria-selected="false" data-prayer="ikindi">
+            <span class="prayer-tab__icon" aria-hidden="true">🌤️</span>
+            <span class="prayer-tab__label">İkindi</span>
+          </button>
+          <button class="prayer-tab" type="button" role="tab" aria-selected="false" data-prayer="aksam">
+            <span class="prayer-tab__icon" aria-hidden="true">🌇</span>
+            <span class="prayer-tab__label">Akşam</span>
+          </button>
+          <button class="prayer-tab" type="button" role="tab" aria-selected="false" data-prayer="yatsi">
+            <span class="prayer-tab__icon" aria-hidden="true">🌙</span>
+            <span class="prayer-tab__label">Yatsı</span>
+          </button>
         </div>
       </header>
       <main class="main">
@@ -99,11 +146,67 @@
               </button>
               <small class="settings-hint">Hadis ve Kur'an dualarındaki Arapça metinleri dilediğinizde gizleyebilirsiniz.</small>
             </div>
+            <div class="settings-group" data-personal-dua-settings>
+              <span class="settings-label">Kişisel dua</span>
+              <div class="settings-inline-actions">
+                <button type="button" class="button-pill secondary" data-toggle-personal-dua aria-pressed="false">
+                  Kişisel duayı göster
+                </button>
+                <button type="button" class="button-pill secondary" data-edit-personal-dua hidden>
+                  Dua metnini düzenle
+                </button>
+              </div>
+              <div class="personal-dua-settings__editor" data-personal-dua-editor hidden>
+                <label class="settings-label" for="personal-dua-text">Kişisel dua metni</label>
+                <textarea id="personal-dua-text" rows="6" data-personal-dua-text></textarea>
+                <div class="settings-actions">
+                  <button type="button" class="settings-action-button" data-save-personal-dua>Kaydet</button>
+                  <button type="button" class="settings-action-button secondary" data-cancel-personal-dua>Vazgeç</button>
+                </div>
+              </div>
+              <small class="settings-hint">Bu metin yalnızca cihazınızda saklanır ve dua kartındaki "Kişisel dua" sekmesinde gösterilir.</small>
+            </div>
             <div class="settings-actions">
               <button type="button" class="settings-action-button" data-reset-dua>
                 Dua ilerlemesini sıfırla
               </button>
               <small class="settings-hint">Bu işlem mevcut okuma takibini sıfırlar.</small>
+            </div>
+            <div class="settings-actions">
+              <button type="button" class="settings-action-button secondary" data-reset-dua-favorites>
+                Kaydedilen duaları temizle
+              </button>
+              <small class="settings-hint">Kaydettiğiniz duaları siler.</small>
+            </div>
+          </section>
+          <section class="settings-section" data-sync-settings>
+            <header class="settings-section__header">
+              <span class="settings-section__icon" aria-hidden="true">☁️</span>
+              <h3>Senkronizasyon</h3>
+            </header>
+            <div class="settings-group">
+              <span class="settings-label">Cihazlar arası veri</span>
+              <div class="settings-inline-actions">
+                <button type="button" class="settings-action-button" data-sync-signin>
+                  Sign in to sync (Google)
+                </button>
+                <button type="button" class="settings-action-button secondary" data-sync-signout hidden>
+                  Sign out
+                </button>
+              </div>
+              <small class="settings-hint sync-status" data-sync-user hidden></small>
+              <small class="settings-hint sync-status" data-sync-status></small>
+            </div>
+            <div class="settings-group" data-sync-advanced hidden>
+              <span class="settings-label">Gelişmiş</span>
+              <div class="settings-actions">
+                <button type="button" class="settings-action-button secondary" data-sync-download>
+                  Re-download from cloud (overwrite this device)
+                </button>
+                <button type="button" class="settings-action-button" data-sync-upload>
+                  Force upload this device to cloud (overwrite cloud)
+                </button>
+              </div>
             </div>
           </section>
           <section class="settings-section">
@@ -112,19 +215,30 @@
               <h3>Tesbihat Takibi</h3>
             </header>
             <div class="settings-group">
-              <small class="settings-hint">Günlük tamamlanma kayıtlarını incelemek için istatistik sayfasını açın.</small>
-              <button type="button" class="settings-action-button" data-open-stats>İstatistikleri göster</button>
+              <small class="settings-hint">Günlük tamamlanma kayıtlarını sıfırlamak tüm geçmişi kalıcı olarak siler.</small>
+              <button type="button" class="settings-action-button" data-reset-stats>İstatistikleri sıfırla</button>
+            </div>
+          </section>
+          <section class="settings-section">
+            <header class="settings-section__header">
+              <span class="settings-section__icon" aria-hidden="true">🌙</span>
+              <h3>Üç Aylar</h3>
+            </header>
+            <div class="settings-group">
+              <button type="button" class="settings-action-button secondary" data-ucaylar-export>
+                Üç Aylar verisini dışa aktar
+              </button>
+              <div class="settings-inline-actions">
+                <button type="button" class="settings-action-button" data-ucaylar-import-trigger>
+                  Üç Aylar verisini içe aktar
+                </button>
+                <input type="file" accept=".json,application/json" data-ucaylar-import-file hidden>
+              </div>
+              <small class="settings-hint">İçe aktarma mevcut Üç Aylar verisini silip yenisiyle değiştirir.</small>
+              <small class="settings-hint" data-ucaylar-transfer-status hidden></small>
             </div>
           </section>
         </div>
-      </div>
-      <div class="settings-sheet card stats-sheet" data-stats-sheet hidden>
-        <header class="settings-sheet__header stats-sheet__header">
-          <button type="button" class="settings-back" data-close-stats aria-label="Ayarlar listesine dön">Geri</button>
-          <h2>Tesbihat İstatistikleri</h2>
-          <button type="button" class="settings-close" data-close-settings aria-label="Ayarları kapat">✕</button>
-        </header>
-        <div class="stats-content" data-stats-content></div>
       </div>
     </div>
   <!-- service worker register: staging/prod ayrımı için relative + dar scope -->

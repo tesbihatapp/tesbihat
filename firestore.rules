@@ -1,0 +1,249 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function uid() {
+      return request.auth.uid;
+    }
+
+    function roomDoc(roomId) {
+      return get(/databases/$(database)/documents/rooms/$(roomId));
+    }
+
+    function isRoomMember(roomId) {
+      return isSignedIn() && roomDoc(roomId).data.members[uid()] == true;
+    }
+
+    function resolveRound(value) {
+      return value is int ? value : 1;
+    }
+
+    function roomRound(roomId) {
+      return resolveRound(roomDoc(roomId).data.roundNumber);
+    }
+
+    match /rooms/{roomId} {
+      allow create: if isSignedIn()
+        && request.resource.data.createdBy == uid()
+        && request.resource.data.members[uid()] == true
+        && request.resource.data.type in ['hatim', 'cevsen']
+        && request.resource.data.totalParts is int
+        && request.resource.data.totalParts > 0
+        && request.resource.data.maxClaimsPerUser is int
+        && (
+          request.resource.data.maxClaimsPerUser == 0
+          || (
+            request.resource.data.maxClaimsPerUser >= 1
+            && request.resource.data.maxClaimsPerUser <= 5
+          )
+        );
+
+      allow read: if isSignedIn() && resource.data.members[uid()] == true;
+
+      // Self-join: only add members.<uid> = true (no other changes).
+      allow update: if isSignedIn() && (
+        (
+          // Allow writing only your own membership flag (idempotent).
+          request.writeFields.hasOnly(['members.' + uid()])
+          && request.resource.data.members[uid()] == true
+        )
+        ||
+        (
+          // Members can update their own claim counter and round counters.
+          resource.data.members[uid()] == true
+          && request.writeFields.hasOnly([
+            'claimCounts.' + uid(),
+            'roundNumber',
+            'roundCompletedCount',
+            'roundDoneCount',
+            'lastResetFromRound',
+            'resetAt',
+            'assignStrategy',
+            'maxPiecesPerUser'
+          ])
+          && (
+            !request.writeFields.hasAny(['claimCounts.' + uid()])
+            || (
+              request.resource.data.claimCounts is map
+              && request.resource.data.claimCounts[uid()] is int
+              && request.resource.data.claimCounts[uid()] >= 0
+              && request.resource.data.claimCounts[uid()] <= (
+                resource.data.maxClaimsPerUser == 0 ? resource.data.totalParts : resource.data.maxClaimsPerUser
+              )
+            )
+          )
+          && (
+            !request.writeFields.hasAny(['roundNumber'])
+            || (
+              request.resource.data.roundNumber is int
+              && request.resource.data.roundNumber >= 1
+            )
+          )
+          && (
+            !request.writeFields.hasAny(['roundCompletedCount'])
+            || (
+              request.resource.data.roundCompletedCount is int
+              && request.resource.data.roundCompletedCount >= 0
+            )
+          )
+          && (
+            !request.writeFields.hasAny(['roundDoneCount'])
+            || (
+              request.resource.data.roundDoneCount is int
+              && request.resource.data.roundDoneCount >= 0
+              && request.resource.data.roundDoneCount <= resource.data.totalParts
+            )
+          )
+          && (
+            !request.writeFields.hasAny(['lastResetFromRound'])
+            || (
+              request.resource.data.lastResetFromRound is int
+              && request.resource.data.lastResetFromRound >= 0
+            )
+          )
+          && (
+            !request.writeFields.hasAny(['resetAt'])
+            || request.resource.data.resetAt == request.time
+          )
+          && (
+            !request.writeFields.hasAny(['assignStrategy'])
+            || request.resource.data.assignStrategy in ['manual', 'same', 'random']
+          )
+          && (
+            !request.writeFields.hasAny(['maxPiecesPerUser'])
+            || (
+              request.resource.data.maxPiecesPerUser is int
+              && (
+                request.resource.data.maxPiecesPerUser == 0
+                || (
+                  request.resource.data.maxPiecesPerUser >= 1
+                  && request.resource.data.maxPiecesPerUser <= 5
+                )
+              )
+            )
+          )
+        )
+        ||
+        // Owner can adjust claimCounts (e.g. freeing stuck parts).
+        (
+          resource.data.createdBy == uid()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['claimCounts'])
+          && request.resource.data.claimCounts is map
+        )
+        ||
+        // Owner can close the room (readable, but prevents new claims).
+        (
+          resource.data.createdBy == uid()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+          && request.resource.data.status == 'closed'
+        )
+      );
+
+      allow delete: if false;
+    }
+
+    match /rooms/{roomId}/parts/{partId} {
+      allow read: if isRoomMember(roomId);
+
+      // Parts are created only by the room creator.
+      allow create: if isSignedIn()
+        && roomDoc(roomId).data.createdBy == uid()
+        && roomDoc(roomId).data.members[uid()] == true
+        && request.resource.data.index is int
+        && request.resource.data.index > 0
+        && request.resource.data.label is string
+        && request.resource.data.state == 'available'
+        && request.resource.data.claimedBy == null
+        && request.resource.data.claimedAt == null
+        && request.resource.data.doneBy == null
+        && request.resource.data.doneAt == null;
+
+      allow update: if isRoomMember(roomId) && (
+        // available -> claimed (only by requester)
+        (
+          (resource.data.state == 'available' || resolveRound(resource.data.roundNumber) != roomRound(roomId))
+          && roomDoc(roomId).data.status != 'closed'
+          && request.resource.data.state == 'claimed'
+          && request.resource.data.index == resource.data.index
+          && request.resource.data.label == resource.data.label
+          && request.resource.data.claimedBy == uid()
+          && request.resource.data.roundNumber == roomRound(roomId)
+          && request.resource.data.claimedAt == request.time
+          && request.resource.data.doneBy == null
+          && request.resource.data.doneAt == null
+        )
+        ||
+        // claimed -> available (release; only claimer)
+        (
+          resource.data.state == 'claimed'
+          && (resource.data.claimedBy == uid() || roomDoc(roomId).data.createdBy == uid())
+          && request.resource.data.state == 'available'
+          && request.resource.data.index == resource.data.index
+          && request.resource.data.label == resource.data.label
+          && request.resource.data.claimedBy == null
+          && request.resource.data.claimedAt == null
+          && request.resource.data.doneBy == null
+          && request.resource.data.doneAt == null
+        )
+        ||
+        // claimed -> done (only claimer)
+        (
+          resource.data.state == 'claimed'
+          && resource.data.claimedBy == uid()
+          && request.resource.data.state == 'done'
+          && request.resource.data.index == resource.data.index
+          && request.resource.data.label == resource.data.label
+          && request.resource.data.claimedBy == resource.data.claimedBy
+          && request.resource.data.claimedAt == resource.data.claimedAt
+          && request.resource.data.doneBy == uid()
+          && request.resource.data.doneAt == request.time
+        )
+      );
+
+      allow delete: if false;
+    }
+
+    match /rooms/{roomId}/participants/{participantId} {
+      allow read: if isRoomMember(roomId);
+
+      allow create, update: if isRoomMember(roomId)
+        && participantId == uid()
+        && request.writeFields.hasOnly(['displayName', 'lastRoundPieces', 'lastRoundNumber', 'updatedAt'])
+        && (
+          !request.writeFields.hasAny(['displayName'])
+          || (
+            request.resource.data.displayName is string
+            && request.resource.data.displayName.size() > 0
+            && request.resource.data.displayName.size() <= 40
+          )
+        )
+        && (
+          !request.writeFields.hasAny(['lastRoundNumber'])
+          || (
+            request.resource.data.lastRoundNumber is int
+            && request.resource.data.lastRoundNumber >= 0
+          )
+        )
+        && (
+          !request.writeFields.hasAny(['lastRoundPieces'])
+          || (
+            request.resource.data.lastRoundPieces is list
+            && request.resource.data.lastRoundPieces.size() <= 700
+          )
+        )
+        && (
+          !request.writeFields.hasAny(['updatedAt'])
+          || request.resource.data.updatedAt == request.time
+        );
+
+      allow delete: if false;
+    }
+
+        match /users/{userId}/appData/{docId} {
+      allow read, write: if isSignedIn() && userId == uid();
+    }
+  }
+}
