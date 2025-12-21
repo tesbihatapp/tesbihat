@@ -2,7 +2,7 @@
   const STORAGE_PREFIX = 'tesbihat:';
   const EXCLUDE_PREFIX = 'tesbihat:sync:';
   const EXTRA_KEYS = new Set(['sharedDisplayName']);
-  const META_KEYS = new Set(['syncLinkedUid', 'syncLinkedAt']);
+  const META_KEYS = new Set(['syncLinkedUid', 'syncLinkedAt', 'tesbihat:clientId']);
   const LOCAL_UPDATED_AT_KEY = 'tesbihat:sync:local-updated-at';
 
   const listeners = new Set();
