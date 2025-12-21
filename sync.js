@@ -51,7 +51,11 @@
     return 0;
   };
 
-  const buildDocRef = (uid) => syncState.fs.doc(syncState.db, 'users', uid, 'appData', 'main');
+  const buildDocRef = (uid) => {
+    const env = window.__ENV__ || 'prod';
+    const path = `users/${uid}/appData/${env}`;
+    return syncState.fs.doc(syncState.db, path);
+  };
 
   const setStatus = (message, status = 'info') => {
     const ui = syncState.ui;
