@@ -2,19 +2,33 @@
   const FIREBASE_SDK_VERSION = '10.12.0';
   const SCHEMA_VERSION = 1;
   const SYNC_DEBOUNCE_MS = 1000;
+  const CLIENT_ID_STORAGE_KEY = 'tesbihat:clientId';
+  const DEBUG_SYNC = Boolean(window.DEBUG_SYNC);
 
   const syncState = {
     user: null,
     db: null,
     fs: null,
     docRef: null,
+    started: false,
     ready: false,
     initializing: false,
     cloudExists: false,
     unsubscribe: null,
     pushTimer: null,
-    applyingRemote: false,
+    isApplyingRemote: false,
+    localChangeEnabled: false,
+    hasHydrated: false,
+    clientId: null,
+    lastUploadMs: 0,
+    lastUploadPayloadString: '',
     ui: null,
+  };
+
+  const logSync = (message) => {
+    if (DEBUG_SYNC && typeof console !== 'undefined') {
+      console.info(message);
+    }
   };
 
   const getSyncModules = () => {
@@ -49,6 +63,44 @@
       return value;
     }
     return 0;
+  };
+
+  const getClientId = () => {
+    try {
+      const stored = window.localStorage.getItem(CLIENT_ID_STORAGE_KEY);
+      if (stored) {
+        return stored;
+      }
+      const generated = (window.crypto && typeof window.crypto.randomUUID === 'function')
+        ? window.crypto.randomUUID()
+        : `client_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+      window.localStorage.setItem(CLIENT_ID_STORAGE_KEY, generated);
+      return generated;
+    } catch (_error) {
+      return `client_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+    }
+  };
+
+  const sortForStringify = (value) => {
+    if (Array.isArray(value)) {
+      return value.map(sortForStringify);
+    }
+    if (value && typeof value === 'object') {
+      const sorted = {};
+      Object.keys(value).sort().forEach((key) => {
+        sorted[key] = sortForStringify(value[key]);
+      });
+      return sorted;
+    }
+    return value;
+  };
+
+  const stableStringify = (value) => {
+    try {
+      return JSON.stringify(sortForStringify(value));
+    } catch (_error) {
+      return '';
+    }
   };
 
   const buildDocRef = (uid) => {
@@ -241,14 +293,14 @@
       return;
     }
     const { storage } = modules;
-    syncState.applyingRemote = true;
+    syncState.isApplyingRemote = true;
     try {
       storage.withSuppressedLocalChanges(() => {
         storage.applyLocalPayload(payload);
         storage.setLocalUpdatedAt(updatedAt || Date.now());
       });
     } finally {
-      syncState.applyingRemote = false;
+      syncState.isApplyingRemote = false;
     }
 
     if (typeof window.refreshAppFromStorage === 'function') {
@@ -266,9 +318,11 @@
       schemaVersion: SCHEMA_VERSION,
       initializedAt: syncState.fs.serverTimestamp(),
       updatedAt: syncState.fs.serverTimestamp(),
+      clientId: syncState.clientId,
       payload: payload || {},
     });
     syncState.cloudExists = true;
+    recordUpload(payload);
   };
 
   const updateCloudDoc = async (payload) => {
@@ -282,21 +336,52 @@
     await syncState.fs.setDoc(syncState.docRef, {
       schemaVersion: SCHEMA_VERSION,
       updatedAt: syncState.fs.serverTimestamp(),
+      clientId: syncState.clientId,
       payload: payload || {},
     }, { merge: true });
+    recordUpload(payload);
+  };
+
+  const recordUpload = (payload) => {
+    syncState.lastUploadMs = Date.now();
+    syncState.lastUploadPayloadString = stableStringify(payload || {});
+  };
+
+  const markHydrated = () => {
+    if (!syncState.hasHydrated) {
+      syncState.hasHydrated = true;
+      syncState.localChangeEnabled = true;
+    }
+  };
+
+  const isNoopPayload = (payload) => {
+    const modules = getSyncModules();
+    if (!modules) {
+      return false;
+    }
+    const localPayload = modules.storage.buildLocalPayload();
+    const localString = stableStringify(localPayload);
+    const remoteString = stableStringify(payload || {});
+    return remoteString && remoteString === localString;
   };
 
   const scheduleCloudPush = () => {
-    if (!syncState.ready || !syncState.user || syncState.applyingRemote) {
+    if (!syncState.ready || !syncState.user || syncState.isApplyingRemote || !syncState.localChangeEnabled) {
       return;
     }
     if (syncState.pushTimer) {
       window.clearTimeout(syncState.pushTimer);
+      logSync('SYNC: upload skipped (debounced/nochange)');
     }
     syncState.pushTimer = window.setTimeout(async () => {
       syncState.pushTimer = null;
       try {
         const payload = window.SyncStorage.buildLocalPayload();
+        const payloadString = stableStringify(payload);
+        if (payloadString && payloadString === syncState.lastUploadPayloadString) {
+          logSync('SYNC: upload skipped (debounced/nochange)');
+          return;
+        }
         await updateCloudDoc(payload);
       } catch (error) {
         console.warn('Cloud write failed.', error);
@@ -311,9 +396,11 @@
     }
     if (syncState.unsubscribe) {
       syncState.unsubscribe();
+      logSync('SYNC: listener detached');
     }
     syncState.unsubscribe = syncState.fs.onSnapshot(syncState.docRef, (snapshot) => {
       if (!snapshot.exists()) {
+        markHydrated();
         return;
       }
       const data = snapshot.data() || {};
@@ -322,20 +409,44 @@
         updateCloudDoc(migrated.payload).catch(() => {});
       }
       const cloudUpdatedAt = toMillis(data.updatedAt);
-      const localUpdatedAt = window.SyncStorage.getLocalUpdatedAt();
-      if (cloudUpdatedAt > localUpdatedAt) {
-        applyCloudToLocal(migrated.payload, cloudUpdatedAt);
+      const docClientId = data.clientId || '';
+
+      if (docClientId && docClientId === syncState.clientId && syncState.lastUploadMs && cloudUpdatedAt <= syncState.lastUploadMs) {
+        logSync('SYNC: snapshot ignored (noop/echo)');
+        markHydrated();
+        return;
       }
+
+      const modules = getSyncModules();
+      const localPayload = modules ? modules.storage.buildLocalPayload() : {};
+      const localString = stableStringify(localPayload);
+      const remoteString = stableStringify(migrated.payload);
+      if (remoteString && remoteString === localString) {
+        logSync('SYNC: snapshot ignored (noop/echo)');
+        markHydrated();
+        return;
+      }
+
+      const localUpdatedAt = window.SyncStorage.getLocalUpdatedAt();
+      if (cloudUpdatedAt <= localUpdatedAt) {
+        markHydrated();
+        return;
+      }
+
+      applyCloudToLocal(migrated.payload, cloudUpdatedAt);
+      markHydrated();
     }, (error) => {
       console.warn('Sync listener error.', error);
       setStatus('Sync connection lost.', 'error');
     });
+    logSync('SYNC: listener attached');
   };
 
   const stopListener = () => {
     if (syncState.unsubscribe) {
       syncState.unsubscribe();
       syncState.unsubscribe = null;
+      logSync('SYNC: listener detached');
     }
     if (syncState.pushTimer) {
       window.clearTimeout(syncState.pushTimer);
@@ -366,7 +477,9 @@
 
       if (choice === 'fresh') {
         await createCloudDoc({});
-        applyCloudToLocal({}, Date.now());
+        if (!isNoopPayload({})) {
+          applyCloudToLocal({}, Date.now());
+        }
       } else {
         await createCloudDoc(hasLocal ? localPayload : {});
       }
@@ -393,14 +506,18 @@
       });
 
       if (choice === 'cloud') {
-        applyCloudToLocal(migrated.payload, cloudUpdatedAt);
+        if (!isNoopPayload(migrated.payload)) {
+          applyCloudToLocal(migrated.payload, cloudUpdatedAt);
+        }
       } else if (choice === 'device') {
         await updateCloudDoc(localPayload);
         storage.setLocalUpdatedAt(Date.now());
       } else {
         const merged = mergePayloads(migrated.payload, localPayload);
         await updateCloudDoc(merged);
-        applyCloudToLocal(merged, Date.now());
+        if (!isNoopPayload(merged)) {
+          applyCloudToLocal(merged, Date.now());
+        }
       }
 
       storage.setLinkedUid(user.uid);
@@ -410,16 +527,24 @@
     if (linkedUid !== user.uid) {
       storage.setLinkedUid(user.uid);
     }
-    applyCloudToLocal(migrated.payload, cloudUpdatedAt);
+    if (!isNoopPayload(migrated.payload)) {
+      applyCloudToLocal(migrated.payload, cloudUpdatedAt);
+    }
   };
 
   const startSyncForUser = async (user) => {
-    if (!user || !user.uid || syncState.initializing) {
+    if (!user || !user.uid || syncState.initializing || syncState.started) {
       return;
     }
 
     syncState.initializing = true;
+    syncState.started = true;
     syncState.user = user;
+    syncState.clientId = getClientId();
+    syncState.localChangeEnabled = false;
+    syncState.hasHydrated = false;
+    syncState.lastUploadMs = 0;
+    syncState.lastUploadPayloadString = '';
     setStatus('Sync is preparing...');
 
     try {
@@ -434,6 +559,9 @@
     } catch (error) {
       console.warn('Sync start failed.', error);
       setStatus('Sync could not start. Check Firebase settings.', 'error');
+      syncState.started = false;
+      syncState.localChangeEnabled = false;
+      syncState.hasHydrated = false;
     } finally {
       syncState.initializing = false;
     }
@@ -441,8 +569,13 @@
 
   const stopSync = () => {
     syncState.ready = false;
+    syncState.started = false;
     syncState.user = null;
     syncState.docRef = null;
+    syncState.localChangeEnabled = false;
+    syncState.hasHydrated = false;
+    syncState.lastUploadMs = 0;
+    syncState.lastUploadPayloadString = '';
     stopListener();
     setStatus('Sync is off.');
   };
@@ -464,7 +597,9 @@
       const data = snap.data() || {};
       const migrated = migratePayload(data.payload || {}, data.schemaVersion);
       const updatedAt = toMillis(data.updatedAt) || Date.now();
-      applyCloudToLocal(migrated.payload, updatedAt);
+      if (!isNoopPayload(migrated.payload)) {
+        applyCloudToLocal(migrated.payload, updatedAt);
+      }
       setStatus('Downloaded from cloud.', 'success');
     } catch (error) {
       console.warn('Cloud download failed.', error);
@@ -553,6 +688,9 @@
     }
 
     modules.storage.onLocalChange(() => {
+      if (syncState.isApplyingRemote || !syncState.localChangeEnabled) {
+        return;
+      }
       scheduleCloudPush();
     });
 
