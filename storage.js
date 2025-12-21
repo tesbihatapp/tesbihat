@@ -1,7 +1,7 @@
 (() => {
   const STORAGE_PREFIX = 'tesbihat:';
   const EXCLUDE_PREFIX = 'tesbihat:sync:';
-  const EXTRA_KEYS = new Set(['sharedDisplayName']);
+  const EXTRA_KEYS = new Set(['sharedDisplayName', 'saved-duas']);
   const META_KEYS = new Set(['syncLinkedUid', 'syncLinkedAt', 'tesbihat:clientId']);
   const LOCAL_UPDATED_AT_KEY = 'tesbihat:sync:local-updated-at';
 
@@ -190,6 +190,25 @@
     });
   };
 
+  const setSyncItem = (key, value) => {
+    if (!storage || !key) {
+      return;
+    }
+    const serialized = serializeValue(value);
+    if (serialized === null) {
+      storage.removeItem(key);
+      return;
+    }
+    storage.setItem(key, serialized);
+  };
+
+  const removeSyncItem = (key) => {
+    if (!storage || !key) {
+      return;
+    }
+    storage.removeItem(key);
+  };
+
   const setLinkedUid = (uid) => {
     if (!storage) {
       return;
@@ -262,6 +281,8 @@
     buildLocalPayload,
     hasLocalPayload,
     applyLocalPayload,
+    setSyncItem,
+    removeSyncItem,
     getLocalUpdatedAt,
     setLocalUpdatedAt,
     setLinkedUid,
