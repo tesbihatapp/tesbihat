@@ -9615,11 +9615,16 @@ function sanitizeStoredDuaState(stored, total, sourceId) {
 function persistDuaRepository() {
   try {
     const repository = ensureDuaRepository();
-    localStorage.setItem(DUA_STORAGE_KEY, JSON.stringify({
+    const payload = {
       version: DUA_STORAGE_VERSION,
       current: repository.current,
       states: repository.states,
-    }));
+    };
+    if (window.SyncStorage && typeof window.SyncStorage.setSyncItem === 'function') {
+      window.SyncStorage.setSyncItem(DUA_STORAGE_KEY, payload);
+    } else {
+      localStorage.setItem(DUA_STORAGE_KEY, JSON.stringify(payload));
+    }
   } catch (error) {
     console.warn('Dua durumu kaydedilemedi.', error);
   }
@@ -11442,7 +11447,11 @@ function normaliseDuaFavorites(candidate) {
 
 function saveDuaFavorites() {
   try {
-    localStorage.setItem(DUA_FAVORITES_STORAGE_KEY, JSON.stringify(state.duaFavorites));
+    if (window.SyncStorage && typeof window.SyncStorage.setSyncItem === 'function') {
+      window.SyncStorage.setSyncItem(DUA_FAVORITES_STORAGE_KEY, state.duaFavorites);
+    } else {
+      localStorage.setItem(DUA_FAVORITES_STORAGE_KEY, JSON.stringify(state.duaFavorites));
+    }
   } catch (error) {
     console.warn('Kaydedilen dualar saklanamadı.', error);
   }
