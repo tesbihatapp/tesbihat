@@ -17,6 +17,9 @@
     <script src="https://cdn.jsdelivr.net/npm/marked@12.0.1/marked.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js" defer></script>
     <script src="firebase-config.js" defer></script>
+    <script src="storage.js" defer></script>
+    <script src="auth.js" defer></script>
+    <script src="sync.js" defer></script>
     <script src="main.js" defer></script>
   </head>
   <body>
@@ -169,6 +172,36 @@
                 Kaydedilen duaları temizle
               </button>
               <small class="settings-hint">Kaydettiğiniz duaları siler.</small>
+            </div>
+          </section>
+          <section class="settings-section" data-sync-settings>
+            <header class="settings-section__header">
+              <span class="settings-section__icon" aria-hidden="true">☁️</span>
+              <h3>Senkronizasyon</h3>
+            </header>
+            <div class="settings-group">
+              <span class="settings-label">Cihazlar arası veri</span>
+              <div class="settings-inline-actions">
+                <button type="button" class="settings-action-button" data-sync-signin>
+                  Sign in to sync (Google)
+                </button>
+                <button type="button" class="settings-action-button secondary" data-sync-signout hidden>
+                  Sign out
+                </button>
+              </div>
+              <small class="settings-hint sync-status" data-sync-user hidden></small>
+              <small class="settings-hint sync-status" data-sync-status></small>
+            </div>
+            <div class="settings-group" data-sync-advanced hidden>
+              <span class="settings-label">Gelişmiş</span>
+              <div class="settings-actions">
+                <button type="button" class="settings-action-button secondary" data-sync-download>
+                  Re-download from cloud (overwrite this device)
+                </button>
+                <button type="button" class="settings-action-button" data-sync-upload>
+                  Force upload this device to cloud (overwrite cloud)
+                </button>
+              </div>
             </div>
           </section>
           <section class="settings-section">

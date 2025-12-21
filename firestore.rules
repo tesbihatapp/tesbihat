@@ -241,5 +241,9 @@ service cloud.firestore {
 
       allow delete: if false;
     }
+
+    match /users/{userId}/appData/main {
+      allow read, write: if isSignedIn() && userId == uid();
+    }
   }
 }

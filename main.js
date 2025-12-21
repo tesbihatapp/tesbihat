@@ -1222,6 +1222,9 @@ document.addEventListener('DOMContentLoaded', () => {
   initPersonalDuaSettings();
   attachFontScaleControls(appRoot);
   attachSettingsActions();
+  if (window.SyncEngine && typeof window.SyncEngine.initSyncSettings === 'function') {
+    window.SyncEngine.initSyncSettings();
+  }
   registerInstallPromptHandlers();
   initScrollTopButton();
 
@@ -1251,6 +1254,75 @@ document.addEventListener('DOMContentLoaded', () => {
 
   setActivePrayer(state.currentPrayer);
 });
+
+function refreshAppFromStorage() {
+  const appRoot = state.appRoot || document.querySelector('.app');
+  const currentPrayer = state.currentPrayer;
+  const counterStorage = loadCounterStorage();
+
+  state.counters = counterStorage.values;
+  state.counterCompletions = counterStorage.completions;
+  state.themeSelection = loadThemeSelection();
+  state.duaSource = loadSelectedDuaSource();
+  state.showArabicDuas = loadDuaArabicPreference();
+  state.showTranslations = loadTranslationVisibility();
+  state.language = loadLanguageSelection();
+  state.completionData = loadCompletionData();
+  state.fontScale = loadFontScale();
+  state.ucaylar.data = loadUcAylarData();
+  state.sharedDua.roomHistory = loadSharedDuaRoomHistory();
+  state.sharedDua.lastRoom = loadSharedDuaLastRoom();
+  state.personalDuaEnabled = loadPersonalDuaEnabled();
+  state.personalDuaText = loadPersonalDuaText();
+  state.duaFavorites = loadDuaFavorites();
+  state.cevsen.fontScale = loadCevsenFontScale();
+  state.cevsen.visibility = loadCevsenVisibility();
+  state.homeStats.collapsed = loadHomeStatsCollapsed();
+
+  state.duaCache = {};
+  state.duaStates = new Map();
+  state.duaState = null;
+  state.duas = [];
+  state.zikirRepository = null;
+  state.zikirDefaults = null;
+  state.zikirs = [];
+
+  rebuildDuaFavoritesState();
+  state.duaMode = state.personalDuaEnabled ? 'personal' : 'predefined';
+
+  if (appRoot) {
+    appRoot.dataset.appLanguage = state.language;
+    document.documentElement.setAttribute('lang', state.language === 'ar' ? 'ar' : 'tr');
+    applyTheme(appRoot, state.themeSelection, { persist: false });
+  }
+
+  applyFontScale(state.fontScale);
+
+  const decreaseButton = appRoot?.querySelector('.text-decrease');
+  const increaseButton = appRoot?.querySelector('.text-increase');
+  if (decreaseButton && increaseButton) {
+    decreaseButton.disabled = state.fontScale <= FONT_SCALE_MIN + 0.001;
+    increaseButton.disabled = state.fontScale >= FONT_SCALE_MAX - 0.001;
+  }
+
+  updateLanguageToggleUI(state.language);
+  updateContentToolbarLanguageUI();
+  updateSettingsDuaControls();
+  updateDuaArabicToggleUI();
+  updateDuaArabicVisibility();
+  updatePersonalDuaSettingsUI();
+  updateDuaModeToggleUI();
+  applyTranslationVisibility(document.getElementById('content'));
+  applyCevsenFontScale(state.cevsen.root);
+  applyCevsenVisibility(state.cevsen.root);
+  updateHomeStatsCollapseUI();
+
+  if (appRoot) {
+    setActivePrayer(currentPrayer);
+  }
+}
+
+window.refreshAppFromStorage = refreshAppFromStorage;
 
 function initPrayerTabs(appRoot) {
   const tabs = Array.from(appRoot.querySelectorAll('.prayer-tab'));
@@ -9817,10 +9889,11 @@ function formatNumber(value) {
   return new Intl.NumberFormat('tr-TR').format(value);
 }
 
-function applyTheme(appRoot, selection) {
+function applyTheme(appRoot, selection, options = {}) {
   if (!appRoot) {
     return;
   }
+  const { persist = true } = options;
   const normalized = normalizeThemeSelection(selection);
   const themePreset = THEME_PRESET_MAP.get(normalized.themeId) || THEME_PRESET_MAP.get(DEFAULT_THEME_ID);
   const modeConfig = themePreset?.[normalized.mode] || {};
@@ -10015,7 +10088,9 @@ function applyTheme(appRoot, selection) {
   }
 
   state.themeSelection = normalized;
-  saveThemeSelection(normalized);
+  if (persist) {
+    saveThemeSelection(normalized);
+  }
   updateThemeSelectorUI(normalized.themeId);
   updateMetaThemeColor(tokens['meta-theme-color']);
   updateManifestThemeColor(tokens['meta-theme-color'], tokens['surface-color']);

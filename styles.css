@@ -719,6 +719,60 @@ body .language-toggle__option.is-active {
   color: var(--muted-text);
 }
 
+.sync-status {
+  margin: 0;
+}
+
+.sync-status[data-status="error"] {
+  color: #b91c1c;
+}
+
+.sync-status[data-status="success"] {
+  color: #166534;
+}
+
+body.sync-modal-open {
+  overflow: hidden;
+}
+
+.sync-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.42);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  z-index: 1200;
+}
+
+.sync-modal {
+  width: min(100%, 520px);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.sync-modal__header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.sync-modal__body {
+  color: var(--muted-text);
+}
+
+.sync-modal__body p {
+  margin: 0;
+}
+
+.sync-modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
 .content {
   max-width: 760px;
   margin: 0 auto;
