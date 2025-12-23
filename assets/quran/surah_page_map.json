@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "source": "kuran-arabic images 0..604",
+  "surahs": [
+    { "id": 1, "name_tr": "Fâtiha", "name_ar": "الفاتحة", "page": 0 },
+    { "id": 2, "name_tr": "Bakara", "name_ar": "البقرة", "page": 1 },
+    { "id": 3, "name_tr": "Âl-i İmrân", "name_ar": "آل عمران", "page": 49 },
+    { "id": 18, "name_tr": "Kehf", "name_ar": "الكهف", "page": 293 },
+    { "id": 36, "name_tr": "Yâsîn", "name_ar": "يس", "page": 440 },
+    { "id": 48, "name_tr": "Fetih", "name_ar": "الفتح", "page": 510 },
+    { "id": 112, "name_tr": "İhlâs", "name_ar": "الإخلاص", "page": 604 },
+    { "id": 113, "name_tr": "Felâk", "name_ar": "الفلق", "page": 604 },
+    { "id": 114, "name_tr": "Nâs", "name_ar": "الناس", "page": 604 }
+  ]
+}

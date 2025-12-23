@@ -7,7 +7,7 @@
    =================================================================== */
 
 /* Versiyon numarasını her “önemli” değişimde artır ki eski cache temizlensin. */
-const CACHE_VERSION = 'v58';
+const CACHE_VERSION = 'v59';
 
 /* Scope → /tesbihat/  veya  /tesbihat/staging/  tespiti */
 const SCOPE_URL = self.registration && self.registration.scope ? new URL(self.registration.scope) : new URL('/', self.location.origin);
@@ -24,6 +24,8 @@ const RAW_ASSETS = [
   'index.html',
   'styles.css',
   'main.js',
+  'quran.js',
+  'quran.css',
   'storage.js',
   'auth.js',
   'sync.js',
@@ -50,6 +52,8 @@ const RAW_ASSETS = [
   'TesbihatinOnemi.txt',
   'zikir-defaults.json',
   'names.json',
+  'assets/quran/meta.json',
+  'assets/quran/surah_page_map.json',
 
   // Üç Aylar
   'uc-aylar/recep/manifest.json',
