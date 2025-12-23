@@ -241,6 +241,7 @@ body.quran-lightbox-open {
   justify-content: center;
   align-items: flex-start;
   padding: 0.75rem;
+  touch-action: none;
 }
 
 .quran-lightbox__image {
@@ -249,6 +250,8 @@ body.quran-lightbox-open {
   transform-origin: top left;
   box-shadow: var(--shadow-soft);
   border-radius: 12px;
+  touch-action: none;
+  user-select: none;
 }
 
 @media (max-width: 560px) {
