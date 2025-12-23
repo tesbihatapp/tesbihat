@@ -4,6 +4,10 @@
   const PAGES_BASE_PATH = 'assets/quran/pages';
   const FAVORITES_KEY = 'tesbihat:quran:favorites';
   const LAST_PAGE_KEY = 'tesbihat:quran:last-page';
+  const ZOOM_KEY = 'tesbihat:quran:zoom';
+  const MIN_USER_SCALE = 1;
+  const MAX_USER_SCALE = 4;
+  const ZOOM_STEP = 0.25;
 
   const DEFAULT_META = {
     totalPages: 605,
@@ -22,12 +26,14 @@
     prefetchCache: new Map(),
     mapLoaded: false,
     lightbox: null,
-    lightboxZoom: 1,
+    lightboxBaseScale: 1,
+    lightboxUserScale: 1,
     lightboxTranslate: { x: 0, y: 0 },
     gesture: {
       pointers: new Map(),
       startDistance: 0,
-      startScale: 1,
+      startUserScale: 1,
+      startEffectiveScale: 1,
       startMidpoint: { x: 0, y: 0 },
       startTranslate: { x: 0, y: 0 },
       startPan: { x: 0, y: 0 },
@@ -69,6 +75,18 @@
       return null;
     }
   };
+
+  const persistZoom = (value) => {
+    if (!Number.isFinite(value)) {
+      return;
+    }
+    setStoredValue(ZOOM_KEY, value);
+  };
+
+  const storedZoom = getStoredValue(ZOOM_KEY);
+  if (Number.isFinite(storedZoom) && storedZoom > 0) {
+    state.lightboxUserScale = storedZoom;
+  }
 
   const clampPage = (value) => {
     if (!Number.isFinite(value)) {
@@ -229,8 +247,14 @@
         <button type="button" class="button-pill secondary" data-quran-lightbox-close>✕</button>
       </div>
       <div class="quran-lightbox__body">
-        <div class="quran-lightbox__scroll">
-          <img class="quran-lightbox__image" alt="Kur'an sayfası" decoding="async">
+        <div class="quran-lightbox__frame">
+          <div class="quran-lightbox__viewer" data-quran-lightbox-viewer>
+            <div class="quran-lightbox__pan" data-quran-lightbox-pan>
+              <div class="quran-lightbox__content" data-quran-lightbox-content>
+                <img class="quran-lightbox__image" alt="Kur'an sayfası" decoding="async" draggable="false">
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     `;
@@ -244,7 +268,9 @@
       zoomOut: overlay.querySelector('[data-quran-zoom-out]'),
       zoomReset: overlay.querySelector('[data-quran-zoom-reset]'),
       close: overlay.querySelector('[data-quran-lightbox-close]'),
-      scroll: overlay.querySelector('.quran-lightbox__scroll'),
+      viewer: overlay.querySelector('[data-quran-lightbox-viewer]'),
+      pan: overlay.querySelector('[data-quran-lightbox-pan]'),
+      content: overlay.querySelector('[data-quran-lightbox-content]'),
       bound: false,
     };
 
@@ -264,26 +290,142 @@
     return lightbox;
   };
 
+  const clampValue = (value, min, max) => {
+    if (!Number.isFinite(value)) {
+      return Number.isFinite(min) ? min : 0;
+    }
+    let next = value;
+    if (Number.isFinite(min)) {
+      next = Math.max(next, min);
+    }
+    if (Number.isFinite(max)) {
+      next = Math.min(next, max);
+    }
+    return next;
+  };
+
+  const getLightboxEffectiveScale = (userScale = state.lightboxUserScale) => {
+    const baseScale = Number.isFinite(state.lightboxBaseScale) && state.lightboxBaseScale > 0
+      ? state.lightboxBaseScale
+      : 1;
+    return baseScale * userScale;
+  };
+
+  const getViewerRect = () => {
+    const lightbox = state.lightbox;
+    if (!lightbox || !lightbox.viewer) {
+      return null;
+    }
+    return lightbox.viewer.getBoundingClientRect();
+  };
+
+  const toViewerCoords = (point) => {
+    const rect = getViewerRect();
+    if (!rect) {
+      return { x: 0, y: 0 };
+    }
+    return {
+      x: point.x - (rect.left + rect.width / 2),
+      y: point.y - (rect.top + rect.height / 2),
+    };
+  };
+
+  const updateLightboxBaseScale = () => {
+    const lightbox = state.lightbox;
+    if (!lightbox || !lightbox.viewer || !lightbox.image || !lightbox.content) {
+      return false;
+    }
+    const naturalWidth = lightbox.image.naturalWidth;
+    const naturalHeight = lightbox.image.naturalHeight;
+    const viewerWidth = lightbox.viewer.clientWidth;
+    if (!naturalWidth || !naturalHeight || !viewerWidth) {
+      return false;
+    }
+    const baseScale = viewerWidth / naturalWidth;
+    if (!Number.isFinite(baseScale) || baseScale <= 0) {
+      return false;
+    }
+    state.lightboxBaseScale = baseScale;
+    lightbox.content.style.width = `${naturalWidth}px`;
+    lightbox.content.style.height = `${naturalHeight}px`;
+    return true;
+  };
+
+  const clampLightboxTranslate = (translate, effectiveScale) => {
+    const lightbox = state.lightbox;
+    if (!lightbox || !lightbox.viewer || !lightbox.image) {
+      return translate;
+    }
+    const naturalWidth = lightbox.image.naturalWidth;
+    const naturalHeight = lightbox.image.naturalHeight;
+    const viewerWidth = lightbox.viewer.clientWidth;
+    const viewerHeight = lightbox.viewer.clientHeight;
+    if (!naturalWidth || !naturalHeight || !viewerWidth || !viewerHeight) {
+      return translate;
+    }
+    const scale = Number.isFinite(effectiveScale) && effectiveScale > 0 ? effectiveScale : 1;
+    const scaledWidth = naturalWidth * scale;
+    const scaledHeight = naturalHeight * scale;
+    const maxPanX = Math.max(0, (scaledWidth - viewerWidth) / 2);
+    const maxPanY = Math.max(0, (scaledHeight - viewerHeight) / 2);
+    const nextTranslate = translate || { x: 0, y: 0 };
+    return {
+      x: clampValue(nextTranslate.x, -maxPanX, maxPanX),
+      y: clampValue(nextTranslate.y, -maxPanY, maxPanY),
+    };
+  };
+
   const applyLightboxTransform = () => {
     const lightbox = state.lightbox;
     if (!lightbox) {
       return;
     }
-    if (lightbox.image) {
-      lightbox.image.style.transform = `translate(${state.lightboxTranslate.x}px, ${state.lightboxTranslate.y}px) scale(${state.lightboxZoom})`;
+    const effectiveScale = getLightboxEffectiveScale();
+    if (lightbox.pan) {
+      lightbox.pan.style.transform = `translate(-50%, -50%) translate(${state.lightboxTranslate.x}px, ${state.lightboxTranslate.y}px)`;
+    }
+    if (lightbox.content) {
+      lightbox.content.style.transform = `scale(${effectiveScale})`;
     }
     if (lightbox.zoomLabel) {
-      lightbox.zoomLabel.textContent = `${Math.round(state.lightboxZoom * 100)}%`;
+      lightbox.zoomLabel.textContent = `${Math.round(state.lightboxUserScale * 100)}%`;
     }
   };
 
-  const applyLightboxZoom = (value) => {
-    const next = Math.min(Math.max(value, 1), 3);
-    state.lightboxZoom = Number(next.toFixed(2));
-    if (state.lightboxZoom <= 1) {
+  const applyLightboxState = (nextUserScale, nextTranslate, options = {}) => {
+    const min = Object.prototype.hasOwnProperty.call(options, 'min') ? options.min : MIN_USER_SCALE;
+    const max = Object.prototype.hasOwnProperty.call(options, 'max') ? options.max : MAX_USER_SCALE;
+    const scaleValue = Number.isFinite(nextUserScale) ? nextUserScale : state.lightboxUserScale;
+    const clampedScale = clampValue(scaleValue, min, max);
+    state.lightboxUserScale = Number(clampedScale.toFixed(3));
+    const translateValue = nextTranslate ?? state.lightboxTranslate;
+    const effectiveScale = getLightboxEffectiveScale(state.lightboxUserScale);
+    state.lightboxTranslate = clampLightboxTranslate({
+      x: Number.isFinite(translateValue.x) ? translateValue.x : 0,
+      y: Number.isFinite(translateValue.y) ? translateValue.y : 0,
+    }, effectiveScale);
+    applyLightboxTransform();
+    if (options.persist) {
+      persistZoom(state.lightboxUserScale);
+    }
+  };
+
+  const refreshLightboxLayout = (options = {}) => {
+    const lightbox = state.lightbox;
+    if (!lightbox || lightbox.root.hidden) {
+      return;
+    }
+    if (!updateLightboxBaseScale()) {
+      return;
+    }
+    if (options.resetPan) {
       state.lightboxTranslate = { x: 0, y: 0 };
     }
-    applyLightboxTransform();
+    applyLightboxState(state.lightboxUserScale, state.lightboxTranslate, {
+      min: MIN_USER_SCALE,
+      max: MAX_USER_SCALE,
+      persist: false,
+    });
   };
 
   const getDistance = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
@@ -309,24 +451,25 @@
     if (event.pointerType === 'mouse' && event.button !== 0) {
       return;
     }
-    event.preventDefault();
+    if (event.cancelable) {
+      event.preventDefault();
+    }
     try {
-      event.target.setPointerCapture(event.pointerId);
+      (lightbox.viewer || event.target).setPointerCapture(event.pointerId);
     } catch (_error) {
       // ignore
     }
     updatePointer(event);
     const points = Array.from(state.gesture.pointers.values());
     if (points.length === 1) {
-      state.gesture.startPan = {
-        x: event.clientX - state.lightboxTranslate.x,
-        y: event.clientY - state.lightboxTranslate.y,
-      };
+      state.gesture.startPan = { x: event.clientX, y: event.clientY };
+      state.gesture.startTranslate = { ...state.lightboxTranslate };
     } else if (points.length >= 2) {
       const [p1, p2] = points;
       state.gesture.startDistance = getDistance(p1, p2);
-      state.gesture.startScale = state.lightboxZoom;
-      state.gesture.startMidpoint = getMidpoint(p1, p2);
+      state.gesture.startUserScale = state.lightboxUserScale;
+      state.gesture.startEffectiveScale = getLightboxEffectiveScale(state.lightboxUserScale);
+      state.gesture.startMidpoint = toViewerCoords(getMidpoint(p1, p2));
       state.gesture.startTranslate = { ...state.lightboxTranslate };
     }
   };
@@ -339,7 +482,9 @@
     if (!state.gesture.pointers.has(event.pointerId)) {
       return;
     }
-    event.preventDefault();
+    if (event.cancelable) {
+      event.preventDefault();
+    }
     updatePointer(event);
     const points = Array.from(state.gesture.pointers.values());
     if (points.length >= 2) {
@@ -347,25 +492,39 @@
       const distance = getDistance(p1, p2);
       if (state.gesture.startDistance > 0) {
         const ratio = distance / state.gesture.startDistance;
-        const nextScale = state.gesture.startScale * ratio;
-        const midpoint = getMidpoint(p1, p2);
-        const deltaX = midpoint.x - state.gesture.startMidpoint.x;
-        const deltaY = midpoint.y - state.gesture.startMidpoint.y;
-        state.lightboxTranslate = {
-          x: state.gesture.startTranslate.x + deltaX,
-          y: state.gesture.startTranslate.y + deltaY,
-        };
-        state.lightboxZoom = Math.min(Math.max(nextScale, 1), 3);
-        applyLightboxTransform();
+        const nextUserScale = clampValue(state.gesture.startUserScale * ratio, MIN_USER_SCALE, MAX_USER_SCALE);
+        const midpoint = toViewerCoords(getMidpoint(p1, p2));
+        const startScale = state.gesture.startEffectiveScale || getLightboxEffectiveScale(state.gesture.startUserScale);
+        let nextTranslate = state.lightboxTranslate;
+        if (startScale > 0) {
+          nextTranslate = {
+            x: midpoint.x - ((state.gesture.startMidpoint.x - state.gesture.startTranslate.x) / startScale) * getLightboxEffectiveScale(nextUserScale),
+            y: midpoint.y - ((state.gesture.startMidpoint.y - state.gesture.startTranslate.y) / startScale) * getLightboxEffectiveScale(nextUserScale),
+          };
+        }
+        applyLightboxState(nextUserScale, nextTranslate, {
+          min: MIN_USER_SCALE,
+          max: MAX_USER_SCALE,
+          persist: false,
+        });
       }
       return;
     }
     if (points.length === 1) {
-      state.lightboxTranslate = {
-        x: event.clientX - state.gesture.startPan.x,
-        y: event.clientY - state.gesture.startPan.y,
+      if (state.lightboxUserScale <= MIN_USER_SCALE) {
+        return;
+      }
+      const deltaX = event.clientX - state.gesture.startPan.x;
+      const deltaY = event.clientY - state.gesture.startPan.y;
+      const nextTranslate = {
+        x: state.gesture.startTranslate.x + deltaX,
+        y: state.gesture.startTranslate.y + deltaY,
       };
-      applyLightboxTransform();
+      applyLightboxState(state.lightboxUserScale, nextTranslate, {
+        min: MIN_USER_SCALE,
+        max: MAX_USER_SCALE,
+        persist: false,
+      });
     }
   };
 
@@ -377,15 +536,53 @@
     removePointer(event);
     if (state.gesture.pointers.size === 1) {
       const [remaining] = Array.from(state.gesture.pointers.values());
-      state.gesture.startPan = {
-        x: remaining.x - state.lightboxTranslate.x,
-        y: remaining.y - state.lightboxTranslate.y,
-      };
+      state.gesture.startPan = { x: remaining.x, y: remaining.y };
+      state.gesture.startTranslate = { ...state.lightboxTranslate };
     }
-    if (state.gesture.pointers.size === 0 && state.lightboxZoom <= 1) {
-      state.lightboxTranslate = { x: 0, y: 0 };
-      applyLightboxTransform();
+    if (state.gesture.pointers.size === 0) {
+      if (state.lightboxUserScale <= MIN_USER_SCALE) {
+        state.lightboxTranslate = { x: 0, y: 0 };
+        applyLightboxTransform();
+      }
+      persistZoom(state.lightboxUserScale);
     }
+  };
+
+  const handleWheelZoom = (event) => {
+    const lightbox = state.lightbox;
+    if (!lightbox || lightbox.root.hidden) {
+      return;
+    }
+    if (!event.ctrlKey && !event.metaKey) {
+      return;
+    }
+    if (event.cancelable) {
+      event.preventDefault();
+    }
+    const rect = getViewerRect();
+    if (!rect) {
+      return;
+    }
+    const pivot = {
+      x: event.clientX - (rect.left + rect.width / 2),
+      y: event.clientY - (rect.top + rect.height / 2),
+    };
+    const zoomFactor = Math.exp(-event.deltaY * 0.002);
+    const nextUserScale = clampValue(state.lightboxUserScale * zoomFactor, MIN_USER_SCALE, MAX_USER_SCALE);
+    const startScale = getLightboxEffectiveScale(state.lightboxUserScale);
+    if (startScale <= 0) {
+      return;
+    }
+    const nextScale = getLightboxEffectiveScale(nextUserScale);
+    const nextTranslate = {
+      x: pivot.x - ((pivot.x - state.lightboxTranslate.x) / startScale) * nextScale,
+      y: pivot.y - ((pivot.y - state.lightboxTranslate.y) / startScale) * nextScale,
+    };
+    applyLightboxState(nextUserScale, nextTranslate, {
+      min: MIN_USER_SCALE,
+      max: MAX_USER_SCALE,
+      persist: true,
+    });
   };
 
   const setLightboxImageSrc = (page) => {
@@ -396,13 +593,32 @@
     const primary = buildPageSrc(page, true);
     const fallback = buildPageSrc(page, false);
     let triedFallback = false;
+    let readyHandled = false;
+
+    const handleReady = () => {
+      if (readyHandled) {
+        return;
+      }
+      readyHandled = true;
+      requestAnimationFrame(() => {
+        refreshLightboxLayout();
+      });
+    };
+
+    lightbox.image.onload = () => {
+      handleReady();
+    };
     lightbox.image.onerror = () => {
       if (!triedFallback && fallback !== primary) {
         triedFallback = true;
         lightbox.image.src = fallback;
+        return;
       }
     };
     lightbox.image.src = primary;
+    if (lightbox.image.decode) {
+      lightbox.image.decode().then(handleReady).catch(() => {});
+    }
   };
 
   const openLightbox = () => {
@@ -412,13 +628,17 @@
     }
     lightbox.root.hidden = false;
     document.body.classList.add('quran-lightbox-open');
-    setLightboxImageSrc(state.page);
-    if (lightbox.scroll) {
-      lightbox.scroll.scrollTop = 0;
-      lightbox.scroll.scrollLeft = 0;
-    }
+    state.gesture.pointers.clear();
     state.lightboxTranslate = { x: 0, y: 0 };
-    applyLightboxZoom(1);
+    applyLightboxState(state.lightboxUserScale, state.lightboxTranslate, {
+      min: MIN_USER_SCALE,
+      max: MAX_USER_SCALE,
+      persist: false,
+    });
+    setLightboxImageSrc(state.page);
+    requestAnimationFrame(() => {
+      refreshLightboxLayout();
+    });
   };
 
   const updateLightboxImage = () => {
@@ -426,6 +646,12 @@
     if (!lightbox || lightbox.root.hidden || !lightbox.image) {
       return;
     }
+    state.lightboxTranslate = { x: 0, y: 0 };
+    applyLightboxState(state.lightboxUserScale, state.lightboxTranslate, {
+      min: MIN_USER_SCALE,
+      max: MAX_USER_SCALE,
+      persist: false,
+    });
     setLightboxImageSrc(state.page);
   };
 
@@ -686,19 +912,38 @@
 
     if (lightbox && !lightbox.bound) {
       lightbox.zoomIn?.addEventListener('click', () => {
-        applyLightboxZoom(state.lightboxZoom + 0.25);
+        applyLightboxState(state.lightboxUserScale + ZOOM_STEP, null, {
+          min: MIN_USER_SCALE,
+          max: MAX_USER_SCALE,
+          persist: true,
+        });
       });
       lightbox.zoomOut?.addEventListener('click', () => {
-        applyLightboxZoom(state.lightboxZoom - 0.25);
+        applyLightboxState(state.lightboxUserScale - ZOOM_STEP, null, {
+          min: MIN_USER_SCALE,
+          max: MAX_USER_SCALE,
+          persist: true,
+        });
       });
       lightbox.zoomReset?.addEventListener('click', () => {
-        applyLightboxZoom(1);
+        updateLightboxBaseScale();
+        const baseScale = state.lightboxBaseScale;
+        const targetScale = baseScale > 0 ? 1 / baseScale : 1;
+        applyLightboxState(targetScale, { x: 0, y: 0 }, {
+          min: 0.1,
+          max: null,
+          persist: true,
+        });
       });
-      lightbox.scroll?.addEventListener('pointerdown', handlePointerDown);
-      lightbox.scroll?.addEventListener('pointermove', handlePointerMove);
-      lightbox.scroll?.addEventListener('pointerup', handlePointerUp);
-      lightbox.scroll?.addEventListener('pointercancel', handlePointerUp);
-      lightbox.scroll?.addEventListener('pointerleave', handlePointerUp);
+      lightbox.viewer?.addEventListener('pointerdown', handlePointerDown);
+      lightbox.viewer?.addEventListener('pointermove', handlePointerMove);
+      lightbox.viewer?.addEventListener('pointerup', handlePointerUp);
+      lightbox.viewer?.addEventListener('pointercancel', handlePointerUp);
+      lightbox.viewer?.addEventListener('pointerleave', handlePointerUp);
+      lightbox.viewer?.addEventListener('wheel', handleWheelZoom, { passive: false });
+      window.addEventListener('resize', () => {
+        refreshLightboxLayout();
+      });
       lightbox.bound = true;
     }
 
