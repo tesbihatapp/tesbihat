@@ -23,6 +23,15 @@
     mapLoaded: false,
     lightbox: null,
     lightboxZoom: 1,
+    lightboxTranslate: { x: 0, y: 0 },
+    gesture: {
+      pointers: new Map(),
+      startDistance: 0,
+      startScale: 1,
+      startMidpoint: { x: 0, y: 0 },
+      startTranslate: { x: 0, y: 0 },
+      startPan: { x: 0, y: 0 },
+    },
   };
 
   const getStorage = () => {
@@ -255,18 +264,127 @@
     return lightbox;
   };
 
-  const applyLightboxZoom = (value) => {
+  const applyLightboxTransform = () => {
     const lightbox = state.lightbox;
     if (!lightbox) {
       return;
     }
-    const next = Math.min(Math.max(value, 1), 3);
-    state.lightboxZoom = Number(next.toFixed(2));
     if (lightbox.image) {
-      lightbox.image.style.transform = `scale(${state.lightboxZoom})`;
+      lightbox.image.style.transform = `translate(${state.lightboxTranslate.x}px, ${state.lightboxTranslate.y}px) scale(${state.lightboxZoom})`;
     }
     if (lightbox.zoomLabel) {
       lightbox.zoomLabel.textContent = `${Math.round(state.lightboxZoom * 100)}%`;
+    }
+  };
+
+  const applyLightboxZoom = (value) => {
+    const next = Math.min(Math.max(value, 1), 3);
+    state.lightboxZoom = Number(next.toFixed(2));
+    if (state.lightboxZoom <= 1) {
+      state.lightboxTranslate = { x: 0, y: 0 };
+    }
+    applyLightboxTransform();
+  };
+
+  const getDistance = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
+
+  const getMidpoint = (a, b) => ({
+    x: (a.x + b.x) / 2,
+    y: (a.y + b.y) / 2,
+  });
+
+  const updatePointer = (event) => {
+    state.gesture.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  };
+
+  const removePointer = (event) => {
+    state.gesture.pointers.delete(event.pointerId);
+  };
+
+  const handlePointerDown = (event) => {
+    const lightbox = state.lightbox;
+    if (!lightbox || lightbox.root.hidden) {
+      return;
+    }
+    if (event.pointerType === 'mouse' && event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    try {
+      event.target.setPointerCapture(event.pointerId);
+    } catch (_error) {
+      // ignore
+    }
+    updatePointer(event);
+    const points = Array.from(state.gesture.pointers.values());
+    if (points.length === 1) {
+      state.gesture.startPan = {
+        x: event.clientX - state.lightboxTranslate.x,
+        y: event.clientY - state.lightboxTranslate.y,
+      };
+    } else if (points.length >= 2) {
+      const [p1, p2] = points;
+      state.gesture.startDistance = getDistance(p1, p2);
+      state.gesture.startScale = state.lightboxZoom;
+      state.gesture.startMidpoint = getMidpoint(p1, p2);
+      state.gesture.startTranslate = { ...state.lightboxTranslate };
+    }
+  };
+
+  const handlePointerMove = (event) => {
+    const lightbox = state.lightbox;
+    if (!lightbox || lightbox.root.hidden) {
+      return;
+    }
+    if (!state.gesture.pointers.has(event.pointerId)) {
+      return;
+    }
+    event.preventDefault();
+    updatePointer(event);
+    const points = Array.from(state.gesture.pointers.values());
+    if (points.length >= 2) {
+      const [p1, p2] = points;
+      const distance = getDistance(p1, p2);
+      if (state.gesture.startDistance > 0) {
+        const ratio = distance / state.gesture.startDistance;
+        const nextScale = state.gesture.startScale * ratio;
+        const midpoint = getMidpoint(p1, p2);
+        const deltaX = midpoint.x - state.gesture.startMidpoint.x;
+        const deltaY = midpoint.y - state.gesture.startMidpoint.y;
+        state.lightboxTranslate = {
+          x: state.gesture.startTranslate.x + deltaX,
+          y: state.gesture.startTranslate.y + deltaY,
+        };
+        state.lightboxZoom = Math.min(Math.max(nextScale, 1), 3);
+        applyLightboxTransform();
+      }
+      return;
+    }
+    if (points.length === 1) {
+      state.lightboxTranslate = {
+        x: event.clientX - state.gesture.startPan.x,
+        y: event.clientY - state.gesture.startPan.y,
+      };
+      applyLightboxTransform();
+    }
+  };
+
+  const handlePointerUp = (event) => {
+    const lightbox = state.lightbox;
+    if (!lightbox || lightbox.root.hidden) {
+      return;
+    }
+    removePointer(event);
+    if (state.gesture.pointers.size === 1) {
+      const [remaining] = Array.from(state.gesture.pointers.values());
+      state.gesture.startPan = {
+        x: remaining.x - state.lightboxTranslate.x,
+        y: remaining.y - state.lightboxTranslate.y,
+      };
+    }
+    if (state.gesture.pointers.size === 0 && state.lightboxZoom <= 1) {
+      state.lightboxTranslate = { x: 0, y: 0 };
+      applyLightboxTransform();
     }
   };
 
@@ -299,6 +417,7 @@
       lightbox.scroll.scrollTop = 0;
       lightbox.scroll.scrollLeft = 0;
     }
+    state.lightboxTranslate = { x: 0, y: 0 };
     applyLightboxZoom(1);
   };
 
@@ -575,6 +694,11 @@
       lightbox.zoomReset?.addEventListener('click', () => {
         applyLightboxZoom(1);
       });
+      lightbox.scroll?.addEventListener('pointerdown', handlePointerDown);
+      lightbox.scroll?.addEventListener('pointermove', handlePointerMove);
+      lightbox.scroll?.addEventListener('pointerup', handlePointerUp);
+      lightbox.scroll?.addEventListener('pointercancel', handlePointerUp);
+      lightbox.scroll?.addEventListener('pointerleave', handlePointerUp);
       lightbox.bound = true;
     }
 
