@@ -21,6 +21,8 @@
     ui: null,
     prefetchCache: new Map(),
     mapLoaded: false,
+    lightbox: null,
+    lightboxZoom: 1,
   };
 
   const getStorage = () => {
@@ -200,6 +202,114 @@
     }
   };
 
+  const ensureLightbox = () => {
+    if (state.lightbox && state.lightbox.root && state.lightbox.root.isConnected) {
+      return state.lightbox;
+    }
+    const overlay = document.createElement('div');
+    overlay.className = 'quran-lightbox';
+    overlay.hidden = true;
+    overlay.innerHTML = `
+      <div class="quran-lightbox__toolbar">
+        <div class="quran-toolbar__group">
+          <button type="button" class="button-pill secondary" data-quran-zoom-out>−</button>
+          <span class="quran-lightbox__zoom" data-quran-zoom-label>100%</span>
+          <button type="button" class="button-pill secondary" data-quran-zoom-in>+</button>
+          <button type="button" class="button-pill secondary" data-quran-zoom-reset>1:1</button>
+        </div>
+        <button type="button" class="button-pill secondary" data-quran-lightbox-close>✕</button>
+      </div>
+      <div class="quran-lightbox__body">
+        <div class="quran-lightbox__scroll">
+          <img class="quran-lightbox__image" alt="Kur'an sayfası" decoding="async">
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const lightbox = {
+      root: overlay,
+      image: overlay.querySelector('.quran-lightbox__image'),
+      zoomLabel: overlay.querySelector('[data-quran-zoom-label]'),
+      zoomIn: overlay.querySelector('[data-quran-zoom-in]'),
+      zoomOut: overlay.querySelector('[data-quran-zoom-out]'),
+      zoomReset: overlay.querySelector('[data-quran-zoom-reset]'),
+      close: overlay.querySelector('[data-quran-lightbox-close]'),
+      scroll: overlay.querySelector('.quran-lightbox__scroll'),
+      bound: false,
+    };
+
+    const closeLightbox = () => {
+      overlay.hidden = true;
+      document.body.classList.remove('quran-lightbox-open');
+    };
+
+    lightbox.close?.addEventListener('click', closeLightbox);
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) {
+        closeLightbox();
+      }
+    });
+
+    state.lightbox = lightbox;
+    return lightbox;
+  };
+
+  const applyLightboxZoom = (value) => {
+    const lightbox = state.lightbox;
+    if (!lightbox) {
+      return;
+    }
+    const next = Math.min(Math.max(value, 1), 3);
+    state.lightboxZoom = Number(next.toFixed(2));
+    if (lightbox.image) {
+      lightbox.image.style.transform = `scale(${state.lightboxZoom})`;
+    }
+    if (lightbox.zoomLabel) {
+      lightbox.zoomLabel.textContent = `${Math.round(state.lightboxZoom * 100)}%`;
+    }
+  };
+
+  const setLightboxImageSrc = (page) => {
+    const lightbox = state.lightbox;
+    if (!lightbox || !lightbox.image) {
+      return;
+    }
+    const primary = buildPageSrc(page, true);
+    const fallback = buildPageSrc(page, false);
+    let triedFallback = false;
+    lightbox.image.onerror = () => {
+      if (!triedFallback && fallback !== primary) {
+        triedFallback = true;
+        lightbox.image.src = fallback;
+      }
+    };
+    lightbox.image.src = primary;
+  };
+
+  const openLightbox = () => {
+    const lightbox = ensureLightbox();
+    if (!lightbox || !lightbox.image) {
+      return;
+    }
+    lightbox.root.hidden = false;
+    document.body.classList.add('quran-lightbox-open');
+    setLightboxImageSrc(state.page);
+    if (lightbox.scroll) {
+      lightbox.scroll.scrollTop = 0;
+      lightbox.scroll.scrollLeft = 0;
+    }
+    applyLightboxZoom(1);
+  };
+
+  const updateLightboxImage = () => {
+    const lightbox = state.lightbox;
+    if (!lightbox || lightbox.root.hidden || !lightbox.image) {
+      return;
+    }
+    setLightboxImageSrc(state.page);
+  };
+
   const prefetchPage = (page) => {
     if (!Number.isFinite(page)) {
       return;
@@ -329,6 +439,7 @@
     updateToolbarUI();
     updateFavoritesUI();
     renderPageImage(clamped);
+    updateLightboxImage();
     persistPage(clamped);
     updateUrl(clamped);
     prunePrefetch(clamped);
@@ -452,6 +563,20 @@
     };
 
     state.ui = ui;
+    const lightbox = ensureLightbox();
+
+    if (lightbox && !lightbox.bound) {
+      lightbox.zoomIn?.addEventListener('click', () => {
+        applyLightboxZoom(state.lightboxZoom + 0.25);
+      });
+      lightbox.zoomOut?.addEventListener('click', () => {
+        applyLightboxZoom(state.lightboxZoom - 0.25);
+      });
+      lightbox.zoomReset?.addEventListener('click', () => {
+        applyLightboxZoom(1);
+      });
+      lightbox.bound = true;
+    }
 
     ui.prevButton?.addEventListener('click', () => {
       setPage(state.page - 1);
@@ -482,6 +607,10 @@
       }
       persistFavorites();
       updateFavoritesUI();
+    });
+
+    ui.image?.addEventListener('click', () => {
+      openLightbox();
     });
 
     ui.favoritesToggle?.addEventListener('click', () => {
