@@ -753,6 +753,10 @@ const PRAYER_CONFIG = {
       },
     ],
   },
+  quran: {
+    label: 'Kur\'an',
+    quran: true,
+  },
   ucaylar: {
     label: 'Üç Aylar',
     description: 'Recep, Şaban ve Ramazan içerikleri ve çetele takibi.',
@@ -1234,6 +1238,10 @@ document.addEventListener('DOMContentLoaded', () => {
     state.currentPrayer = 'ortakdua';
   }
 
+  if (typeof window !== 'undefined' && window.location && window.location.pathname.includes('/quran')) {
+    state.currentPrayer = 'quran';
+  }
+
   if (typeof window !== 'undefined') {
     window.addEventListener('hashchange', () => {
       const nextRoomId = parseSharedDuaRoomIdFromLocation();
@@ -1411,6 +1419,15 @@ async function loadPrayerContent(prayerId) {
 
   if (config.zikirManager) {
     await renderZikirManager(content);
+    return;
+  }
+
+  if (config.quran) {
+    if (window.QuranPage && typeof window.QuranPage.render === 'function') {
+      await window.QuranPage.render(content);
+    } else {
+      content.innerHTML = '<div class="card">Kur\'an sayfası yüklenemedi.</div>';
+    }
     return;
   }
 
