@@ -664,8 +664,8 @@ Ey kendisinden inâyet isteyenlere inâyet eden,
 
 ⸻
 
-يَا مُغِيثرَ مَنِ اسْتَغَاثَهُ
-Yâ Muġîtha man istaghâthah
+يَا مُغيثَ مَنِ اسْتَغَاثَهُ
+Yâ muğîtha menistagâsehu
 Ey kendisinden imdat isteyenlere imdat eden,
 
 ⸻
